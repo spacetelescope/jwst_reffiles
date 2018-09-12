@@ -1,0 +1,12 @@
+# Compiled source #
+###################
+*.pyc
+*.py~
+.pytest_cache/*
+.cache*
+
+# Package Stuff #
+#################
+build/*
+dist/*
+jwst_reffiles.egg-info/*
