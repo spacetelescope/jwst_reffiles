@@ -10,3 +10,15 @@
 build/*
 dist/*
 jwst_reffiles.egg-info/*
+
+# Docs build #
+##############
+docs/_build
+docs/_static
+docs/_templates
+
+# Other #
+#########
+.ipynb_checkpoints/*
+mkrefs_notes.txt
+ref.bash.sourceme
