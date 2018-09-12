@@ -16,6 +16,7 @@ jwst_reffiles.egg-info/*
 docs/_build
 docs/_static
 docs/_templates
+docs/.ipynb_checkpoints/*
 
 # Other #
 #########
