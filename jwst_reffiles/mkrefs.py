@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-'''                                                                                                                                                                                            
+'''
 create reference files for JWST instruments
 A. Rest
 '''
@@ -11,42 +11,42 @@ import astropy.io.fits as fits
 import astropy
 
 # get the root dir of the code. This is needed only if the scripts are not installed as a module!
-if 'JWST_MKREFS_SRCDIR' in os.environ:
-    rootdir = os.environ['JWST_MKREFS_SRCDIR']
-    sys.path.extend([rootdir,
-                     '%s/gain' % rootdir,
-                     '%s/badpix_map' % rootdir])
+#if 'JWST_MKREFS_SRCDIR' in os.environ:
+#    rootdir = os.environ['JWST_MKREFS_SRCDIR']
+#    sys.path.extend([rootdir,
+#                     '%s/gain' % rootdir,
+#                     '%s/badpix_map' % rootdir])
 #else:
-#    rootdir = os.path.dirname(os.path.realpath(__file__))
+rootdir = os.path.dirname(os.path.realpath(__file__))
 
-from tools import astrotableclass,yamlcfgclass
-from mkref import mkrefclass
+from .utils.tools import astrotableclass,yamlcfgclass
+from .mkref import mkrefclass
 
 class cmdsclass(astrotableclass):
     def __init__(self):
         astrotableclass.__init__(self)
-        
-        
-        
+
+
+
 class mkrefsclass(astrotableclass):
     def __init__(self):
         astrotableclass.__init__(self)
 
-        #config file 
+        #config file
         self.cfg = None
 
         self.imtable = astrotableclass()
         self.images4ssb = astrotableclass()
         #self.darks = None
         #self.flats = None
-        
+
         #
         self.DDtable = astrotableclass()
         self.FFtable = astrotableclass()
         self.DDFFtable = astrotableclass()
 
         self.cmdtable = cmdsclass()
-        
+
     def define_options(self, parser=None, usage=None):
         if parser == None:
             parser = argparse.ArgumentParser(usage=usage, conflict_handler='resolve')
@@ -57,7 +57,7 @@ class mkrefsclass(astrotableclass):
         mkref = mkrefclass()
         parser = mkref.refoptions4mkrefs(parser=parser)
         return(parser)
-        
+
     def loadcfgfiles(self,maincfgfile,extracfgfiles=None,params=None,params4all=None,params4sections=None,requireParamExists=True):
         if self.cfg == None:
             self.cfg = yamlcfgclass()
@@ -66,7 +66,7 @@ class mkrefsclass(astrotableclass):
                                  requireParamExists=requireParamExists,verbose=self.verbose):
             raise RuntimeError,"Something went wrong when loading config files!"
         return(0)
-    
+
     def trim_imagelist(self,imagelist,basenamepattern=None):
         '''
         only keep fits file that match basenamepattern
@@ -82,7 +82,7 @@ class mkrefsclass(astrotableclass):
             basenamepattern_compiled = re.compile(basenamepattern)
             # make sure the input files are all ok!
             for i in xrange(len(imagelist)):
-            
+
                 m = basenamepattern_compiled.search(imagelist[i])
                 if m == None:
                     print 'SKIPPING',imagelist[i]
@@ -98,7 +98,7 @@ class mkrefsclass(astrotableclass):
             imagelist=newimagelist
 
         return(imagelist)
-    
+
     def parse_reftypes_images(self,reftypes_and_imagelist,basenamepattern=None):
         reftypelist = []
         imagelist = []
@@ -111,7 +111,7 @@ class mkrefsclass(astrotableclass):
                 imagelist.append(os.path.abspath(s))
 
         imagelist = self.trim_imagelist(imagelist,basenamepattern)
-              
+
         return(reftypelist,imagelist)
 
     def getimtypes(self):
@@ -120,7 +120,7 @@ class mkrefsclass(astrotableclass):
 
         darkpattern = re.compile(self.cfg.params['inputfiles']['dark_pattern'])
         flatpattern = re.compile(self.cfg.params['inputfiles']['flat_pattern'])
-            
+
         for i in xrange(len(self.imtable.t)):
             shortfilename = os.path.basename(self.imtable.t['fitsfile'][i])
             if darkpattern.search(shortfilename):
@@ -129,10 +129,10 @@ class mkrefsclass(astrotableclass):
                 self.imtable.t['imtype'][i]='flat'
             else:
                 print 'ERROR: image type of image %s is unknown!'
-        
+
 
     def getimageinfo(self,imagelist,dateobsfitskey=None,timeobsfitskey=None,mjdobsfitskey=None):
-        
+
         #self.imtable['fitsfile'].format('%s')
         self.imtable.t['fitsfile']=imagelist
         self.imtable.t['imID']=range(len(imagelist))
@@ -150,13 +150,13 @@ class mkrefsclass(astrotableclass):
         else:
             mjdcol = 'MJD'
 
-        
+
         self.imtable.fitsheader2table('fitsfile',
                                       requiredfitskeys=requiredfitskeys,
                                       optionalfitskey=self.cfg.params['inputfiles']['optionalfitskeys'],
                                       raiseError=False,skipcolname='skip')
         self.imtable.dateobs2mjd(dateobsfitskey,mjdcol,mjdobscol=mjdobsfitskey,timeobscol=timeobsfitskey)
-            
+
         self.getimtypes()
         # sort by MJD
         self.imtable.t.sort('MJD')
@@ -165,7 +165,7 @@ class mkrefsclass(astrotableclass):
         #self.flats = self.imtable.t[np.where(self.imtable.t['imtype']=='flat')]
 
         return(0)
-        
+
     def organize_inputfiles(self,reftypes_and_imagelist):
 
         # parse teh command line arguments for reftypes and images
@@ -179,7 +179,7 @@ class mkrefsclass(astrotableclass):
                           mjdobsfitskey=self.cfg.params['inputfiles']['mjdobs_fitskey'])
 
         self.detectors = set(self.imtable.t['DETECTOR'])
-        
+
         if self.verbose:
             print '#################\n### %d images found!' % len(self.imtable.t)
             print '### %d darks, %d flats' % (len(np.where(self.imtable.t['imtype']=='dark')[0]),len(np.where(self.imtable.t['imtype']=='flat')[0]))
@@ -189,7 +189,7 @@ class mkrefsclass(astrotableclass):
 
     def get_optional_arguments(self,args,sysargv):
         fitspattern = re.compile('\.fits$')
-        
+
         opt_arg_list = []
         for i in xrange(1,len(sysargv)):
             if sysargv[i] in args.reftypes_and_imagelist:
@@ -203,7 +203,7 @@ class mkrefsclass(astrotableclass):
                 opt_arg_list.append(sysargv[i])
         print 'optional arguments:',opt_arg_list
         return(opt_arg_list)
-        
+
     def getDlist(self,detector):
         '''
         returns list of Dark indeces, where the indices refer to the self.darks table
@@ -226,8 +226,8 @@ class mkrefsclass(astrotableclass):
         #print D.t
         #sys.exit(0)
         return(D,('D1',))
-            
-    
+
+
     def getDDlist(self,detector,max_Delta_MJD=None):
         '''
         returns list of Dark-Dark pair indeces,  where the indices refer to the self.imtable table
@@ -235,7 +235,7 @@ class mkrefsclass(astrotableclass):
         if self.verbose>1: print '# Getting DD list'
         #self.imtable.t['skip'][7]=True
         #print  self.imtable.t[6:11]
-        
+
         # indices for dark frames
         dindex, = np.where(self.imtable.t['imtype']=='dark')
         # indices for detector and not skipped
@@ -263,7 +263,7 @@ class mkrefsclass(astrotableclass):
         if self.verbose>2:
             print DD.t
         return(DD,('D1','D2'))
-    
+
     def getFFlist(self,detector,max_Delta_MJD=None):
         '''
         returns list of Flat-Flat pair indeces, where the indices refer to the self.imtable table
@@ -271,7 +271,7 @@ class mkrefsclass(astrotableclass):
         if self.verbose>1: print '# Getting FF list'
         #self.imtable.t['skip'][7]=True
         #print  self.imtable.t[6:11]
-        
+
         # indices for dark frames
         findex, = np.where(self.imtable.t['imtype']=='flat')
         # indices for detector and not skipped
@@ -279,7 +279,7 @@ class mkrefsclass(astrotableclass):
         if self.verbose>2:
             print 'Possible %d Flats for detector %s' % (len(findex4detector),detector)
             print self.imtable.t[findex4detector]
-        
+
         FF = astrotableclass(names=('F1index','F2index','F1imID','F2imID'),dtype=('i4', 'i4', 'i4', 'i4'))
         i=0
         while i<len(findex4detector)-1:
@@ -295,11 +295,11 @@ class mkrefsclass(astrotableclass):
             if self.verbose>1: print 'Adding FF pair with imID=%d and %d' % (self.imtable.t['imID'][findex4detector[i]],self.imtable.t['imID'][findex4detector[i+1]])
             FF.t.add_row({'F1index':findex4detector[i],'F2index':findex4detector[i+1],'F1imID':self.imtable.t['imID'][findex4detector[i]],'F2imID':self.imtable.t['imID'][findex4detector[i+1]]})
             i+=2
-        
+
         if self.verbose>2:
             print FF.t
         return(FF,('F1','F2'))
-    
+
     def getDDFFlist(self,detector,DD_max_Delta_MJD=None,FF_max_Delta_MJD=None,DDFF_max_Delta_MJD=None):
         '''
         returns list of Flat-Flat pair indeces, where the indices refer to the self.imtable table
@@ -308,7 +308,7 @@ class mkrefsclass(astrotableclass):
         DD,DDimtypes = self.getDDlist(detector,max_Delta_MJD=DD_max_Delta_MJD)
         FF,FFimtypes = self.getFFlist(detector,max_Delta_MJD=FF_max_Delta_MJD)
         if self.verbose>0: print '### DD and FF lists created, no matching them!!!'
-        
+
         DDFF = astrotableclass(names=('F1index','F2index','F1imID','F2imID','D1index','D2index','D1imID','D2imID'),dtype=('i4', 'i4', 'i4', 'i4','i4', 'i4', 'i4', 'i4'))
         ddcount = np.zeros(len(DD.t))
 
@@ -350,11 +350,11 @@ class mkrefsclass(astrotableclass):
                                 'F2index':FF.t['F2index'][f],
                                 'F1imID':FF.t['F1imID'][f],
                                 'F2imID':FF.t['F2imID'][f]})
-                    
-                  
+
+
         print DDFF.t
         return(DDFF,('D1','D2','F1','F2'))
-        
+
     def get_inputimage_sets(self,reftype,detector,DD_max_Delta_MJD=None,FF_max_Delta_MJD=None,DDFF_max_Delta_MJD=None):
         imtypes = self.cfg.params[reftype]['imtypes']
         imagesets = []
@@ -369,11 +369,11 @@ class mkrefsclass(astrotableclass):
         else:
             raise RuntimeError,"ERROR: imtypes=%s not yet implemented!" % imtypes
         return(imagesets,imagelabels)
-    
+
 
     def cmds4mkref(self,optionalargs):
         '''
-        Construct the reftype commands, get the input files 
+        Construct the reftype commands, get the input files
         '''
         if self.verbose:
             print '\n##################################\n### Constructing commands\n##################################'
@@ -382,7 +382,7 @@ class mkrefsclass(astrotableclass):
         dummyreftype = astrotableclass()
         dummyreftype.t['reftype'] = self.reftypelist
         dummyreftype.t['ssbsteps'] = [self.cfg.params[reftype]['ssbsteps'] for reftype in self.reftypelist]
-        
+
         self.cmdtable = astrotableclass(names=('reftype','detector','cmdID','Nim'),dtype=(dummyreftype.t['reftype'].dtype, self.imtable.t['DETECTOR'].dtype, 'i8', 'i8'))
         #self.cmdtable = astrotableclass(names=('reftype','detector','cmdID','Nim'))
         self.cmdtable.t['cmdID','Nim'].format='%5d'
@@ -392,13 +392,13 @@ class mkrefsclass(astrotableclass):
                                                        'i8','i8','f8',self.imtable.t['fitsfile'].dtype))
         self.inputimagestable.t['cmdID','imindex','imID'].format= '%5d'
         self.inputimagestable.t['MJD'].format='%.8f'
-        
+
         cmdID = 0
         for reftype in self.reftypelist:
 
             print 'SSB steps for reftype %s: %s' % (reftype,self.cfg.params[reftype]['ssbsteps'])
             #continue
-        
+
             counter=0
             for detector in self.detectors:
                 if self.verbose: print '### Constructing %s commands for detector %s' % (reftype,detector)
@@ -406,29 +406,29 @@ class mkrefsclass(astrotableclass):
                                                                           DD_max_Delta_MJD=self.cfg.params['DD']['max_Delta_MJD'],
                                                                           FF_max_Delta_MJD=self.cfg.params['FF']['max_Delta_MJD'],
                                                                           DDFF_max_Delta_MJD=self.cfg.params['DDFF']['max_Delta_MJD'])
-                
+
                 if self.verbose: print '### %d image sets for %s for detector %s' % (len(inputimagesets.t),reftype,detector)
                 if self.verbose>1: print inputimagesets.t
                 for i in xrange(len(inputimagesets.t)):
                     if self.verbose>1: print 'image set index %d' %i
                     for inputimagelabel in inputimagelabels:
-                        
+
                         # This is the index to the image in imtable
                         imindex = inputimagesets.t['%sindex' % inputimagelabel][i]
 
-                        # sanity test: imindex and imID need to agree!!                        
+                        # sanity test: imindex and imID need to agree!!
                         if inputimagesets.t['%simID' % inputimagelabel][i] != self.imtable.t['imID'][imindex]:
                             raise RuntimeError,'BUG!!! This should not happen! the imIDs %d and %d need to match!' % (inputimagesets.t['%simID' % inputimagelabel][i], self.imtable.t['imID'][imindex])
 
-                        if self.verbose>3: 
+                        if self.verbose>3:
                             print self.imtable.t[inputimagesets.t['%sindex' % inputimagelabel][i]]
-                                                      
+
 
                         dict2add = {'cmdID':cmdID,'imindex':imindex,'reftype':reftype,'detector':detector,'imlabel':inputimagelabel,'ssbsteps':self.cfg.params[reftype]['ssbsteps']}
                         for key in ['fitsfile','imID','imtype','MJD']:
                             dict2add[key]=self.imtable.t[key][imindex]
                         self.inputimagestable.t.add_row(dict2add)
-                        
+
                     self.cmdtable.t.add_row({'reftype':reftype,'detector':detector,'cmdID':cmdID,'Nim':len(inputimagelabels)})
                     cmdID+=1
         print '\n### COMMANDS:'
@@ -440,14 +440,14 @@ class mkrefsclass(astrotableclass):
         print 'input is the self.inputimagestable'
         print 'What we need is: ssb-reduced input filename, a flag if this ssb-reduced input file already exists, and the commands to reduce the inputfilename to the ssb stage it needs to be run'
         print 'ssbsteps: here we have to figure out what nomenclature to use to define which ssb steps to run. As examples, I just came up with names, but we probably should use the SSB step names.'
-        
+
         sys.exit(0)
-       
+
     def cmds4mkrefold(self,optionalargs):
 
         if self.verbose:
             print '##################################\n### Constructing commands'
-            
+
         for reftype in self.reftypelist:
 
             if self.verbose:
@@ -461,18 +461,18 @@ class mkrefsclass(astrotableclass):
                 continue
                 for inputimageset in inputimagesets:
                     cmdargs = '%s' % reftype
-                    
+
                     if type(inputimageset) is types.ListType:
                         cmdargs+=' %s' % ' '.join(inputimageset)
                     else:
                         cmdargs+=' %s' % inputimageset
-                        
+
                     cmdargs += ' '
                     cmdargs += ' '.join(optionalargs)
 
                     mkref = mkrefclass()
                     mkref.mkref(cmdargs.split(),onlyinit=True)
-                    
+
                     if len(self.cmdtable.t)==0:
                         self.cmdtable.t['reftype']=np.array([reftype])
                         self.cmdtable.t['detector']=detector
@@ -487,30 +487,30 @@ class mkrefsclass(astrotableclass):
         if self.verbose>1:
             print 'Commands constructed:'
             print self.cmdtable.t
-        
+
 
         sys.exit(0)
-            
+
     def submitbatch(self):
         print "### submitbatch: NOT YET IMPLEMENTED!!!"
-        
+
     def mkrefloop(self):
         for i in xrange(len(self.cmdtable.t)):
-            
+
             print '### running mkref.py %s' % self.cmdtable.t['cmdargs'][i]
             mkref = mkrefclass()
-            
+
             mkref.mkref(self.cmdtable.t['cmdargs'][i].split())
-            
+
     def combinerefs(self):
         print "### combinerefs: NOT YET IMPLEMENTED!!!"
-        
-            
+
+
     def overview(self):
         print "### overview: NOT YET IMPLEMENTED!!!"
-        
+
 if __name__=='__main__':
-    
+
     mkrefs=mkrefsclass()
     parser = mkrefs.define_options()
     args = parser.parse_args()
@@ -518,7 +518,7 @@ if __name__=='__main__':
     # set verbose level
     mkrefs.verbose = args.verbose
     mkrefs.debug = args.debug
-    
+
     # Load config files
     mkrefs.loadcfgfiles(args.cfgfile,
                         extracfgfiles=args.extracfgfile,
@@ -533,7 +533,7 @@ if __name__=='__main__':
 
     mkrefs.cmds4mkref(optionalargs)
 
-    
+
     if args.batchmode:
         mkrefs.submitbatch()
     else:
