@@ -15,17 +15,18 @@ import astropy
 import numpy as np
 import scipy
 
-from tools import astrotableclass,yamlcfgclass
-from mkref import mkrefclass
+from .utils.tools import astrotableclass,yamlcfgclass
+from .mkref import mkrefclass
 
 # get the root dir of the code. This is needed only if the scripts are not installed as a module!
-if 'JWST_MKREFS_SRCDIR' in os.environ:
-    rootdir = os.environ['JWST_MKREFS_SRCDIR']
-    sys.path.extend([rootdir,
-                     '%s/gain' % rootdir,
-                     '%s/badpix_map' % rootdir])
+#if 'JWST_MKREFS_SRCDIR' in os.environ:
+#    rootdir = os.environ['JWST_MKREFS_SRCDIR']
+#    sys.path.extend([rootdir,
+#                     '%s/gain' % rootdir,
+#                     '%s/badpix_map' % rootdir])
 #else:
-#    rootdir = os.path.dirname(os.path.realpath(__file__))
+rootdir = os.path.dirname(os.path.realpath(__file__))
+
 
 
 class cmdsclass(astrotableclass):
@@ -69,6 +70,7 @@ class mkrefsclass(astrotableclass):
     def loadcfgfiles(self, maincfgfile, extracfgfiles=None, params=None, params4all=None,
                      params4sections=None, requireParamExists=True):
         if self.cfg is None:
+
             self.cfg = yamlcfgclass()
         if self.cfg.loadcfgfiles(maincfgfile, extracfgfiles=extracfgfiles,
                                  params=params, params4all=params4all, params4sections=params4sections,
@@ -91,7 +93,6 @@ class mkrefsclass(astrotableclass):
             basenamepattern_compiled = re.compile(basenamepattern)
             # make sure the input files are all ok!
             for i in range(len(imagelist)):
-
                 m = basenamepattern_compiled.search(imagelist[i])
                 if m is None:
                     print('SKIPPING', imagelist[i])
@@ -179,7 +180,6 @@ class mkrefsclass(astrotableclass):
         return(0)
 
     def organize_inputfiles(self, reftypes_and_imagelist):
-
         # parse teh command line arguments for reftypes and images
         (reftypelist, imagelist) = self.parse_reftypes_images(reftypes_and_imagelist,
                                                               basenamepattern=self.cfg.params['inputfiles']['basenamepattern'])
@@ -597,3 +597,5 @@ if __name__ == '__main__':
     mkrefs.combinerefs()
 
     mkrefs.overview()
+
+    print('Hello3!')
