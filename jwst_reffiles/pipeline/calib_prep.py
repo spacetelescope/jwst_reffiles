@@ -7,58 +7,58 @@ a list of strun commands that can be farmed out to condor.
 
 Inputs:
 
-inputs - 
+inputs -
          Astropy table of filenames, reference file types, and required
-         calibration pipeline steps. 
+         calibration pipeline steps.
 
 input table example:
 
-index    file_type    filename              req_steps   
+index    file_type    filename              req_steps
 1         gain      something_uncal.fits     bpm,sat
 2         gain      another_uncal.fits       bpm,sat
 3        readnoise  something_uncal.fits     bpm,sat,superbias
 
-search_dir - 
+search_dir -
              Directory to search for science files (from the 'filenames'
-             column of the input table. Search looks into any 
+             column of the input table. Search looks into any
              subdirectories as well, to allow the user flexibility when
-             organizing input files 
+             organizing input files
 
-output_dir - 
+output_dir -
              Directory in which the pipeline-processed science files will
              be placed. This code does not actually run the pipeline, but
-             only generates the commands needed to run the pipeline. The 
+             only generates the commands needed to run the pipeline. The
              output_dir will be added to these commands.
 
-use_only_given - 
+use_only_given -
                  Use exactly the file listed in the 'filenames'
                  column of the input table. If this is False,
-                 the code will search the search_dir to see 
+                 the code will search the search_dir to see
                  what versions of the input file are present,
                  and choose the most appropriate version for the
                  requested pipeline processing state
 
-overwrite_existing_files - 
+overwrite_existing_files -
                            If True, any existing files in the output
                            directory that have names matching the output
                            names will be over-written. This is essentially
-                           a way to force the calibration pipeline to be 
+                           a way to force the calibration pipeline to be
                            re-run on a given input file
-                
+
 Outputs:
 
-proc_table - 
-             Copy of the input table with several columns added. 
+proc_table -
+             Copy of the input table with several columns added.
 
              real_input_file:
-             This added column lists the name of the file to be run through 
-             the pipeline. This may differ from the filename originally given 
-             as input, in the case where a version of the input file that has 
-             already been partially processed is found and will be used to 
-             save time. 
+             This added column lists the name of the file to be run through
+             the pipeline. This may differ from the filename originally given
+             as input, in the case where a version of the input file that has
+             already been partially processed is found and will be used to
+             save time.
 
              output_name:
-             This column lists the name of the output file that will be 
+             This column lists the name of the output file that will be
              produced by the pipeline
 
              steps_to_run:
@@ -66,7 +66,7 @@ proc_table -
              to transform the real_input_file into the output_name file.
 
 
-strun - 
+strun -
         This is a list of calls to the calibration pipeline. In order to use
         condor, we must use the command-line, strun, calls to the pipeline.
 
@@ -101,7 +101,7 @@ class CalibPrep:
                       ('jump','jump'),('rampfit','rate')]
         self.pipe_step_dict = OrderedDict(pipe_steps)
 
-        
+
     def choose_file(self,filelist,req,current):
         '''Given a list of files, their calibration state
         and the required calibration state, choose the best
@@ -121,7 +121,7 @@ class CalibPrep:
                 return file
         return usefile
 
-        
+
     def completed_steps(self,file,checkheader=True):
         '''identify and return the pipeline steps completed
         for the input file'''
@@ -168,7 +168,7 @@ class CalibPrep:
         lastmatch = np.where(stepvals == suffix)[0][0]
         for sval in stepvals[lastmatch+1:]:
             skip.remove(sval)
-        
+
         true_base = base[0:baseend]
         true_base = true_base.replace('_uncal','')
         if self.verbose:
@@ -181,7 +181,7 @@ class CalibPrep:
                 ofile = ofile + '_' + val
         ofile = ofile + '.fits'
         return os.path.join(self.output_dir,ofile), true_base
-        
+
 
     def file_search(self,base,dir):
         '''Search for all versions of a particular
@@ -199,7 +199,7 @@ class CalibPrep:
             for m in mch:
                 files.append(os.path.join(dirpath,m))
         return files
-                
+
 
     def find_repeats(self,tab):
         '''find repeated filenames in the input
@@ -217,7 +217,7 @@ class CalibPrep:
         final_indices = indices[findex]
         return final_names,final_indices
 
-    
+
     def get_file_basename(self,file):
         '''Determine a given file's basename.
         Currently this is the full name minus
@@ -230,8 +230,8 @@ class CalibPrep:
                    .format(file)))
             sys.exit()
         return base
-        
-        
+
+
     def output_exist_check(self,filename):
         '''Check to see if the given file already
         exists. Remove if the user allows it.'''
@@ -262,7 +262,7 @@ class CalibPrep:
         #find_repeats should located repeated entries in the
         #input table. but where should we do that, and how do
         #we proceed once we have the indices of the repeats?
-        
+
         # Column of output names to add to table
         outfiles = []
         self.strun = []
@@ -277,7 +277,7 @@ class CalibPrep:
                 print("File: {}".format(file))
                 print("Input required steps: {}".format(line['req_steps']))
                 print("Required steps: {}".format(req_steps))
-            
+
             # In order to search for other
             # versions of the file we need
             # to know the basename
@@ -285,7 +285,7 @@ class CalibPrep:
 
             if self.verbose:
                 print("Basename: {}".format(basename))
-            
+
             # Create the output filename based on
             # the required pipeline steps
             outname, true_base = self.create_output(basename,req_steps)
@@ -301,7 +301,7 @@ class CalibPrep:
             # Similarly, if permissions prevent you from successfully
             # removing the file, throw an error
             self.output_exist_check(os.path.join(self.output_dir,outname))
-            
+
             # Search
             if not self.use_only_given:
                 files = self.file_search(true_base,self.search_dir)
@@ -310,7 +310,7 @@ class CalibPrep:
 
             if self.verbose:
                 print("Found files: {}".format(files))
-                
+
             # Determine the completed calibration steps
             # for each file
             current_state = {}
@@ -320,7 +320,7 @@ class CalibPrep:
 
                 if self.verbose:
                     print("    file {}, current state: {}".format(f,current_state[f]))
-                
+
             # Select the file to use
             if self.use_only_given:
                 input_file = file
@@ -330,7 +330,7 @@ class CalibPrep:
             realinput.append(input_file)
             if self.verbose:
                 print("File to use: {}".format(input_file))
-                
+
             # Create list of pipeline steps that must be
             # run on the file
             to_run = self.steps_to_run(input_file,req_steps,
@@ -346,7 +346,7 @@ class CalibPrep:
             else:
                 trstr = 'None'
             all_to_run.append(trstr)
-            
+
             if self.verbose:
                 print("Steps that need to be run: {}".format(to_run))
 
@@ -358,7 +358,7 @@ class CalibPrep:
             #if self.verbose:
             #    print("Necessary strun command:")
             #    print("{}".format(command))
-            
+
         # Add the output filename column to the input table
         realcol = Column(data=realinput,name='real_input_file')
         self.inputs.add_column(realcol)
@@ -366,7 +366,7 @@ class CalibPrep:
         self.inputs.add_column(outcol)
         toruncol = Column(all_to_run,name='steps_to_run')
         self.inputs.add_column(toruncol)
-        
+
         self.proc_table = copy.deepcopy(self.inputs)
 
         if self.verbose:
@@ -379,7 +379,7 @@ class CalibPrep:
 
         if self.verbose:
             print(self.strun)
-            
+
         c = Column(self.strun,name='strun_command')
         c_tab = Table()
         c_tab.add_column(self.inputs['index'])
@@ -387,7 +387,7 @@ class CalibPrep:
 
         if self.verbose:
             ascii.write(c_tab,'test_strun_commands.txt',overwrite=True)
-        
+
         # Done
         # calling function can now use self.proc_table and
         # self.strun to access results
@@ -407,13 +407,12 @@ class CalibPrep:
                 sys.exit()
             try:
                 req[ele] = True
-            except:
-                print(("WARNING: unrecognized required "
-                       "pipeline step: {}".format(ele)))
+            except KeyError as error:
+                print(error)
                 sys.exit()
         return req
 
-    
+
     def steps_to_run(self,infile,req,current):
         '''Return a list of the pipeline steps that need
         to be run to bring the input file up to the state
@@ -440,16 +439,16 @@ class CalibPrep:
         # output suffix than step name, unlike the other steps
         step_names = copy.deepcopy(self.pipe_step_dict)
         step_names['rampfit'] = 'ramp_fitting'
-        
+
         cmds = []
-        
+
         # Determine appropriate reference file overrides
         #something
 
         initial = 'strun calwebb_detector1.cfg '
         for infile, steps, outfile in zip(input,steps_to_run,outfile):
             with_file = initial + infile
-            
+
             if steps == 'None':
                 cmd = 'None'
             else:
@@ -468,9 +467,9 @@ class CalibPrep:
                 final_step = step_names[finstep]
                 out_text += (' --steps.{}.output_file={}'
                              .format(final_step,outfile))
-                
+
                 # Put the whole command together
                 cmd = with_file + skip_text + out_text #+override_text
             cmds.append(cmd)
         return cmds
-        
+

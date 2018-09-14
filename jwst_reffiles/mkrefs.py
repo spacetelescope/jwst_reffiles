@@ -15,8 +15,10 @@ import astropy
 import numpy as np
 import scipy
 
-from .utils.tools import astrotableclass,yamlcfgclass
-from .mkref import mkrefclass
+from jwst_reffiles.mkref import mkrefclass
+from jwst_reffiles.pipeline.calib_prep import CalibPrep
+from jwst_reffiles.utils.tools import astrotableclass,yamlcfgclass
+
 
 # get the root dir of the code. This is needed only if the scripts are not installed as a module!
 #if 'JWST_MKREFS_SRCDIR' in os.environ:
@@ -491,6 +493,11 @@ class mkrefsclass(astrotableclass):
         print(self.cmdtable.t)
         print('\n### INPUT FILES:')
         print(self.inputimagestable.t)
+
+        mmm = CalibPrep()
+        mmm.inputs = self.inputimagestable.t
+        mmm.prepare()
+
 
         print('BRYAN: here we call your script to get the outoput filenames and the commands to run SSB!')
         print('input is the self.inputimagestable')
