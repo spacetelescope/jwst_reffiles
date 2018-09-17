@@ -67,6 +67,7 @@ class mkrefsclass(astrotableclass):
 
         mkref = mkrefclass()
         parser = mkref.refoptions4mkrefs(parser=parser)
+
         return(parser)
 
     def loadcfgfiles(self, maincfgfile, extracfgfiles=None, params=None, params4all=None,
@@ -124,7 +125,6 @@ class mkrefsclass(astrotableclass):
                 imagelist.append(os.path.abspath(s))
 
         imagelist = self.trim_imagelist(imagelist, basenamepattern)
-
         return(reftypelist, imagelist)
 
     def getimtypes(self):
@@ -145,11 +145,15 @@ class mkrefsclass(astrotableclass):
 
     def getimageinfo(self, imagelist, dateobsfitskey=None, timeobsfitskey=None, mjdobsfitskey=None):
 
+        print("Getting image info")
+
         # self.imtable['fitsfile'].format('%s')
         self.imtable.t['fitsfile'] = imagelist
         self.imtable.t['imID'] = list(range(len(imagelist)))
         self.imtable.t['imtype'] = None
         self.imtable.t['skip'] = False
+
+        print("Table created")
 
         requiredfitskeys = self.cfg.params['inputfiles']['requiredfitskeys']
         if requiredfitskeys is None:
@@ -169,7 +173,7 @@ class mkrefsclass(astrotableclass):
         self.imtable.fitsheader2table('fitsfile',
                                       requiredfitskeys=requiredfitskeys,
                                       optionalfitskey=self.cfg.params['inputfiles']['optionalfitskeys'],
-                                      raiseError=False, skipcolname='skip')
+                                      raiseError=True, skipcolname='skip')
         self.imtable.dateobs2mjd(dateobsfitskey, mjdcol, mjdobscol=mjdobsfitskey, timeobscol=timeobsfitskey)
 
         self.getimtypes()
@@ -178,7 +182,6 @@ class mkrefsclass(astrotableclass):
 
         #self.darks = self.imtable.t[np.where(self.imtable.t['imtype']=='dark')]
         #self.flats = self.imtable.t[np.where(self.imtable.t['imtype']=='flat')]
-
         return(0)
 
     def organize_inputfiles(self, reftypes_and_imagelist):
@@ -230,6 +233,7 @@ class mkrefsclass(astrotableclass):
         # indices for detector and not skipped
         dindex4detector = dindex[np.where(np.logical_and(self.imtable.t['DETECTOR'][dindex] == detector,
                                                          np.logical_not(self.imtable.t['skip'][dindex])))]
+
         if self.verbose > 2:
             print('Possible %d Darks for detector %s' % (len(dindex4detector), detector))
             print(self.imtable.t[dindex4detector])
@@ -400,6 +404,7 @@ class mkrefsclass(astrotableclass):
     def get_inputimage_sets(self, reftype, detector, DD_max_Delta_MJD=None, FF_max_Delta_MJD=None,
                             DDFF_max_Delta_MJD=None):
         imtypes = self.cfg.params[reftype]['imtypes']
+        print("imtypes is {}".format(imtypes))
         imagesets = []
         if imtypes == 'D':
             imagesets, imagelabels = self.getDlist(detector)
@@ -493,10 +498,30 @@ class mkrefsclass(astrotableclass):
         print(self.cmdtable.t)
         print('\n### INPUT FILES:')
         print(self.inputimagestable.t)
+        print(self.inputimagestable.t.colnames)
+        print(self.inputimagestable.t['ssbsteps'])
 
         mmm = CalibPrep()
         mmm.inputs = self.inputimagestable.t
+        print("Need a better way to define the directories to search for existing")
+        print("pipeline-run files. What if darks and flats are in totally seaparate")
+        print("areas? Would be inefficient to back way out and search all subdirs.")
+        print("Maybe search_dir can be a list of directories??")
+        mmm.search_dir = "/ifs/jwst/wit/nircam/isim_cv3_files_for_calibrations/darks/"
+        # Need to get these directories programmatically
+        mmm.output_dir = "/Users/hilbert/python_repos/test_jwst_reffiles/"
         mmm.prepare()
+
+
+        print('BACK IN MKREFS:')
+        print('proc_table:')
+        print(mmm.proc_table)
+        print('')
+        print(mmm.proc_table['real_input_file', 'output_name', 'steps_to_run'])
+
+        print('strun commands:')
+        print(mmm.strun)
+
 
 
         print('BRYAN: here we call your script to get the outoput filenames and the commands to run SSB!')
@@ -578,6 +603,13 @@ if __name__ == '__main__':
     parser = mkrefs.define_options()
     args = parser.parse_args()
 
+
+    print("Input files:")
+    print(args.reftypes_and_imagelist)
+    #sys.exit()
+
+
+
     # set verbose level
     mkrefs.verbose = args.verbose
     mkrefs.debug = args.debug
@@ -589,6 +621,7 @@ if __name__ == '__main__':
                         params4all=args.pall,
                         params4sections=args.pp)
 
+    print("Params:")
     print(mkrefs.cfg.params)
     mkrefs.organize_inputfiles(args.reftypes_and_imagelist)
 

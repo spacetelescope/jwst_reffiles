@@ -13,10 +13,16 @@ inputs -
 
 input table example:
 
-index    file_type    filename              req_steps
+index    reftype     fitsfile             ssbsteps
 1         gain      something_uncal.fits     bpm,sat
 2         gain      another_uncal.fits       bpm,sat
 3        readnoise  something_uncal.fits     bpm,sat,superbias
+
+
+colnames for input table, as defined in mkrefs.py
+['cmdID', 'reftype', 'imlabel', 'imtype', 'detector', 'ssbsteps', 'imindex', 'imID', 'MJD', 'fitsfile']
+
+
 
 search_dir -
              Directory to search for science files (from the 'filenames'
@@ -75,15 +81,21 @@ HISTORY:
 
 Version 0.1 - Created by Hilbert, 11 Dec 2017.
 '''
-import os
-import sys
+
 import copy
 from collections import OrderedDict
 from glob import glob
-import numpy as np
+import os
+import re
+import sys
+import time
+
 from astropy.io import ascii
 from astropy.table import Column, Table
+import numpy as np
+
 from jwst import datamodels
+
 
 class CalibPrep:
     def __init__(self):
@@ -95,14 +107,13 @@ class CalibPrep:
         self.overwrite_existing_files = True
         self.output_dir = ''
 
-        pipe_steps = [('dq','dq_init'),('sat','saturation'),('super','superbias'),
-                      ('ref','refpix'),('ipc','ipc'),('lin','linearity'),
-                      ('persistence','persistence'),('dark','dark_current'),
-                      ('jump','jump'),('rampfit','rate')]
+        pipe_steps = [('dq', 'dq_init'), ('sat', 'saturation'), ('super', 'superbias'),
+                      ('ref', 'refpix'), ('ipc', 'ipc'), ('lin', 'linearity'),
+                      ('persistence', 'persistence'), ('dark', 'dark_current'),
+                      ('jump', 'jump'), ('rampfit', 'rate')]
         self.pipe_step_dict = OrderedDict(pipe_steps)
 
-
-    def choose_file(self,filelist,req,current):
+    def choose_file(self, filelist, req, current):
         '''Given a list of files, their calibration state
         and the required calibration state, choose the best
         file to start with'''
@@ -113,7 +124,7 @@ class CalibPrep:
             for key in req:
                 comp.append(req[key] == current[file][key])
             comp = np.array(comp)
-            f = np.where(np.array(comp) == False)[0]
+            f = np.where(np.array(comp) is False)[0]
             if ((len(f) > 0) and (f[0] > first_false)):
                 first_false = f[0]
                 usefile = file
@@ -121,23 +132,39 @@ class CalibPrep:
                 return file
         return usefile
 
-
-    def completed_steps(self,file,checkheader=True):
+    def completed_steps(self, file, checkheader=True):
         '''identify and return the pipeline steps completed
         for the input file'''
         done = copy.deepcopy(self.pipe_step_dict)
-        data = datamodels.open(file)
-        status = data.meta.cal_step._instance #returns dict of completed steps
-        finsteps = list(status.keys())
-        for key in self.pipe_step_dict:
-            if self.pipe_step_dict[key] in finsteps:
-                done[key] = True
-            else:
-                done[key] = False
+        for key in done:
+            done[key] = False
+
+        #starttime = time.time()
+        #data = datamodels.open(file)
+        #datamodels_time = time.time() - starttime
+        #print("datamodels_time: {}".format(datamodels_time))
+        #status = data.meta.cal_step._instance  # returns dict of completed steps
+        #finsteps = list(status.keys())
+        #for key in self.pipe_step_dict:
+        #    if self.pipe_step_dict[key] in finsteps:
+        #        done[key] = True
+        #    else:
+        #        done[key] = False
+
+        # This needs to be generalized for other instruments!!!
+        from astropy.io import fits
+        kw_dict = {'S_DQINIT': 'dq', 'S_JUMP': 'jump', 'S_LINEAR': 'lin', 'S_RAMP': 'rampfit',
+                   'S_REFPIX': 'ref', 'S_SATURA': 'sat', 'S_SUPERB': 'super', 'S_WCS': 'dq',
+                   'S_IPC': 'ipc', 'S_PERSIS': 'persistence', 'S_DARK': 'dark'}
+        header = fits.getheader(file)
+        for key in header.keys():
+            if key in kw_dict.keys():
+                value = header.get(key)
+                if value == 'COMPLETE':
+                    done[kw_dict[key]] = True
         return done
 
-
-    def create_output(self,base,req):
+    def create_output(self, base, req):
         '''Create the output name of the pipeline-processed
         input file given the list of required steps'''
         # base (e.g.) something_dq_init
@@ -157,6 +184,8 @@ class CalibPrep:
                 suffix = self.pipe_step_dict[key]
                 skip.remove(self.pipe_step_dict[key])
 
+                # In the case where the filenamne has multiple pipeline step names attached,
+                # walk back until we find the actual basename of the file
                 if self.pipe_step_dict[key] in base:
                     idx = base.index(self.pipe_step_dict[key])
                     if ((idx < baseend) and (idx != -1)):
@@ -165,43 +194,49 @@ class CalibPrep:
         # Remove the entries in skip that are after the last
         # required pipeline step
         stepvals = np.array(list(self.pipe_step_dict.values()))
-        lastmatch = np.where(stepvals == suffix)[0][0]
+        if suffix in self.pipe_step_dict.keys():
+            lastmatch = np.where(stepvals == suffix)[0][0]
+        elif suffix == 'uncal':
+            lastmatch = -1
+        else:
+            raise IndexError("No entry {} in pipeline step dictionary.".format(suffix))
         for sval in stepvals[lastmatch+1:]:
             skip.remove(sval)
 
+        # Find the true basename of the file
         true_base = base[0:baseend]
-        true_base = true_base.replace('_uncal','')
+        true_base = true_base.replace('_uncal', '')
         if self.verbose:
             print("True base name is {}".format(true_base))
             print("Suffix is {}".format(suffix))
             print("Skip vals are {}".format(skip))
+        true_base = os.path.split(true_base)[1]
+
+        # Create the output filename by adding the name of the latest
+        # pipeline step to be run
         ofile = true_base + '_' + suffix
-        if len(skip) > 0:
-            for val in skip:
-                ofile = ofile + '_' + val
+        # if len(skip) > 0:
+        #    for val in skip:
+        #        ofile = ofile + '_' + val
         ofile = ofile + '.fits'
-        return os.path.join(self.output_dir,ofile), true_base
+        return os.path.join(self.output_dir, ofile), true_base
 
-
-    def file_search(self,base,dir):
+    def file_search(self, base, dir):
         '''Search for all versions of a particular
         file in the given directory'''
-        #files = glob(os.path.join(dir,base+'*fits'))
+        # files = glob(os.path.join(dir,base+'*fits'))
 
         # This version searches all subdirectories also...
         files = []
-        for dirpath,dirnames,fnames in os.walk(dir,topdown=True):
-            print(base)
-            print(fnames)
-            mch = [f for f in fnames if base in f]
+        for dirpath, dirnames, fnames in os.walk(dir, topdown=True):
+            mch = [f for f in fnames if base in os.path.join(dirpath, f)]
             # or could try:
             # fnmatch.filter(fnames,base)
             for m in mch:
-                files.append(os.path.join(dirpath,m))
+                files.append(os.path.join(dirpath, m))
         return files
 
-
-    def find_repeats(self,tab):
+    def find_repeats(self, tab):
         '''find repeated filenames in the input
         table
         CURRENTLY UNUSED'''
@@ -213,12 +248,11 @@ class CalibPrep:
             names.append(name)
             indices.append(index)
         # Remove repeated entries
-        final_names,findex = np.unique(names,return_index=True)
+        final_names, findex = np.unique(names, return_index=True)
         final_indices = indices[findex]
-        return final_names,final_indices
+        return final_names, final_indices
 
-
-    def get_file_basename(self,file):
+    def get_file_basename(self, file):
         '''Determine a given file's basename.
         Currently this is the full name minus
         the .fits at the end'''
@@ -226,35 +260,24 @@ class CalibPrep:
         if df != -1:
             base = file[0:df]
         else:
-            print(("WARNING: {} is not a valid fits file name."
-                   .format(file)))
-            sys.exit()
+            raise ValueError(("WARNING: {} is not a valid fits file name."
+                              .format(file)))
         return base
 
-
-    def output_exist_check(self,filename):
+    def output_exist_check(self, filename):
         '''Check to see if the given file already
         exists. Remove if the user allows it.'''
         if os.path.isfile(filename):
             if self.overwrite_existing_files:
                 try:
                     os.remove(filename)
-                except:
-                    print(("WARNING: unable to remove existing "
-                           "filename {}".format(filename)))
-                    sys.exit()
-                if os.path.isfile(filename):
-                    print(("WARNING: Removal of existing file "
-                           "{} failed. Check permissions."
-                           .format(filename)))
-                    sys.exit()
-            elif ((self.overwrite_existing_files == False) and
+                except (FileNotFoundError, PermissionError) as error:
+                    print(error)
+            elif ((self.overwrite_existing_files is False) and
                   (self.output_dir == os.path.dirname(filename))):
-                print(("WARNING: Output file {} already exists, "
-                       "and overwrite_existing_files set to False."
-                       .format(filename)))
-                sys.exit()
-
+                raise ValueError(("WARNING: Output file {} already exists, "
+                                  "and overwrite_existing_files set to False."
+                                  .format(filename)))
 
     def prepare(self):
         '''Main function'''
@@ -268,27 +291,41 @@ class CalibPrep:
         self.strun = []
         realinput = []
         all_to_run = []
+
+        print(self.inputs.colnames)
+        print(self.inputs)
+
         for line in self.inputs:
-            file = line['filename']
-            req_steps = self.step_dict(line['req_steps'])
+            file = line['fitsfile']
+
+            starttime = time.time()
+            req_steps = self.step_dict(line['ssbsteps'])
+            req_steps_time = time.time() - starttime
+            print("req_steps_time: {}".format(req_steps_time))
 
             if self.verbose:
                 print("")
                 print("File: {}".format(file))
-                print("Input required steps: {}".format(line['req_steps']))
+                print("Input required steps: {}".format(line['ssbsteps']))
                 print("Required steps: {}".format(req_steps))
 
             # In order to search for other
             # versions of the file we need
             # to know the basename
+            starttime = time.time()
             basename = self.get_file_basename(file)
+            basename_time = time.time() - starttime
+            print("basename_time: {}".format(basename_time))
 
             if self.verbose:
                 print("Basename: {}".format(basename))
 
             # Create the output filename based on
             # the required pipeline steps
-            outname, true_base = self.create_output(basename,req_steps)
+            starttime = time.time()
+            outname, true_base = self.create_output(basename, req_steps)
+            outname_time = time.time() - starttime
+            print("outname_time: {}".format(outname_time))
             outfiles.append(outname)
 
             if self.verbose:
@@ -300,32 +337,53 @@ class CalibPrep:
             # has not allowed the removal of files, throw an error.
             # Similarly, if permissions prevent you from successfully
             # removing the file, throw an error
-            self.output_exist_check(os.path.join(self.output_dir,outname))
+            starttime = time.time()
+            self.output_exist_check(os.path.join(self.output_dir, outname))
+            check_exist_time = time.time() - starttime
+            print("check_exist_time: {}".format(check_exist_time))
 
             # Search
             if not self.use_only_given:
-                files = self.file_search(true_base,self.search_dir)
+                starttime = time.time()
+                print("true_base:", true_base)
+                print("search_dir", self.search_dir)
+                files = self.file_search(true_base, self.search_dir)
+                file_search_time = time.time() - starttime
+                print("file_search_time: {}".format(file_search_time))
             else:
-                files = [os.path.join(self.search_dir,file)]
+                files = [os.path.join(self.search_dir, file)]
+
+            if len(files) == 0:
+                print("No matching files found in {} for {}".format(self.search_dir, true_base))
+                print("Falling back to the input file: {}".format(file))
+                files = [file]
 
             if self.verbose:
                 print("Found files: {}".format(files))
 
             # Determine the completed calibration steps
             # for each file
+            print("Files to check for completed steps: {}".format(files))
+
             current_state = {}
+            starttime = time.time()
             for f in files:
                 state = self.completed_steps(f)
                 current_state[f] = state
 
                 if self.verbose:
-                    print("    file {}, current state: {}".format(f,current_state[f]))
+                    print("    file {}, current state: {}".format(f, current_state[f]))
+            comp_steps_time = time.time() - starttime
+            print("comp_steps_time: {}".format(comp_steps_time))
 
             # Select the file to use
             if self.use_only_given:
                 input_file = file
             else:
-                input_file = self.choose_file(files,req_steps,current_state)
+                starttime = time.time()
+                input_file = self.choose_file(files, req_steps, current_state)
+                choosefile_time = time.time() - starttime
+                print("choosefile_time: {}".format(choosefile_time))
 
             realinput.append(input_file)
             if self.verbose:
@@ -333,10 +391,16 @@ class CalibPrep:
 
             # Create list of pipeline steps that must be
             # run on the file
-            to_run = self.steps_to_run(input_file,req_steps,
+            starttime = time.time()
+            print("current_State: {}".format(current_state))
+            print("input_file: {}".format(input_file))
+            to_run = self.steps_to_run(input_file, req_steps,
                                        current_state[input_file])
+            stepstorun_time = time.time() - starttime
+            print("stepstorun_time: {}".format(stepstorun_time))
 
             # Add column to input table
+            starttime = time.time()
             tr = [key for key in to_run if to_run[key]]
             trstr = ''
             for s in tr:
@@ -346,6 +410,8 @@ class CalibPrep:
             else:
                 trstr = 'None'
             all_to_run.append(trstr)
+            addcol_time = time.time() - starttime
+            print("addcol_time: {}".format(addcol_time))
 
             if self.verbose:
                 print("Steps that need to be run: {}".format(to_run))
@@ -360,11 +426,11 @@ class CalibPrep:
             #    print("{}".format(command))
 
         # Add the output filename column to the input table
-        realcol = Column(data=realinput,name='real_input_file')
+        realcol = Column(data=realinput, name='real_input_file')
         self.inputs.add_column(realcol)
-        outcol = Column(data=outfiles,name='output_name')
+        outcol = Column(data=outfiles, name='output_name')
         self.inputs.add_column(outcol)
-        toruncol = Column(all_to_run,name='steps_to_run')
+        toruncol = Column(all_to_run, name='steps_to_run')
         self.inputs.add_column(toruncol)
 
         self.proc_table = copy.deepcopy(self.inputs)
@@ -372,48 +438,56 @@ class CalibPrep:
         if self.verbose:
             print("Input table updated.")
             print(self.proc_table)
-            ascii.write(self.proc_table,'test_out.txt',overwrite=True)
+            ascii.write(self.proc_table, 'test_out.txt', overwrite=True)
 
         # Turn the table into a series of strun commands
-        self.strun = self.strun_command(realcol,toruncol,outcol)#,reffiles=??)
+        starttime = time.time()
+        self.strun = self.strun_command(realcol, toruncol, outcol)  # ,reffiles=??)
+        make_command_time = time.time() - starttime
+        print("make_command_time: {}".format(make_command_time))
 
         if self.verbose:
             print(self.strun)
 
-        c = Column(self.strun,name='strun_command')
+        c = Column(self.strun, name='strun_command')
         c_tab = Table()
-        c_tab.add_column(self.inputs['index'])
+        c_tab.add_column(self.inputs['cmdID'])
         c_tab.add_column(c)
 
         if self.verbose:
-            ascii.write(c_tab,'test_strun_commands.txt',overwrite=True)
+            ascii.write(c_tab, 'test_strun_commands.txt', overwrite=True)
 
         # Done
         # calling function can now use self.proc_table and
         # self.strun to access results
 
-
-    def step_dict(self,stepstr):
+    def step_dict(self, stepstr):
         '''Translate the input list of required pipeline steps
         into a dictionary with boolean entries'''
+        # Make a copy of pipeline step dictionary and
+        # intialize all steps to False
         req = copy.deepcopy(self.pipe_step_dict)
         for key in req:
             req[key] = False
+        if stepstr is None:
+            return req
+
+        # Strip all whitespace from the list of steps
+        # and split into a list
+        pattern = re.compile(r'\s+')
+        stepstr = re.sub(pattern, '', stepstr)
         stepslist = stepstr.split(',')
         for ele in stepslist:
             if ele not in list(req.keys()):
-                print(("WARNING: unrecognized pipeline step: {}"
-                       .format(ele)))
-                sys.exit()
+                raise ValueError(("WARNING: unrecognized pipeline step: {}"
+                                  .format(ele)))
             try:
                 req[ele] = True
             except KeyError as error:
                 print(error)
-                sys.exit()
         return req
 
-
-    def steps_to_run(self,infile,req,current):
+    def steps_to_run(self, infile, req, current):
         '''Return a list of the pipeline steps that need
         to be run to bring the input file up to the state
         described by req. Return a dictionary of boolean
@@ -422,16 +496,15 @@ class CalibPrep:
         for key in req:
             if req[key] == current[key]:
                 torun[key] = False
-            elif ((req[key] == True) & (current[key] == False)):
+            elif ((req[key] is True) & (current[key] is False)):
                 torun[key] = True
-            elif ((req[key] == False) & (current[key] == True)):
+            elif ((req[key] is False) & (current[key] is True)):
                 print(("WARNING: Input file {} has had {} step run, "
                        "but the requirements say that it should not "
-                       "be. Need a new input file.".format(infile,key)))
+                       "be. Need a new input file.".format(infile, key)))
         return torun
 
-
-    def strun_command(self,input,steps_to_run,outfile,overrides=[]):
+    def strun_command(self, input, steps_to_run, outfile, overrides=[]):
         '''Create the necessary strun command to run the
         appropriate pipeline steps'''
 
@@ -443,10 +516,10 @@ class CalibPrep:
         cmds = []
 
         # Determine appropriate reference file overrides
-        #something
+        # something
 
         initial = 'strun calwebb_detector1.cfg '
-        for infile, steps, outfile in zip(input,steps_to_run,outfile):
+        for infile, steps, outfile in zip(input, steps_to_run, outfile):
             with_file = initial + infile
 
             if steps == 'None':
@@ -466,10 +539,9 @@ class CalibPrep:
                 finstep = steps.split(',')[-1]
                 final_step = step_names[finstep]
                 out_text += (' --steps.{}.output_file={}'
-                             .format(final_step,outfile))
+                             .format(final_step, outfile))
 
                 # Put the whole command together
-                cmd = with_file + skip_text + out_text #+override_text
+                cmd = with_file + skip_text + out_text  # +override_text
             cmds.append(cmd)
         return cmds
-
