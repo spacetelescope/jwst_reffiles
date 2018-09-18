@@ -507,9 +507,14 @@ class mkrefsclass(astrotableclass):
         print("pipeline-run files. What if darks and flats are in totally seaparate")
         print("areas? Would be inefficient to back way out and search all subdirs.")
         print("Maybe search_dir can be a list of directories??")
-        mmm.search_dir = "/ifs/jwst/wit/nircam/isim_cv3_files_for_calibrations/darks/"
-        # Need to get these directories programmatically
-        mmm.output_dir = "/Users/hilbert/python_repos/test_jwst_reffiles/"
+        # mmm.search_dir = "/ifs/jwst/wit/nircam/isim_cv3_files_for_calibrations/darks/"
+        mmm.search_dir = self.cfg.params["pipeline_prod_search_dir"]
+
+        if self.cfg.params['output']['outsubdir'] is not None:
+            mmm.output_dir = os.path.join(self.cfg.params['output']['outrootdir'],
+                                          self.cfg.params['output']['outsubdir'])
+        else:
+            mmm.output_dir = self.cfg.params['output']['outrootdir']
         mmm.prepare()
 
 
