@@ -13,7 +13,7 @@ PIPE_STEPS = [('dq', 'dq_init'), ('sat', 'saturation'), ('super', 'superbias'),
 
 # Define header keyword that accompanies each step
 # This needs to be made more instrument-agnostic. The list is going to
-# vary depending on the instrument.
+# vary depending on instrument.
 PIPE_KEYWORDS = {'S_DQINIT': 'dq', 'S_SATURA': 'sat', 'S_REFPIX': 'ref', 'S_SUPERB': 'super',
                  'S_IPC': 'ipc', 'S_PERSIS': 'persistence', 'S_DARK': 'dark', 'S_LINEAR': 'lin',
                  'S_JUMP': 'jump',  'S_RAMP': 'rampfit'}
