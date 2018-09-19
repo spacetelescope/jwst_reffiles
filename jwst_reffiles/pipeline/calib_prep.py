@@ -168,8 +168,8 @@ class CalibPrep:
             comp = []
             for key in req:
                 comp.append(req[key] == current[file][key])
-            comp = np.array(comp)
-            f = np.where(np.array(comp) is False)[0]
+            comp = np.array(comp).astype('int')
+            f = np.where(comp == 0)[0]
             if ((len(f) > 0) and (f[0] > first_false)):
                 first_false = f[0]
                 usefile = file
@@ -506,10 +506,10 @@ class CalibPrep:
             # Determine the completed calibration steps
             # for each file
             # print("Files to check for completed steps: {}".format(files))
-
             current_state = {}
             #starttime = time.time()
             for f in files:
+                print('file to go into completed_steps is {}'.format(f))
                 state = self.completed_steps(f)
                 current_state[f] = state
 

@@ -11,6 +11,7 @@ import sys
 import types
 
 import astropy.io.fits as fits
+from astropy.io import ascii
 import astropy
 import numpy as np
 import scipy
@@ -500,6 +501,8 @@ class mkrefsclass(astrotableclass):
         print(self.inputimagestable.t)
         print(self.inputimagestable.t.colnames)
         print(self.inputimagestable.t['ssbsteps'])
+
+        ascii.write(self.inputimagestable.t, 'test_calib_input_table.txt')
 
         mmm = CalibPrep()
         mmm.inputs = self.inputimagestable.t
