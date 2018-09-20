@@ -1,5 +1,7 @@
 # JWST_Reffiles
 
+[![Build Status](https://travis-ci.org/spacetelescope/jwst_reffiles.svg?branch=master)](https://travis-ci.org/spacetelescope/jwst_reffiles)
+
 This repository contains code that can be used to generate JWST reference files
 used in the data calibration pipeline. The output reference files are in CRDS format
 and should be immediately useable in the pipeline.
