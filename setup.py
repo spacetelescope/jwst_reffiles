@@ -96,7 +96,7 @@ setup(
         'astropy>=1.2',
         'numpy>=1.9',
         'matplotlib>=1.4.3',
-        'asdf>=2.1.0',
+        'asdf>=2.0.3',
         'scipy>=0.17',
         'gwcs>=0.9'
     ],
