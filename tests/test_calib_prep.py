@@ -67,7 +67,7 @@ def choose_file_test(cp_object):
 def completed_steps_test(cp_object):
     """Test that header keywords describing the calibration state are
     correctly translated into a boolean dictionary"""
-    filename = os.path.join(os.path.abspath(__file__), 'test_data', 'file_for_completed_steps_test.fits')
+    filename = os.path.join(os.path.split(os.path.abspath(__file__))[0], 'test_data', 'file_for_completed_steps_test.fits')
     print("FILENAME IS: {}".format(filename))
     #filename = os.path.join(os.getcwd(), 'test_data', 'file_for_completed_steps_test.fits')
     truth = create_step_dictionary('dq, sat, super, ref, lin')
