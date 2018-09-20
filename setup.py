@@ -96,9 +96,9 @@ setup(
         'astropy>=1.2',
         'numpy>=1.9',
         'matplotlib>=1.4.3',
-        'asdf>=1.2.0',
+        'asdf>=2.1.0',
         'scipy>=0.17',
-        'gwcs>=0.9'
+        'gwcs>=0.10'
     ],
     include_package_data=True,
     cmdclass={
