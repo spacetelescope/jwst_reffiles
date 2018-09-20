@@ -73,7 +73,6 @@ class mkrefsclass(astrotableclass):
     def loadcfgfiles(self, maincfgfile, extracfgfiles=None, params=None, params4all=None,
                      params4sections=None, requireParamExists=True):
         if self.cfg is None:
-
             self.cfg = yamlcfgclass()
         if self.cfg.loadcfgfiles(maincfgfile, extracfgfiles=extracfgfiles,
                                  params=params, params4all=params4all, params4sections=params4sections,
@@ -509,7 +508,9 @@ class mkrefsclass(astrotableclass):
         print("Maybe search_dir can be a list of directories??")
         # mmm.search_dir = "/ifs/jwst/wit/nircam/isim_cv3_files_for_calibrations/darks/"
         mmm.search_dir = self.cfg.params["pipeline_prod_search_dir"]
-
+        print(mmm.search_dir)
+        print(self.cfg.params['output']['outrootdir'])
+        sys.exit(0)
         if self.cfg.params['output']['outsubdir'] is not None:
             mmm.output_dir = os.path.join(self.cfg.params['output']['outrootdir'],
                                           self.cfg.params['output']['outsubdir'])
@@ -586,6 +587,7 @@ class mkrefsclass(astrotableclass):
 
     def submitbatch(self):
         print("### submitbatch: NOT YET IMPLEMENTED!!!")
+        sys.exit(0)
 
     def mkrefloop(self):
         for i in range(len(self.cmdtable.t)):
@@ -597,23 +599,23 @@ class mkrefsclass(astrotableclass):
 
     def combinerefs(self):
         print("### combinerefs: NOT YET IMPLEMENTED!!!")
+        sys.exit(0)
 
     def overview(self):
         print("### overview: NOT YET IMPLEMENTED!!!")
+        sys.exit(0)
 
 
 if __name__ == '__main__':
+
 
     mkrefs = mkrefsclass()
     parser = mkrefs.define_options()
     args = parser.parse_args()
 
-
     print("Input files:")
     print(args.reftypes_and_imagelist)
     #sys.exit()
-
-
 
     # set verbose level
     mkrefs.verbose = args.verbose
@@ -626,8 +628,8 @@ if __name__ == '__main__':
                         params4all=args.pall,
                         params4sections=args.pp)
 
-    print("Params:")
-    print(mkrefs.cfg.params)
+    #print("Params:")
+    #print(mkrefs.cfg.params)
     mkrefs.organize_inputfiles(args.reftypes_and_imagelist)
 
     optionalargs = mkrefs.get_optional_arguments(args, sys.argv)
