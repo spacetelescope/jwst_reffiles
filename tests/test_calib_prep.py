@@ -30,11 +30,6 @@ def choose_file_test(cp_object):
     """
     files = ['file1.fits', 'file2.fits', 'file3.fits', 'file4.fits', 'file5.fits']
 
-    # Create a basic copy of the pipeline step dictionary
-    #all_false = copy.deepcopy(OrderedDict(PIPE_STEPS))
-    #for key in all_false:
-    #    all_false[key] = False
-
     # Create a step dictionary for each input file that lists its
     # current calibration state
     file1_state = create_step_dictionary('dq, sat')
@@ -67,7 +62,8 @@ def choose_file_test(cp_object):
 def completed_steps_test(cp_object):
     """Test that header keywords describing the calibration state are
     correctly translated into a boolean dictionary"""
-    filename = os.path.join(os.getcwd(), 'test_data', 'file_for_completed_steps_test.fits')
+    filename = os.path.join(os.path.split(os.path.abspath(__file__))[0], 'test_data',
+                            'file_for_completed_steps_test.fits')
     truth = create_step_dictionary('dq, sat, super, ref, lin')
     test_case = cp_object.completed_steps(filename)
     assert truth == test_case

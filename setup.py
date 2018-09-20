@@ -58,20 +58,6 @@ class PyTest(TestCommand):
         sys.exit(errno)
 
 
-# make sure jwst is available
-try:
-    import jwst
-except ImportError:
-    try:
-        subprocess.check_call(['git', 'clone',
-                               'https://github.com/spacetelescope/jwst.git'])
-        sys.path.insert(1, 'jwst')
-        # import jwst
-    except subprocess.CalledProcessError as e:
-        print(e)
-        exit(1)
-
-
 setup(
     name='jwst_reffiles',
     version='0.0.0',
@@ -96,8 +82,9 @@ setup(
         'astropy>=1.2',
         'numpy>=1.9',
         'matplotlib>=1.4.3',
-        'asdf>=1.2.0',
+        'asdf>=2.0.3',
         'scipy>=0.17',
+        'gwcs>=0.9'
     ],
     include_package_data=True,
     cmdclass={
