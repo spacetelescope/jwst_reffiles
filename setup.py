@@ -98,6 +98,7 @@ setup(
         'matplotlib>=1.4.3',
         'asdf>=1.2.0',
         'scipy>=0.17',
+        'gwcs>=0.9'
     ],
     include_package_data=True,
     cmdclass={
