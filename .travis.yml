@@ -23,8 +23,8 @@ addons:
 env:
     global:
         - MAIN_CMD='python setup.py'
-        - CONDA_CHANNELS='http://ssb.stsci.edu/astroconda'
-        - CONDA_DEPENDENCIES='pytest=3.6 sphinx'
+        - CONDA_CHANNELS='http://ssb.stsci.edu/astroconda-dev'
+        - CONDA_DEPENDENCIES='pytest=3.6 sphinx jwst'
         - PIP_DEPENDENCIES=''
         - PYTHON_VERSION=3.6
         - NUMPY_VERSION=stable

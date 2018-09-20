@@ -59,17 +59,17 @@ class PyTest(TestCommand):
 
 
 # make sure jwst is available
-try:
-    import jwst
-except ImportError:
-    try:
-        subprocess.check_call(['git', 'clone',
-                               'https://github.com/spacetelescope/jwst.git'])
-        sys.path.insert(1, 'jwst')
-        # import jwst
-    except subprocess.CalledProcessError as e:
-        print(e)
-        exit(1)
+# try:
+#    import jwst
+# except ImportError:
+#    try:
+#        subprocess.check_call(['git', 'clone',
+#                               'https://github.com/spacetelescope/jwst.git'])
+#        sys.path.insert(1, 'jwst')
+#        # import jwst
+#    except subprocess.CalledProcessError as e:
+#        print(e)
+#        exit(1)
 
 
 setup(
