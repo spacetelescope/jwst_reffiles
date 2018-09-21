@@ -508,9 +508,7 @@ class mkrefsclass(astrotableclass):
         print("Maybe search_dir can be a list of directories??")
         # mmm.search_dir = "/ifs/jwst/wit/nircam/isim_cv3_files_for_calibrations/darks/"
         mmm.search_dir = self.cfg.params["pipeline_prod_search_dir"]
-        print(mmm.search_dir)
-        print(self.cfg.params['output']['outrootdir'])
-        sys.exit(0)
+
         if self.cfg.params['output']['outsubdir'] is not None:
             mmm.output_dir = os.path.join(self.cfg.params['output']['outrootdir'],
                                           self.cfg.params['output']['outsubdir'])
