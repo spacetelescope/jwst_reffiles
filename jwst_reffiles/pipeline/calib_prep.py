@@ -87,7 +87,7 @@ from collections import OrderedDict
 from glob import glob
 import itertools
 import os
-# import re
+import re
 import sys
 import time
 
@@ -177,6 +177,67 @@ class CalibPrep:
                 return file
         return usefile
 
+    def combine_repeats(self):
+        '''Search for repeated entries in the table input to calib_prep, and remove them.
+        In this case, a repeated entry means that the filename is the same, and that the
+        ssbsteps are the same OR one set are contained exactly within another (with no
+        extra intervening steps). In this case, a single call to strun can be used to
+        create the requested data for both cases. The only thing that needs to be done is
+        to provide an intermediate output name to capture both versions of the calibrated
+        file.'''
+
+        # Create two columns to add to the table. One indicates whether an entry
+        # is a duplicate of another row of the table. The other indicates if the command
+        # in one row is contained within the command of another row. Both columns list the
+        # index number of the row that it is a duplicate of or contained within.
+        repeat_column = Column(data=np.repeat(-1, len(self.inputs['real_input_file'])),
+                               name='repeat_of_index_number')
+        self.inputs.add_column(repeat_column)
+
+        within_column = Column(data=np.repeat(-1, len(self.inputs['real_input_file'])),
+                               name='index_contained_within')
+        self.inputs.add_column(within_column)
+
+        for row in self.inputs:
+            repeated_filename = self.inputs['real_input_file'] == row['real_input_file']
+
+            # Don't count the row itself when looking for matches
+            current_row = row['index']
+            repeated_filename[current_row] = False
+
+            # If the same starting file is present in more than one row:
+            if np.sum(repeated_filename.astype('int')) > 0:
+                matching_rows = self.inputs[repeated_filename]
+
+                # Strip all whitespace from the list of ssb steps. Use this as
+                # a comparison to see if there are repeats among those with matching
+                # filenames.
+                row_ssb = re.sub(r'\s+', '', row['steps_to_run'])
+                outname = row['output_name']
+                reference_index = row['index']
+                for matching_row in matching_rows:
+                    ssbsteps = re.sub(r'\s+', '', matching_row['steps_to_run'])
+                    if ssbsteps in row_ssb:
+                        # If the list of ssb steps is contained within the list of
+                        # steps from the comparison file, then this entry is duplicate.
+                        # Save the output name from this row if it is different from the
+                        # comparison row.
+                        row_index = matching_row['index']
+                        additional_output = matching_row['output_name']
+                        if ((additional_output == outname) & (matching_row['repeat_of_index_number'] == -1) & (current_row < row_index)):
+                            # Same output filename means the two rows are exact copies
+                            self.inputs[row_index]['repeat_of_index_number'] = reference_index
+                        elif ((additional_output != outname) & (matching_row['index_contained_within'] == -1)):
+                            # Different output names means that to combine these rows we need
+                            # to have two outputs. Identify which ssb step the intermediate
+                            # output is from, and add it to the strun command
+                            self.inputs[row_index]['index_contained_within'] = reference_index
+                            final_step = ssbsteps.split(',')[-1]
+                            additional_out_str = (" --steps.{}.output_name = {}"
+                                                  .format(self.pipe_step_dict[final_step], additional_output))
+                            new_command = row['strun_command'] + additional_out_str
+                            self.inputs[reference_index]['strun_command'] = new_command
+
     def completed_steps(self, input_file):
         '''Identify and return the pipeline steps completed
         for the input file
@@ -251,30 +312,33 @@ class CalibPrep:
         for key in self.pipe_step_dict:
             if req[key]:
                 step = key
-                suffix = self.pipe_step_dict[key]
+                suffix = "{}_{}".format(suffix, self.pipe_step_dict[key])
+                final_suffix_piece = self.pipe_step_dict[key]
                 skip.remove(self.pipe_step_dict[key])
 
                 # In the case where the filenamne has multiple pipeline step names attached,
                 # walk back until we find the actual basename of the file
-                if self.pipe_step_dict[key] in base:
-                    idx = base.index(self.pipe_step_dict[key])
-                    if ((idx < baseend) and (idx != -1)):
-                        baseend = copy.deepcopy(idx) - 1
+                #if self.pipe_step_dict[key] in base:
+                #    idx = base.index(self.pipe_step_dict[key])
+                #    if ((idx < baseend) and (idx != -1)):
+                #        baseend = copy.deepcopy(idx) - 1
 
         # Remove the entries in skip that are after the last
         # required pipeline step
         stepvals = np.array(list(self.pipe_step_dict.values()))
-        if suffix in self.pipe_step_dict.keys():
-            lastmatch = np.where(stepvals == suffix)[0][0]
+        if final_suffix_piece in stepvals:
+            lastmatch = np.where(stepvals == final_suffix_piece)[0][0]
         elif suffix == 'uncal':
             lastmatch = -1
         else:
-            raise IndexError("No entry {} in pipeline step dictionary.".format(suffix))
+            raise IndexError("No entry {} in pipeline step dictionary.".format(final_suffix_piece))
         for sval in stepvals[lastmatch+1:]:
             skip.remove(sval)
 
         # Find the true basename of the file
         true_base = base[0:baseend]
+
+        # Remove 'uncal' if it's in the file base
         true_base = true_base.replace('_uncal', '')
         if self.verbose:
             print("True base name is {}".format(true_base))
@@ -347,22 +411,6 @@ class CalibPrep:
             for m in mch:
                 files.append(os.path.join(dirpath, m))
         return files
-
-    def find_repeats(self, tab):
-        '''Find repeated filenames in the input
-        table
-        CURRENTLY UNUSED'''
-        names = []
-        indices = []
-        for line in tab:
-            name = line['filename']
-            index = tab['filename'].data == name
-            names.append(name)
-            indices.append(index)
-        # Remove repeated entries
-        final_names, findex = np.unique(names, return_index=True)
-        final_indices = indices[findex]
-        return final_names, final_indices
 
     def get_file_basename(self, input_file):
         '''Determine a given file's basename.
@@ -575,12 +623,10 @@ class CalibPrep:
         toruncol = Column(all_to_run, name='steps_to_run')
         self.inputs.add_column(toruncol)
 
-        self.proc_table = copy.deepcopy(self.inputs)
-
-        if self.verbose:
-            print("Input table updated.")
-            print(self.proc_table)
-            ascii.write(self.proc_table, 'test_out.txt', overwrite=True)
+        # Add an overall index column (to be used as a reference when flagging
+        # repeated rows)
+        indexcol = Column(data=np.arange(len(realinput)), name='index')
+        self.inputs.add_column(indexcol, index=0)
 
         # Turn the table into a series of strun commands
         #starttime = time.time()
@@ -588,13 +634,29 @@ class CalibPrep:
         #make_command_time = time.time() - starttime
         #print("make_command_time: {}".format(make_command_time))
 
-        if self.verbose:
-            print(self.strun)
+        # Add the list of strun commands to the input table
+        cmds = Column(data=self.strun, name='strun_command')
+        self.inputs.add_column(cmds)
 
-        c = Column(self.strun, name='strun_command')
+        # Find any groups of strun commands that can be combined
+        print("BEFORE REPEAT SEARCH:")
+        print(self.inputs['strun_command'])
+        self.combine_repeats()
+        print("AFTER REPEAT SEARCH:")
+        print(self.inputs['strun_command'])
+
+        self.proc_table = copy.deepcopy(self.inputs)
+
+        if self.verbose:
+            print("Input table updated.")
+            print(self.proc_table)
+            ascii.write(self.proc_table, 'test_out.txt', overwrite=True)
+            ascii.write(self.inputs['index',  'repeat_of_index_number', 'index_contained_within', 'steps_to_run', 'real_input_file', 'strun_command'], "test_repeats.txt", overwrite=True)
+
+        # Table containing only the command ID and the strun command
         c_tab = Table()
         c_tab.add_column(self.inputs['cmdID'])
-        c_tab.add_column(c)
+        c_tab.add_column(cmds)
 
         if self.verbose:
             ascii.write(c_tab, 'test_strun_commands.txt', overwrite=True)
