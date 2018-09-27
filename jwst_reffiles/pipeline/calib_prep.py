@@ -346,7 +346,6 @@ class CalibPrep:
         suffix = 'uncal'
         final_suffix_piece = 'uncal'
         skip = list(self.pipe_step_dict.values())
-        print("skip to start: {}".format(skip))
         baseend = len(base)
         for key in self.pipe_step_dict:
             if req[key]:
@@ -354,7 +353,6 @@ class CalibPrep:
                 suffix = "{}_{}".format(suffix, self.pipe_step_dict[key])
                 final_suffix_piece = self.pipe_step_dict[key]
                 skip.remove(self.pipe_step_dict[key])
-                print("Now skip is: {}".format(skip))
                 # In the case where the filenamne has multiple pipeline step names attached,
                 # walk back until we find the actual basename of the file
                 #if self.pipe_step_dict[key] in base:
@@ -368,7 +366,6 @@ class CalibPrep:
 
         # Suffix automatically added by the pipeline
         pipeline_suffix = 'ramp'
-        print(skip)
         if 'rate' not in skip:
             pipeline_suffix = 'rate'
 
