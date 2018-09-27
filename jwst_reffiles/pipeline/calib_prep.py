@@ -198,12 +198,23 @@ class CalibPrep:
                                name='index_contained_within')
         self.inputs.add_column(within_column)
 
+        # We also need to make a new column to hold the strun commands. After this step,
+        # command lengths can potentially become much longer than they are at the time of
+        # input, but the maximum string length for the input column has already been set.
+        # So we need to make a replacement column with the updated commands so that the new
+        # commands aren't truncated at the previous maximum string length
+        #new_commands = [''] * len(self.inputs['strun_command'])
+        new_commands = list(self.inputs['strun_command'].data)
+
         for row in self.inputs:
+
+            print("Working on row: {}".format(row['index']))
+
             repeated_filename = self.inputs['real_input_file'] == row['real_input_file']
 
             # Don't count the row itself when looking for matches
-            current_row = row['index']
-            repeated_filename[current_row] = False
+            current_row_index = row['index']
+            repeated_filename[current_row_index] = False
 
             # If the same starting file is present in more than one row:
             if np.sum(repeated_filename.astype('int')) > 0:
@@ -214,29 +225,55 @@ class CalibPrep:
                 # filenames.
                 row_ssb = re.sub(r'\s+', '', row['steps_to_run'])
                 outname = row['output_name']
-                reference_index = row['index']
                 for matching_row in matching_rows:
                     ssbsteps = re.sub(r'\s+', '', matching_row['steps_to_run'])
+                    row_index = matching_row['index']
                     if ssbsteps in row_ssb:
                         # If the list of ssb steps is contained within the list of
                         # steps from the comparison file, then this entry is duplicate.
                         # Save the output name from this row if it is different from the
                         # comparison row.
-                        row_index = matching_row['index']
                         additional_output = matching_row['output_name']
-                        if ((additional_output == outname) & (matching_row['repeat_of_index_number'] == -1) & (current_row < row_index)):
+                        if ((additional_output == outname) & (matching_row['repeat_of_index_number'] == -1) & (current_row_index < row_index)):
                             # Same output filename means the two rows are exact copies
-                            self.inputs[row_index]['repeat_of_index_number'] = reference_index
+                            self.inputs[row_index]['repeat_of_index_number'] = current_row_index
+                            #new_commands[row_index] = matching_row['strun_command']
+
+                            #print("repeat: setting cmd for row: {}".format(row_index))
                         elif ((additional_output != outname) & (matching_row['index_contained_within'] == -1)):
+                            print("sub-command: setting cmd for row: {}".format(row_index))
                             # Different output names means that to combine these rows we need
                             # to have two outputs. Identify which ssb step the intermediate
                             # output is from, and add it to the strun command
-                            self.inputs[row_index]['index_contained_within'] = reference_index
+                            self.inputs[row_index]['index_contained_within'] = current_row_index
                             final_step = ssbsteps.split(',')[-1]
                             additional_out_str = (" --steps.{}.output_name = {}"
                                                   .format(self.pipe_step_dict[final_step], additional_output))
+                            #print('')
+                            #print('')
+                            #print('BEFORE')
+                            #print(row['strun_command'])
+                            #print('AFTER')
+                            #print(row['strun_command'] + additional_out_str)
                             new_command = row['strun_command'] + additional_out_str
-                            self.inputs[reference_index]['strun_command'] = new_command
+                            new_commands[current_row_index] = new_command
+                            #self.inputs[current_row_index]['strun_command'] = new_command
+                            #print('AFTER SETTING')
+                            #print(self.inputs[current_row_index]['strun_command'])
+                        else:
+                            print('input names match but no repeat nor subcommand. or already flagged')
+                            #new_commands[row_index] = matching_row['strun_command']
+                    else:
+                        print('ssb steps is not in or matching other ssbsteps.')
+                        #new_commands[row_index] = matching_row['strun_command']
+            else:
+                print("No repeat nor sub-command.")
+                #new_commands[current_row_index] = row['strun_command']
+
+        # Now remove the old strun_command column and insert the new one
+        self.inputs.remove_column('strun_command')
+        new_command_column = Column(data=new_commands, name='strun_command')
+        self.inputs.add_column(new_command_column)
 
     def completed_steps(self, input_file):
         '''Identify and return the pipeline steps completed
@@ -307,7 +344,9 @@ class CalibPrep:
         # intervening steps
         step = None
         suffix = 'uncal'
+        final_suffix_piece = 'uncal'
         skip = list(self.pipe_step_dict.values())
+        print("skip to start: {}".format(skip))
         baseend = len(base)
         for key in self.pipe_step_dict:
             if req[key]:
@@ -315,7 +354,7 @@ class CalibPrep:
                 suffix = "{}_{}".format(suffix, self.pipe_step_dict[key])
                 final_suffix_piece = self.pipe_step_dict[key]
                 skip.remove(self.pipe_step_dict[key])
-
+                print("Now skip is: {}".format(skip))
                 # In the case where the filenamne has multiple pipeline step names attached,
                 # walk back until we find the actual basename of the file
                 #if self.pipe_step_dict[key] in base:
@@ -323,12 +362,22 @@ class CalibPrep:
                 #    if ((idx < baseend) and (idx != -1)):
                 #        baseend = copy.deepcopy(idx) - 1
 
+        # If steps were added, then remove the uncal from the suffix
+        if suffix != 'uncal':
+            suffix = suffix.replace('uncal_', '')
+
+        # Suffix automatically added by the pipeline
+        pipeline_suffix = 'ramp'
+        print(skip)
+        if 'rate' not in skip:
+            pipeline_suffix = 'rate'
+
         # Remove the entries in skip that are after the last
         # required pipeline step
         stepvals = np.array(list(self.pipe_step_dict.values()))
         if final_suffix_piece in stepvals:
             lastmatch = np.where(stepvals == final_suffix_piece)[0][0]
-        elif suffix == 'uncal':
+        elif final_suffix_piece == 'uncal':
             lastmatch = -1
         else:
             raise IndexError("No entry {} in pipeline step dictionary.".format(final_suffix_piece))
@@ -348,10 +397,7 @@ class CalibPrep:
 
         # Create the output filename by adding the name of the latest
         # pipeline step to be run
-        ofile = true_base + '_' + suffix
-        # if len(skip) > 0:
-        #    for val in skip:
-        #        ofile = ofile + '_' + val
+        ofile = true_base + '_' + suffix + '_' + pipeline_suffix
         ofile = ofile + '.fits'
         output_filename = os.path.join(self.output_dir, ofile)
         return output_filename, true_base
@@ -459,18 +505,11 @@ class CalibPrep:
     def prepare(self):
         '''Main function'''
 
-        #find_repeats should located repeated entries in the
-        #input table. but where should we do that, and how do
-        #we proceed once we have the indices of the repeats?
-
         # Column of output names to add to table
         outfiles = []
         self.strun = []
         realinput = []
         all_to_run = []
-
-        #3print(self.inputs.colnames)
-        # print(self.inputs)
 
         # Create generators of files in self.search_dir, to be searched later for
         # matching filenames
@@ -480,10 +519,7 @@ class CalibPrep:
         for line in self.inputs:
             file = line['fitsfile']
 
-            #starttime = time.time()
             req_steps = self.step_dict(line['ssbsteps'])
-            #req_steps_time = time.time() - starttime
-            #print("req_steps_time: {}".format(req_steps_time))
 
             if self.verbose:
                 print("")
@@ -494,20 +530,14 @@ class CalibPrep:
             # In order to search for other
             # versions of the file we need
             # to know the basename
-            #starttime = time.time()
             basename = self.get_file_basename(file)
-            #basename_time = time.time() - starttime
-            #print("basename_time: {}".format(basename_time))
 
             if self.verbose:
                 print("Basename: {}".format(basename))
 
             # Create the output filename based on
             # the required pipeline steps
-            #starttime = time.time()
             outname, true_base = self.create_output(basename, req_steps)
-            #outname_time = time.time() - starttime
-            #print("outname_time: {}".format(outname_time))
             outfiles.append(outname)
 
             if self.verbose:
@@ -519,27 +549,12 @@ class CalibPrep:
             # has not allowed the removal of files, throw an error.
             # Similarly, if permissions prevent you from successfully
             # removing the file, throw an error
-            #starttime = time.time()
             self.output_exist_check(os.path.join(self.output_dir, outname))
-            #check_exist_time = time.time() - starttime
-            #print("check_exist_time: {}".format(check_exist_time))
 
             # Search the self.search_dir directories for partially
             # processed files.
             if not self.use_only_given:
-                #starttime = time.time()
-                #print("true_base:", true_base)
-                #print("search_dir", self.search_dir)
                 files = self.file_search(true_base, search_generator)
-                #if isinstance(self.search_dir, str):
-                #    files = self.file_search(true_base, self.search_dir)
-                #elif isinstance(self.search_dir, list):
-                #    files = []
-                #    for searchdir in self.search_dir:
-                #        filesdir = self.file_search(true_base, searchdir)
-                #        files += filesdir
-                #file_search_time = time.time() - starttime
-                #print("file_search_time: {}".format(file_search_time))
             else:
                 files = [os.path.join(self.search_dir, file)]
 
@@ -555,7 +570,6 @@ class CalibPrep:
             # for each file
             # print("Files to check for completed steps: {}".format(files))
             current_state = {}
-            #starttime = time.time()
             for f in files:
                 print('file to go into completed_steps is {}'.format(f))
                 state = self.completed_steps(f)
@@ -563,17 +577,12 @@ class CalibPrep:
 
                 if self.verbose:
                     print("    file {}, current state: {}".format(f, current_state[f]))
-            #comp_steps_time = time.time() - starttime
-            #print("comp_steps_time: {}".format(comp_steps_time))
 
             # Select the file to use
             if self.use_only_given:
                 input_file = file
             else:
-                #starttime = time.time()
                 input_file = self.choose_file(files, req_steps, current_state)
-                #choosefile_time = time.time() - starttime
-                #print("choosefile_time: {}".format(choosefile_time))
 
             realinput.append(input_file)
             if self.verbose:
@@ -581,16 +590,10 @@ class CalibPrep:
 
             # Create list of pipeline steps that must be
             # run on the file
-            #starttime = time.time()
-            #print("current_State: {}".format(current_state))
-            #print("input_file: {}".format(input_file))
             to_run = self.steps_to_run(input_file, req_steps,
                                        current_state[input_file])
-            #stepstorun_time = time.time() - starttime
-            #print("stepstorun_time: {}".format(stepstorun_time))
 
             # Add column to input table
-            #starttime = time.time()
             tr = [key for key in to_run if to_run[key]]
             trstr = ''
             for s in tr:
@@ -600,20 +603,9 @@ class CalibPrep:
             else:
                 trstr = 'None'
             all_to_run.append(trstr)
-            #addcol_time = time.time() - starttime
-            #print("addcol_time: {}".format(addcol_time))
 
             if self.verbose:
                 print("Steps that need to be run: {}".format(to_run))
-
-            # Create strun command
-            #command = self.strun_command(input_file,to_run,outname)
-            #print('will need options for overriding reffiles here as well')
-            #self.strun.append(command)
-
-            #if self.verbose:
-            #    print("Necessary strun command:")
-            #    print("{}".format(command))
 
         # Add the output filename column to the input table
         realcol = Column(data=realinput, name='real_input_file')
@@ -629,21 +621,14 @@ class CalibPrep:
         self.inputs.add_column(indexcol, index=0)
 
         # Turn the table into a series of strun commands
-        #starttime = time.time()
         self.strun = self.strun_command(realcol, toruncol, outcol)  # ,reffiles=??)
-        #make_command_time = time.time() - starttime
-        #print("make_command_time: {}".format(make_command_time))
 
         # Add the list of strun commands to the input table
         cmds = Column(data=self.strun, name='strun_command')
         self.inputs.add_column(cmds)
 
         # Find any groups of strun commands that can be combined
-        print("BEFORE REPEAT SEARCH:")
-        print(self.inputs['strun_command'])
         self.combine_repeats()
-        print("AFTER REPEAT SEARCH:")
-        print(self.inputs['strun_command'])
 
         self.proc_table = copy.deepcopy(self.inputs)
 
@@ -656,7 +641,7 @@ class CalibPrep:
         # Table containing only the command ID and the strun command
         c_tab = Table()
         c_tab.add_column(self.inputs['cmdID'])
-        c_tab.add_column(cmds)
+        c_tab.add_column(self.inputs['strun_command'])
 
         if self.verbose:
             ascii.write(c_tab, 'test_strun_commands.txt', overwrite=True)
@@ -696,9 +681,6 @@ class CalibPrep:
 
         # Strip all whitespace from the list of steps
         # and split into a list
-        #pattern = re.compile(r'\s+')
-        #stepstr = re.sub(pattern, '', stepstr)
-        #stepslist = stepstr.split(',')
         stepslist = [element.strip() for element in stepstr.split(',')]
         for ele in stepslist:
             if ele not in list(req.keys()):
@@ -747,7 +729,7 @@ class CalibPrep:
                        "be. Need a new input file.".format(infile, key)))
         return torun
 
-    def strun_command(self, input, steps_to_run, outfile_name, overrides=[]):
+    def strun_command(self, input, steps_to_run, outfile_name, overrides=[], instrument='nircam'):
         '''Create the necessary strun command to run the
         appropriate JWST calibration pipeline steps
 
@@ -796,6 +778,7 @@ class CalibPrep:
                         skip_text += ' --steps.{}.skip=True'.format(step_names[key])
 
                     # Add override reference files
+                    print("Add ability to override reference files here")
 
                 # Add output filename
                 finstep = steps.split(',')[-1]
@@ -805,5 +788,9 @@ class CalibPrep:
 
                 # Put the whole command together
                 cmd = with_file + skip_text + out_text  # +override_text
+
+                # For NIRCam we skip the odd even rows in refpix.
+                if instrument == 'nircam':
+                    cmd = cmd + ' --steps.refpix.even_odd_rows=False'
             cmds.append(cmd)
         return cmds
