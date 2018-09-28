@@ -124,14 +124,28 @@ class CalibPrep:
             Generator from os.walk
         '''
         if isinstance(self.search_dir, str):
+            # Does the directory exist?
+            if not os.path.isdir(self.search_dir):
+                print('WARNING: directory %s does not exist!' % self.search_dir)
+                print('WARNING: nothing found!')
+                return([])
             generator = [os.walk(self.search_dir, topdown=True)]
         elif isinstance(self.search_dir, list):
             # If the search directory is a list, then construct a generator
             # for each directory, and chain them together into a single generator
             generators = []
             for searchdir in self.search_dir:
+                # Does the directory exist?
+                if not os.path.isdir(searchdir):
+                    print('WARNING: directory %s does not exist!' % searchdir)
+                    continue
                 generators.append(os.walk(searchdir, topdown=True))
 
+            #Any entries? If not return None
+            if len(generators)==0:
+                print('WARNING: nothing found!')
+                return([])
+                
             # Chain together
             generator = itertools.chain()
             for gen in generators:
@@ -417,6 +431,7 @@ class CalibPrep:
         files : list
             List of found files containing the input base string
         '''
+
         files = []
         for dirpath, dirnames, fnames in generator_object:
             mch = [f for f in fnames if base in os.path.join(dirpath, f)]
