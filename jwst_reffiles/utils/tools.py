@@ -63,22 +63,22 @@ class yamlcfgclass:
             if type(self.params[section]) is dict:
                 self.sections.append(section)
 
-    def subenvvarplaceholder(self, dict):
+    def subenvvarplaceholder(self, paramdict):
         """ Loop through all string parameters and substitute environment variables """
-
-        for param in dict:
-            if type(dict[param]) is bytes:
-                envvarnames = self.envvarpattern.findall(dict[param])
+        for param in paramdict:
+#            if type(paramdict[param]) is types.StringType:
+            if isinstance(paramdict[param],str):
+                envvarnames = self.envvarpattern.findall(paramdict[param])
                 if envvarnames:
                     for name in envvarnames:
                         if not (name in os.environ):
                             raise RuntimeError("environment variable %s used in config file, but not set!" % name)
                         envval = os.environ[name]
                         subpattern = '\$%s' % (name)
-                        dict[param] = re.sub(subpattern, envval, dict[param])
-            elif type(dict[param]) is dict:
+                        paramdict[param] = re.sub(subpattern, envval, paramdict[param])
+            elif isinstance(paramdict[param],dict):
                 # recursive: sub environment variables down the dictiionary
-                self.subenvvarplaceholder(dict[param])
+                self.subenvvarplaceholder(paramdict[param])
         return(0)
 
     def addnewparams(self, newparams, requireParamExists=True):

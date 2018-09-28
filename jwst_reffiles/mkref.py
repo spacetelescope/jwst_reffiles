@@ -141,7 +141,7 @@ class mkrefclass:
 
         return(parser)
 
-    def setoutbasename(self, regtype, imagelist, outbasename=None, outrootdir=None, outsubdir=None,
+    def setoutbasename(self, reftype, imagelist, outbasename=None, outrootdir=None, outsubdir=None,
                        addsuffix=None, imdates2subdir=False):
         if outbasename is not None:
             self.outbasename = outbasename
@@ -168,7 +168,7 @@ class mkrefclass:
         if outsubdir is not None:
             outbasename += '/%s' % outsubdir
 
-        outbasename += '/%s_%s' % (regtype, re.sub('\.fits$', '', imbasename))
+        outbasename += '/%s_%s' % (reftype, re.sub('\.fits$', '', imbasename))
 
         # addsuffix: test if addsuffix is passed or if it is specified in the config file ...
         if addsuffix is None and self.cfg.params['output']['addsuffix'] != '':
