@@ -381,8 +381,8 @@ class astrotableclass:
         if not (mjdcol in self.t.colnames):
             self.t[mjdcol] = None
 
-        print(self.t[dateobscol])
-        print(self.t[timeobscol])
+        #print(self.t[dateobscol])
+        #print(self.t[timeobscol])
 
         if timeobscol is not None:
             dateobslist = list(self.t[dateobscol]+'T'+self.t[timeobscol])

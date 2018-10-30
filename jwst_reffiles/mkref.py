@@ -15,8 +15,7 @@ import astropy.io.fits as fits
 import numpy as np
 import scipy
 
-from .utils.tools import astrotableclass
-from .utils.tools import yamlcfgclass
+from jwst_reffiles.utils.tools import astrotableclass,yamlcfgclass
 
 #from jwst_lib.models import RampModel
 
@@ -88,8 +87,8 @@ class mkrefclass:
                                 help='specify the first flat exposure (default=%(default)s)')
             parser.add_argument('flat2',
                                 help='specify the second flat exposure (default=%(default)s)')
-        #parser.add_argument('--dummyoption1',
-        #                    help='testoption1 gain')
+        parser.add_argument('--dummygainoption1',
+                            help='testoption1 gain')
         parser = self.defaultrefoptions(parser=parser)
         return parser
 
@@ -127,7 +126,7 @@ class mkrefclass:
         self.readnoiseoptions(subparserlist['readnoise'])
 
         subparserlist['bpm'] = subparsers.add_parser('bpm')
-        self.readnoiseoptions(subparserlist['bpm'])
+        self.bpmoptions(subparserlist['bpm'])
 
         return(parser, subparserlist)
 
@@ -211,6 +210,7 @@ class mkrefclass:
 
     def mkref(self, arglist, onlyinit=False):
         (parser, subparserlist) = self.refoptions()
+        print('nnn',arglist)
         args = parser.parse_args(arglist)
 
         # set verbose level
