@@ -1,12 +1,12 @@
 
-API Documentation 
+API Documentation
 ==================
 
-.. automodule:: mirage.imaging_simulator
+.. automodule:: jwst_reffiles.mkrefs
 
-.. automodule:: mirage.wfss_simulator
+.. automodule:: jwst_reffiles.mkref
 
-.. automodule:: mirage
+.. automodule:: jwst_reffiles
         :members:
         :undoc-members:
 
