@@ -172,7 +172,7 @@ class CalibPrep:
                 print('WARNING: directory %s does not exist!' % self.search_dir)
                 print('WARNING: nothing found!')
                 return([])
-            generator = [os.walk(self.search_dir, topdown=True)]
+            generator = os.walk(self.search_dir, topdown=True)
         elif isinstance(self.search_dir, list):
             # If the search directory is a list, then construct a generator
             # for each directory, and chain them together into a single generator
@@ -714,16 +714,19 @@ class CalibPrep:
         if self.verbose:
             print("Input table updated.")
             print(self.proc_table)
-            ascii.write(self.proc_table, 'test_out.txt', overwrite=True)
-            ascii.write(self.inputs['index',  'repeat_of_index_number', 'index_contained_within', 'steps_to_run', 'real_input_file', 'strun_command'], "test_repeats.txt", overwrite=True)
+            output_table_file = os.path.join(self.output_dir, 'ssb_commands.txt')
+            print(self.output_dir)
+            stop
+            ascii.write(self.proc_table, output_table_file, overwrite=True)
+            #ascii.write(self.inputs['index',  'repeat_of_index_number', 'index_contained_within', 'steps_to_run', 'real_input_file', 'strun_command'], "test_repeats.txt", overwrite=True)
 
         # Table containing only the command ID and the strun command
-        c_tab = Table()
-        c_tab.add_column(self.inputs['cmdID'])
-        c_tab.add_column(self.inputs['strun_command'])
+        #c_tab = Table()
+        #c_tab.add_column(self.inputs['cmdID'])
+        #c_tab.add_column(self.inputs['strun_command'])
 
-        if self.verbose:
-            ascii.write(c_tab, 'test_strun_commands.txt', overwrite=True)
+        #if self.verbose:
+        #    ascii.write(c_tab, 'test_strun_commands.txt', overwrite=True)
 
         # Done
         # calling function can now use self.proc_table and
