@@ -145,7 +145,7 @@ class CalibPrep:
             if len(generators)==0:
                 print('WARNING: nothing found!')
                 return([])
-                
+
             # Chain together
             generator = itertools.chain()
             for gen in generators:
@@ -379,9 +379,9 @@ class CalibPrep:
             suffix = suffix.replace('uncal_', '')
 
         # Suffix automatically added by the pipeline
-        pipeline_suffix = 'ramp'
+        pipeline_suffix = ''
         if 'rate' not in skip:
-            pipeline_suffix = 'rate'
+            pipeline_suffix = '_rate'
 
         # Remove the entries in skip that are after the last
         # required pipeline step
@@ -408,7 +408,7 @@ class CalibPrep:
 
         # Create the output filename by adding the name of the latest
         # pipeline step to be run
-        ofile = true_base + '_' + suffix + '_' + pipeline_suffix
+        ofile = true_base + '_' + suffix + pipeline_suffix
         ofile = ofile + '.fits'
         output_filename = os.path.join(self.output_dir, ofile)
         return output_filename, true_base
@@ -795,8 +795,8 @@ class CalibPrep:
                 # Add output filename
                 finstep = steps.split(',')[-1]
                 final_step = step_names[finstep]
-                out_text += (' --steps.{}.output_file={}'
-                             .format(final_step, outfile))
+                out_text += (' --steps.{}.output_file={} --steps.{}.output_dir={}'
+                             .format(final_step, outfile, final_step, self.output_dir))
 
                 # Put the whole command together
                 cmd = with_file + skip_text + out_text  # +override_text

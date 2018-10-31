@@ -75,7 +75,8 @@ def create_output_test(cp_object):
     """
     requested = create_step_dictionary('dq, sat, ref, super, jump')
     basefilename = 'dark_current_file_number_42_uncal'
-    truth = os.path.join(cp_object.output_dir, basefilename.replace('uncal', 'jump.fits'))
+    base_and_suffix = basefilename.replace('uncal', 'dq_init_saturation_superbias_refpix_jump.fits')
+    truth = os.path.join(cp_object.output_dir, base_and_suffix)
     constructed_name, true_basename = cp_object.create_output(basefilename, requested)
     assert constructed_name == truth
 
@@ -160,16 +161,26 @@ def strun_command_test(cp_object):
     constructed_commands = cp_object.strun_command(input_names, steps_to_run, output_filename)
     truth1 = ('strun calwebb_detector1.cfg {} --steps.dq_init.skip=True --steps.refpix.skip=True '
               '--steps.ipc.skip=True --steps.linearity.skip=True --steps.persistence.skip=True '
-              '--steps.ramp_fitting.skip=True --steps.jump.output_file={}'.format(in_names[0], out_names[0]))
+              '--steps.ramp_fitting.skip=True --steps.jump.output_file={} --steps.jump.output_dir={}'
+              ' --steps.refpix.even_odd_rows=False'
+              .format(in_names[0], out_names[0], cp_object.output_dir))
     truth2 = ('strun calwebb_detector1.cfg {} --steps.saturation.skip=True --steps.ipc.skip=True '
               '--steps.linearity.skip=True --steps.persistence.skip=True --steps.dark_current.skip=True '
               '--steps.jump.skip=True --steps.ramp_fitting.skip=True --steps.refpix.output_file={}'
-              .format(in_names[1], out_names[1]))
+              ' --steps.refpix.output_dir={} --steps.refpix.even_odd_rows=False'
+              .format(in_names[1], out_names[1], cp_object.output_dir))
     truth3 = ('strun calwebb_detector1.cfg {} --steps.dq_init.skip=True --steps.saturation.skip=True '
               '--steps.superbias.skip=True --steps.refpix.skip=True --steps.ipc.skip=True '
               '--steps.persistence.skip=True --steps.jump.skip=True --steps.ramp_fitting.output_file={}'
-              .format(in_names[2], out_names[2]))
+              ' --steps.ramp_fitting.output_dir={} --steps.refpix.even_odd_rows=False'
+              .format(in_names[2], out_names[2], cp_object.output_dir))
     truths = [truth1, truth2, truth3]
+    print(truth1)
+    print(constructed_commands[0])
+    print(truth2)
+    print(constructed_commands[1])
+    print(truth3)
+    print(constructed_commands[2])
     assert truths == constructed_commands
 
 
