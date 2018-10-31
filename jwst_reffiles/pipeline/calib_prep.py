@@ -714,10 +714,9 @@ class CalibPrep:
         if self.verbose:
             print("Input table updated.")
             print(self.proc_table)
-            output_table_file = os.path.join(self.output_dir, 'ssb_commands.txt')
-            print(self.output_dir)
-            stop
-            ascii.write(self.proc_table, output_table_file, overwrite=True)
+            #output_table_file = os.path.join(self.output_dir, 'ssb_commands.txt')
+            #print('output_table_file', output_table_file)
+            #ascii.write(self.proc_table, output_table_file, overwrite=True)
             #ascii.write(self.inputs['index',  'repeat_of_index_number', 'index_contained_within', 'steps_to_run', 'real_input_file', 'strun_command'], "test_repeats.txt", overwrite=True)
 
         # Table containing only the command ID and the strun command
