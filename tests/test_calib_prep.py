@@ -175,12 +175,6 @@ def strun_command_test(cp_object):
               ' --steps.ramp_fitting.output_dir={} --steps.refpix.even_odd_rows=False'
               .format(in_names[2], out_names[2], cp_object.output_dir))
     truths = [truth1, truth2, truth3]
-    print(truth1)
-    print(constructed_commands[0])
-    print(truth2)
-    print(constructed_commands[1])
-    print(truth3)
-    print(constructed_commands[2])
     assert truths == constructed_commands
 
 
