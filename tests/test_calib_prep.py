@@ -179,10 +179,6 @@ def strun_command_test(cp_object):
               '--steps.refpix.odd_even_rows=False'
               .format(in_names[2], suffixes[2], cp_object.output_dir))
     truths = [truth1, truth2, truth3]
-
-    print(constructed_commands[0])
-    print('')
-    print(truth1)
     assert truths == constructed_commands
 
 
