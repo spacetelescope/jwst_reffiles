@@ -817,12 +817,13 @@ class mkrefsclass(astrotableclass):
             mmm.search_dir += ',%s' % (self.cfg.params['output']['pipeline_prod_search_dir'])
 
         mmm.output_dir = self.ssbdir
-
         mmm.prepare()
         sys.exit()
 
         print('BACK IN MKREFS:')
-        print(mmm.proc_table['index','cmdID','reflabel','output_name', 'steps_to_run','repeat_of_index_number','index_contained_within'])
+        print(mmm.proc_table['index', 'cmdID', 'reflabel', 'output_name', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
+        print(mmm.proc_table['strun_command'][-1])
+        sys.exit()
 
         self.ssbcmdtable = astrotableclass()
         self.ssbcmdtable.t = mmm.proc_table

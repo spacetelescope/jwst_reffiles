@@ -315,7 +315,7 @@ class CalibPrep:
 
                             print('after', self.inputs['index_contained_within'])
                             final_step = ssbsteps.split(',')[-1]
-                            additional_out_str = (" --steps.{}.output_name = {}"
+                            additional_out_str = (" --steps.{}.output_file = {}"
                                                   .format(self.pipe_step_dict[final_step], additional_output))
                             #print('')
                             #print('')
@@ -446,9 +446,9 @@ class CalibPrep:
             suffix = suffix.replace('uncal_', '')
 
         # Suffix automatically added by the pipeline
-        pipeline_suffix = 'ramp'
+        pipeline_suffix = ''
         if 'rate' not in skip:
-            pipeline_suffix = 'rate'
+            pipeline_suffix = '_rate'
 
         # Remove the entries in skip that are after the last
         # required pipeline step
@@ -475,7 +475,7 @@ class CalibPrep:
 
         # Create the output filename by adding the name of the latest
         # pipeline step to be run
-        ofile = true_base + '_' + suffix + '_' + pipeline_suffix
+        ofile = true_base + '_' + suffix + pipeline_suffix
         ofile = ofile + '.fits'
         output_filename = os.path.join(self.output_dir, ofile)
         return output_filename, true_base
@@ -836,7 +836,7 @@ class CalibPrep:
         # Quick fix for ramp fitting, which uses a different
         # output suffix than step name, unlike the other steps
         step_names = copy.deepcopy(self.pipe_step_dict)
-        step_names['rampfit'] = 'ramp_fitting'
+        step_names['rampfit'] = 'ramp_fit'
 
         cmds = []
 
@@ -861,17 +861,31 @@ class CalibPrep:
                     # Add override reference files
                     print("Add ability to override reference files here")
 
-                # Add output filename
+                # Get the suffix from the difference between the input and output names
+                infile_base = os.path.split(infile)[1]
+                infile_base = infile_base.split('.fits')[0]
+                if '_uncal' in infile_base:
+                    infile_base = infile_base.split('_uncal')[0]
+                outfile_base = os.path.split(outfile)[1]
+                outfile_base = outfile_base.split('.fits')[0]
+                idx = len(infile_base)
+                added_suffix = outfile_base[idx+1:]
+
+                # Add step-specific options for saving
                 finstep = steps.split(',')[-1]
                 final_step = step_names[finstep]
-                out_text += (' --steps.{}.output_file={}'
-                             .format(final_step, outfile))
+                out_text += (' --steps.{}.suffix={} --steps.{}.output_dir={} --steps.{}.save_results=True'
+                             .format(final_step, added_suffix, final_step, self.output_dir, final_step))
 
                 # Put the whole command together
                 cmd = with_file + skip_text + out_text  # +override_text
 
+                # Since we are getting the output from the final step directly
+                # we can turn off the output from the pipeline
+                cmd = cmd + ' --save_results=False'
+
                 # For NIRCam we skip the odd even rows in refpix.
                 if instrument == 'nircam':
-                    cmd = cmd + ' --steps.refpix.even_odd_rows=False'
+                    cmd = cmd + ' --steps.refpix.odd_even_rows=False'
             cmds.append(cmd)
         return cmds

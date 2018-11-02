@@ -75,7 +75,8 @@ def create_output_test(cp_object):
     """
     requested = create_step_dictionary('dq, sat, ref, super, jump')
     basefilename = 'dark_current_file_number_42_uncal'
-    truth = os.path.join(cp_object.output_dir, basefilename.replace('uncal', 'jump.fits'))
+    base_and_suffix = basefilename.replace('uncal', 'dq_init_saturation_superbias_refpix_jump.fits')
+    truth = os.path.join(cp_object.output_dir, base_and_suffix)
     constructed_name, true_basename = cp_object.create_output(basefilename, requested)
     assert constructed_name == truth
 
@@ -155,20 +156,28 @@ def strun_command_test(cp_object):
     torun2 = 'dq,super,ref'
     torun3 = 'dark,lin,rampfit'
     steps_to_run = Column(data=[torun1, torun2, torun3])
-    out_names = ['dummy_jump.fits', 'dummy_refpix.fits', 'dummy_rate.fits']
+    out_names = ['dummy_sat_superbias_dark_jump.fits', 'dummy_dq_init_superbias_refpix.fits',
+                 'dummy_dark_linearity_rate.fits']
+    suffixes = ['sat_superbias_dark_jump', 'dq_init_superbias_refpix', 'dark_linearity_rate']
     output_filename = Column(data=out_names)
     constructed_commands = cp_object.strun_command(input_names, steps_to_run, output_filename)
     truth1 = ('strun calwebb_detector1.cfg {} --steps.dq_init.skip=True --steps.refpix.skip=True '
               '--steps.ipc.skip=True --steps.linearity.skip=True --steps.persistence.skip=True '
-              '--steps.ramp_fitting.skip=True --steps.jump.output_file={}'.format(in_names[0], out_names[0]))
+              '--steps.ramp_fit.skip=True --steps.jump.suffix={} --steps.jump.output_dir={}'
+              ' --steps.jump.save_results=True --save_results=False --steps.refpix.odd_even_rows=False'
+              .format(in_names[0], suffixes[0], cp_object.output_dir))
     truth2 = ('strun calwebb_detector1.cfg {} --steps.saturation.skip=True --steps.ipc.skip=True '
               '--steps.linearity.skip=True --steps.persistence.skip=True --steps.dark_current.skip=True '
-              '--steps.jump.skip=True --steps.ramp_fitting.skip=True --steps.refpix.output_file={}'
-              .format(in_names[1], out_names[1]))
+              '--steps.jump.skip=True --steps.ramp_fit.skip=True --steps.refpix.suffix={}'
+              ' --steps.refpix.output_dir={} --steps.refpix.save_results=True --save_results=False '
+              '--steps.refpix.odd_even_rows=False'
+              .format(in_names[1], suffixes[1], cp_object.output_dir))
     truth3 = ('strun calwebb_detector1.cfg {} --steps.dq_init.skip=True --steps.saturation.skip=True '
               '--steps.superbias.skip=True --steps.refpix.skip=True --steps.ipc.skip=True '
-              '--steps.persistence.skip=True --steps.jump.skip=True --steps.ramp_fitting.output_file={}'
-              .format(in_names[2], out_names[2]))
+              '--steps.persistence.skip=True --steps.jump.skip=True --steps.ramp_fit.suffix={}'
+              ' --steps.ramp_fit.output_dir={} --steps.ramp_fit.save_results=True --save_results=False '
+              '--steps.refpix.odd_even_rows=False'
+              .format(in_names[2], suffixes[2], cp_object.output_dir))
     truths = [truth1, truth2, truth3]
     assert truths == constructed_commands
 
