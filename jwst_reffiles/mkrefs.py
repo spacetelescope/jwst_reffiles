@@ -18,8 +18,8 @@ import scipy
 
 from jwst_reffiles.mkref import mkrefclass
 from jwst_reffiles.pipeline.calib_prep import CalibPrep
-from jwst_reffiles.utils.tools import astrotableclass,yamlcfgclass
-
+from jwst_reffiles.utils.tools import astrotableclass, yamlcfgclass
+from jwst_reffiles.utils.tools import makepath
 
 # get the root dir of the code. This is needed only if the scripts are not installed as a module!
 #if 'JWST_MKREFS_SRCDIR' in os.environ:
@@ -31,7 +31,6 @@ from jwst_reffiles.utils.tools import astrotableclass,yamlcfgclass
 rootdir = os.path.dirname(os.path.realpath(__file__))
 
 
-
 class cmdsclass(astrotableclass):
     def __init__(self):
         astrotableclass.__init__(self)
@@ -41,19 +40,19 @@ class mkrefsclass(astrotableclass):
     def __init__(self):
         astrotableclass.__init__(self)
 
-        #config file
+        # config file
         self.cfg = None
 
         self.verbose = 0
         self.debug = False
         self.onlyshow = False
 
-        self.basedir=None
-        self.basename=None
-        self.outsubdir=None
-        self.ssbdir=None
-        self.runID=None
-        self.runlabel=None
+        self.basedir = None
+        self.basename = None
+        self.outsubdir = None
+        self.ssbdir = None
+        self.runID = None
+        self.runlabel = None
 
         self.imtable = astrotableclass()
         self.images4ssb = astrotableclass()
@@ -67,28 +66,31 @@ class mkrefsclass(astrotableclass):
 
         self.cmdtable = cmdsclass()
 
-        self.allowed_reflabels = ['bpm','rdnoise_nircam','gain_armin']
-
+        self.allowed_reflabels = ['bpm', 'rdnoise_nircam', 'gain_armin']
 
     def define_options(self, parser=None, usage=None, conflict_handler='resolve'):
         if parser is None:
             parser = argparse.ArgumentParser(usage=usage, conflict_handler=conflict_handler)
         parser.add_argument("reflabels_and_imagelist", nargs='+', help=("list of ref types to be done"
-                                                                       "and image (or file patterns) lists"))
+                                                                        "and image (or file patterns) lists"))
         parser.add_argument('-b', '--batchmode', help="run the commands in batch mode (default=%(default)s)",
                             action="store_true", default=False)
         parser.add_argument('--onlyshow', help="only show what would be done, but don't do it."
                                                "(default=%(default)s)", action="store_true", default=False)
 
         parser.add_argument('--outrootdir', default=None,
-                            help=('output root directory. outrootdir[/outsubdir][/runID]/reflabel/reflabel[_outsubdir][_runID][.addsuffix].cmdID.reftype.fits (default=%(default)s)'))
+                            help=('output root directory. outrootdir[/outsubdir][/runID]/reflabel/'
+                                  'reflabel[_outsubdir][_runID][.addsuffix].cmdID.reftype.fits '
+                                  '(default=%(default)s)'))
         parser.add_argument('--outsubdir', default=None,
-                            help='subdir added to the output root directory (and filename) (default=%(default)s)')
+                            help=('subdir added to the output root directory (and filename) '
+                                  '(default=%(default)s)'))
         parser.add_argument('--addsuffix', default=None,
                             help='suffix added to the output basename (default=%(default)s)')
 
         parser.add_argument('--runID', default=None,
-                            help='runID subdir added to output root directory (and filename) (default=%(default)s)')
+                            help=('runID subdir added to output root directory (and filename) '
+                                  '(default=%(default)s)'))
         parser.add_argument('--runIDNdigits', default=None,
                             help='how many leading zeros in runID (default=%(default)s)')
         parser.add_argument('-n', '--newrunID', help="get the next available runID",
@@ -107,7 +109,8 @@ class mkrefsclass(astrotableclass):
             mkrefpackage = __import__("mkref_%s" % reflabel)
             mkref = mkrefpackage.mkrefclassX()
             # Only load defaultoptions once...
-            if reflabel==self.allowed_reflabels[0]: mkref.defaultoptions(parser)
+            if reflabel == self.allowed_reflabels[0]:
+                mkref.defaultoptions(parser)
             # get the reflabel specific options
             mkref.extraoptions(parser)
         return(parser)
@@ -122,7 +125,7 @@ class mkrefsclass(astrotableclass):
             raise RuntimeError("Something went wrong when loading config files!")
         return(0)
 
-    def getbasedir(self, outrootdir=None, outsubdir=None, runlabel = None):
+    def getbasedir(self, outrootdir=None, outsubdir=None, runlabel=None):
         """ basedir based on options and cfg file: outrootdir[/outsubdir][/runID]"""
         if outrootdir is None:
             if self.cfg.params['output']['outrootdir'] == '':
@@ -130,7 +133,7 @@ class mkrefsclass(astrotableclass):
             else:
                 outrootdir = self.cfg.params['output']['outrootdir']
 
-        basedir = outrootdir
+        basedir = os.path.abspath(os.path.expandvars(outrootdir))
         basename = ''
 
         # outsubdir: test if outsubdir is passed or if it is specified in the config file ...
@@ -139,41 +142,44 @@ class mkrefsclass(astrotableclass):
         # ... and if yes, add it
         if outsubdir is not None:
             basedir += '/%s' % outsubdir
-            if basename != '': basename += '_'
+            if basename != '':
+                basename += '_'
             basename += outsubdir
 
-        if runlabel != None:
+        if runlabel is not None:
             basedir += '/%s' % runlabel
-            if basename != '': basename += '_'
+            if basename != '':
+                basename += '_'
             basename += runlabel
 
-        if basename == '': basename = 'B'
+        if basename == '':
+            basename = 'B'
 
-        return(basedir,'%s/%s' % (basedir,basename),outsubdir)
+        return(basedir, '%s/%s' % (basedir, basename), outsubdir)
 
     def getbasename(self):
         s = self.basedir+'/'
-        if self.outsubdir!=None:
+        if self.outsubdir is not None:
             s += '%s/' % self.outsubdir
-        if self.runID!=None:
+        if self.runID is not None:
             s += '%s/' % self.outsubdir
 
-    def getssbdir(self, ssbdir, basedir, skip_runID_ssbdir = False):
+    def getssbdir(self, ssbdir, basedir, skip_runID_ssbdir=False):
         """ get the ssbdir. It can be hardcoded to a directory with
         --ssbdir or in the cfg file. If it is not specified, then
         basedir/ssb is used"""
-        if ssbdir != None and ssbdir != '':
+        if ssbdir is not None and ssbdir != '':
             return(ssbdir)
-        elif self.cfg.params['output']['ssbdir']!=None and self.cfg.params['output']['ssbdir']!='':
-             return(self.cfg.params['output']['ssbdir'])
+        elif self.cfg.params['output']['ssbdir'] is not None and self.cfg.params['output']['ssbdir'] != '':
+            return(self.cfg.params['output']['ssbdir'])
         else:
             return('%s/ssb' % self.basedir)
         return(None)
 
-    def get_highest_runID(self,basedir):
+    def get_highest_runID(self, basedir):
         """ find all subdirs witn run\d+ within the passed basedir, and extract the highest runID"""
         files = glob.glob('%s/run*' % basedir)
-        if len(files)==0:
+        if len(files) == 0:
             print('No runIDs yet!')
             return(None)
         runIDs = []
@@ -181,53 +187,54 @@ class mkrefsclass(astrotableclass):
         for fname in files:
             print(os.path.basename(fname))
             m = runIDpattern.search(fname)
-            if m!=None:
+            if m is not None:
                 runID = int(m.groups()[0])
                 runIDs.append(runID)
-        if len(runIDs)>0:
+        if len(runIDs) > 0:
             runID = max(runIDs)
         else:
-            runID=None
+            runID = None
         return(runID)
 
-    def set_runID(self,outrootdir = None, outsubdir = None, runID = None, runIDNdigits = None, newrunID = False):
+    def set_runID(self, outrootdir=None, outsubdir=None, runID=None, runIDNdigits=None, newrunID=False):
         """ set the runID depending on the options and config file """
 
         # if no runID is specified with the options, then use the one from the cfg file
-        if runID==None:
+        if runID is None:
             runID = mkrefs.cfg.params['output']['runID']
 
-        if runID == '' or runID==None:
+        if runID == '' or runID is None:
             # If no runID specified, make sure it is set to None!
             self.runID = None
-        elif isinstance(runID,int) or runID.isdigit():
+        elif isinstance(runID, int) or runID.isdigit():
             # if runID is an integer, set it to it!
             self.runID = int(runID)
         else:
             # if runID is AUTO, get the current highest runID, and increment if --new_runID (-n)
-            if runID.upper()=='AUTO':
-                (basedir,basename,subdir) = self.getbasedir(outrootdir=outrootdir, outsubdir=outsubdir, runlabel=None)
+            if runID.upper() == 'AUTO':
+                (basedir, basename, subdir) = self.getbasedir(outrootdir=outrootdir, outsubdir=outsubdir,
+                                                              runlabel=None)
                 self.runID = self.get_highest_runID(basedir)
-                if self.runID == None:
+                if self.runID is None:
                     self.runID = 0
                 else:
                     if newrunID:
-                        self.runID+=1
+                        self.runID += 1
             else:
                 raise RuntimeError("Incorrect runID=%s requested!" % runID)
 
-        if self.runID!=None:
-            if runIDNdigits==None:
+        if self.runID is not None:
+            if runIDNdigits is None:
                 runIDNdigits = self.cfg.params['output']['runIDNdigits']
-            if runIDNdigits==None:
-                runIDNdigits=1
+            if runIDNdigits is None:
+                runIDNdigits = 1
 
             b = 'run%0'+'%d' % runIDNdigits+'d'
             self.runlabel = b % (self.runID)
         else:
             self.runlabel = ''
 
-        return(self.runID,self.runlabel)
+        return(self.runID, self.runlabel)
 
     #def getssbdir(self, ssbdir=None, **kwarg):
     #    if ssbdir != None and ssbdir != '':
@@ -235,23 +242,31 @@ class mkrefsclass(astrotableclass):
     #    ssbdir = '%s/ssb' % self.getbasedir(**kwarg)
     #    return(ssbdir)
 
-    def set_dirs(self,outrootdir = None, outsubdir = None, runID = None, runIDNdigits = 1, newrunID = False, ssbdir=None, skip_runID_ssbdir=False):
+    def set_dirs(self, outrootdir=None, outsubdir=None, runID=None, runIDNdigits=1, newrunID=False,
+                 ssbdir=None, skip_runID_ssbdir=False):
         # get the runID
-        mkrefs.set_runID(outrootdir = outrootdir, outsubdir = outsubdir,
-                         runID = runID, runIDNdigits =runIDNdigits, newrunID = newrunID)
+        mkrefs.set_runID(outrootdir=outrootdir, outsubdir=outsubdir,
+                         runID=runID, runIDNdigits=runIDNdigits, newrunID=newrunID)
 
-        (self.basedir,self.basename,self.outsubdir) = self.getbasedir(outrootdir=outrootdir, outsubdir=outsubdir, runlabel=self.runlabel)
+        (self.basedir, self.basename, self.outsubdir) = self.getbasedir(outrootdir=outrootdir,
+                                                                        outsubdir=outsubdir,
+                                                                        runlabel=self.runlabel)
 
-        self.ssbdir = self.getssbdir(ssbdir,self.basedir, skip_runID_ssbdir = skip_runID_ssbdir)
+        self.ssbdir = self.getssbdir(ssbdir, self.basedir, skip_runID_ssbdir=skip_runID_ssbdir)
 
-        if self.verbose>=3:
+        # Create the directories if they don't already exist
+        if not self.onlyshow:
+            state_basedir = makepath(self.basedir)
+            state_ssbdir = makepath(self.ssbdir)
+
+        if self.verbose >= 3:
             print('#### Directories:')
-            print('basedir:',self.basedir)
-            print('basename:',self.basename)
-            print('ssbdir:',self.ssbdir)
-            print('outsubdir:',self.outsubdir)
-            print('runID:',self.runID)
-            print('runlabel:',self.runlabel)
+            print('basedir:', self.basedir)
+            print('basename:', self.basename)
+            print('ssbdir:', self.ssbdir)
+            print('outsubdir:', self.outsubdir)
+            print('runID:', self.runID)
+            print('runlabel:', self.runlabel)
 
         return(0)
 
@@ -282,8 +297,8 @@ class mkrefsclass(astrotableclass):
         if outsubdir is not None:
             outbasename += '/%s' % outsubdir
 
-        outbasename +='/'
-        if reftype!=None:
+        outbasename += '/'
+        if reftype is not None:
             outbasename += '%s_' % (reftype)
         outbasename += re.sub('\.fits$', '', imbasename)
 
@@ -307,7 +322,8 @@ class mkrefsclass(astrotableclass):
         '''
         only keep fits file that match basenamepattern
         '''
-        if self.verbose>1: print("#### Trimming images...")
+        if self.verbose > 1:
+            print("#### Trimming images...")
         # print imagelist
         if imagelist is None or len(imagelist) == 0:
             print('Nothing to do, no images!!!')
@@ -367,7 +383,8 @@ class mkrefsclass(astrotableclass):
 
     def getimageinfo(self, imagelist, dateobsfitskey=None, timeobsfitskey=None, mjdobsfitskey=None):
 
-        if self.verbose>1: print("Getting image info")
+        if self.verbose > 1:
+            print("Getting image info")
 
         # self.imtable['fitsfile'].format('%s')
         self.imtable.t['fitsfile'] = imagelist
@@ -375,7 +392,8 @@ class mkrefsclass(astrotableclass):
         self.imtable.t['imtype'] = None
         self.imtable.t['skip'] = False
 
-        if self.verbose>1: print("Table created")
+        if self.verbose > 1:
+            print("Table created")
 
         requiredfitskeys = self.cfg.params['inputfiles']['requiredfitskeys']
         if requiredfitskeys is None:
@@ -409,7 +427,7 @@ class mkrefsclass(astrotableclass):
     def organize_inputfiles(self, reflabels_and_imagelist):
         # parse teh command line arguments for reflabels and images
         (reflabellist, imagelist) = self.parse_reflabels_images(reflabels_and_imagelist,
-                                                              basenamepattern=self.cfg.params['inputfiles']['basenamepattern'])
+                                                                basenamepattern=self.cfg.params['inputfiles']['basenamepattern'])
         self.reflabellist = reflabellist
 
         # make the image table and populate it with info. Also get teh darks and flats table
@@ -422,25 +440,27 @@ class mkrefsclass(astrotableclass):
 
         if self.verbose:
             print('#################\n### %d images found!' % len(self.imtable.t))
-            print('### %d darks, %d flats' % (len(np.where(self.imtable.t['imtype'] == 'dark')[0]), len(np.where(self.imtable.t['imtype'] == 'flat')[0])))
+            print('### %d darks, %d flats' % (len(np.where(self.imtable.t['imtype'] == 'dark')[0]),
+                                              len(np.where(self.imtable.t['imtype'] == 'flat')[0])))
             print('### %d detectors:' % (len(self.detectors)), ", ".join(self.detectors))
-            if self.verbose>1:
+            if self.verbose > 1:
                 print(self.imtable.t)
 
     def check_inputfiles(self):
-        print('basedir:',self.basedir)
-        print('basename:',self.basename)
+        print('basedir:', self.basedir)
+        print('basename:', self.basename)
 
         # test if output dir already exists.
-        if not os.path.isdir(self.basedir):
-            # if it doesn't exist: write the image list into it if !onlyshow!
-            if not self.onlyshow:
-                if self.verbose>1: print('Creating directory %s' % self.basedir)
-                os.makedirs(self.basedir)
-                if not os.path.isdir(self.basedir):
-                    raise RuntimeError('Cannot create directory %s' % self.basedir)
-            else:
-                print('*** only showing: directory %s would be created here!' % self.basedir)
+        #if not os.path.isdir(self.basedir):
+        #    # if it doesn't exist: write the image list into it if !onlyshow!
+        #    if not self.onlyshow:
+        #        if self.verbose > 1:
+        #            print('Creating directory %s' % self.basedir)
+        #        os.makedirs(self.basedir)
+        #        if not os.path.isdir(self.basedir):
+        #            raise RuntimeError('Cannot create directory %s' % self.basedir)
+        #    else:
+        #        print('*** only showing: directory %s would be created here!' % self.basedir)
 
         imtbl_filename = '%s.im.txt' % self.basename
 
@@ -452,15 +472,22 @@ class mkrefsclass(astrotableclass):
             imtable_before.load(imtbl_filename)
 
             if (len(self.imtable.t['fitsfile']) != len(imtable_before.t['fitsfile'])):
-                raise RuntimeError('length %d of new list of input images is different than the one from the saved table (%d), cannot proceed! either get a new runID with -n, or remove the files in %s' % (len(self.imtable.t['fitsfile']),len(imtable_before.t['fitsfile']),self.basedir))
+                raise RuntimeError(('length %d of new list of input images is different than the one from '
+                                    'the saved table (%d), cannot proceed! either get a new runID with -n, '
+                                    'or remove the files in %s' % (len(self.imtable.t['fitsfile']),
+                                                                   len(imtable_before.t['fitsfile']),
+                                                                   self.basedir)))
 
             for i in range(len(self.imtable.t['fitsfile'])):
                 if self.imtable.t['fitsfile'][i] != imtable_before.t['fitsfile'][i]:
-                    raise RuntimeError('input file %s in new list is different than previous input file %s' % (self.imtable.t['fitsfile'][i],imtable_before.t['fitsfile'][i]))
+                    raise RuntimeError(('input file %s in new list is different than previous input '
+                                        'file %s' % (self.imtable.t['fitsfile'][i],
+                                                     imtable_before.t['fitsfile'][i])))
 
-            if self.verbose: print('new input list matches previous input list! Continuing...')
+            if self.verbose:
+                print('new input list matches previous input list! Continuing...')
 
-        self.imtable.write(imtbl_filename,verbose=True,clobber=True)
+        self.imtable.write(imtbl_filename, verbose=True, clobber=True)
 
         # just some paranoia...
         if not os.path.isfile(imtbl_filename):
@@ -539,7 +566,11 @@ class mkrefsclass(astrotableclass):
                 print('dMJD:', dMJD)
                 if dMJD > max_Delta_MJD:
                     if self.verbose > 2:
-                        print('Skipping imID=%d (MJD=%f) since imID=%d is not within timelimit (Delta MJD = %f>%f)!' % (self.imtable.t['imID'][dindex4detector[i]],self.imtable.t['MJD'][i],self.imtable.t['imID'][dindex4detector[i+1]],dMJD,max_Delta_MJD))
+                        print(('Skipping imID=%d (MJD=%f) since imID=%d is not within timelimit (Delta '
+                               'MJD = %f>%f)!' % (self.imtable.t['imID'][dindex4detector[i]],
+                                                  self.imtable.t['MJD'][i],
+                                                  self.imtable.t['imID'][dindex4detector[i+1]],
+                                                  dMJD, max_Delta_MJD)))
                     i += 1
                     continue
             if self.verbose > 1:
@@ -584,11 +615,15 @@ class mkrefsclass(astrotableclass):
                 if dMJD > max_Delta_MJD:
                     if self.verbose > 2:
                         print(('Skipping imID=%d (MJD=%f) since imID=%d is not within '
-                               'timelimit (Delta MJD = %f>%f)!') % (self.imtable.t['imID'][findex4detector[i]],self.imtable.t['MJD'][i],self.imtable.t['imID'][findex4detector[i+1]],dMJD,max_Delta_MJD))
+                               'timelimit (Delta MJD = %f>%f)!') % (self.imtable.t['imID'][findex4detector[i]],
+                                                                    self.imtable.t['MJD'][i],
+                                                                    self.imtable.t['imID'][findex4detector[i+1]],
+                                                                    dMJD, max_Delta_MJD))
                     i += 1
                     continue
             if self.verbose > 1:
-                print('Adding FF pair with imID=%d and %d' % (self.imtable.t['imID'][findex4detector[i]],self.imtable.t['imID'][findex4detector[i+1]]))
+                print('Adding FF pair with imID=%d and %d' % (self.imtable.t['imID'][findex4detector[i]],
+                                                              self.imtable.t['imID'][findex4detector[i+1]]))
             FF.t.add_row({'F1index': findex4detector[i], 'F2index': findex4detector[i+1],
                           'F1imID': self.imtable.t['imID'][findex4detector[i]],
                           'F2imID': self.imtable.t['imID'][findex4detector[i+1]]})
@@ -616,7 +651,7 @@ class mkrefsclass(astrotableclass):
         for f in range(len(FF.t)):
             if self.verbose > 2:
                 print('# Finding DD pair for FF pair with imID=%d and %d' % (FF.t['F1imID'][f], FF.t['F2imID'][f]))
-            if DDFF_max_Delta_MJD!=None:
+            if DDFF_max_Delta_MJD is not None:
                 FF_MJDmin = np.amin(np.array((self.imtable.t['MJD'][FF.t['F1index'][f]],
                                               self.imtable.t['MJD'][FF.t['F2index'][f]])))
                 FF_MJDmax = np.amax(np.array((self.imtable.t['MJD'][FF.t['F1index'][f]],
@@ -640,7 +675,9 @@ class mkrefsclass(astrotableclass):
                                         DD_MJDmin-FF_MJDmin])
                         max_dMJD = np.amax(dMJD)
                         if max_dMJD > DDFF_max_Delta_MJD:
-                            print('DD pair with imID=%d and %d cannot be used, dMJD=%f>%f' % (DD.t['D1imID'][d], DD.t['D2imID'][d], max_dMJD, DDFF_max_Delta_MJD))
+                            print('DD pair with imID=%d and %d cannot be used, dMJD=%f>%f' % (DD.t['D1imID'][d],
+                                                                                              DD.t['D2imID'][d],
+                                                                                              max_dMJD, DDFF_max_Delta_MJD))
                             continue
                     ddcountmin = ddcount[d]
                     d_best = d
@@ -650,7 +687,10 @@ class mkrefsclass(astrotableclass):
                 print(FF.t[f])
             else:
                 if self.verbose > 2:
-                    print('SUCCESS! DD pair with imID %d and %d found for FF pair with imID %d and %d' % (DD.t['D1imID'][d_best], DD.t['D2imID'][d_best], FF.t['F1imID'][f], FF.t['F2imID'][f]))
+                    print('SUCCESS! DD pair with imID %d and %d found for FF pair with imID %d and %d' % (DD.t['D1imID'][d_best],
+                                                                                                          DD.t['D2imID'][d_best],
+                                                                                                          FF.t['F1imID'][f],
+                                                                                                          FF.t['F2imID'][f]))
                 ddcount[d_best] += 1
                 DDFF.t.add_row({'D1index': DD.t['D1index'][d_best],
                                 'D2index': DD.t['D2index'][d_best],
@@ -751,21 +791,21 @@ class mkrefsclass(astrotableclass):
                                     'detector': detector, 'imlabel': inputimagelabel,
                                     'ssbsteps': self.cfg.params[reflabel]['ssbsteps']}
                         for key in ['fitsfile', 'imID', 'imtype', 'MJD']:
-                            dict2add[key]=self.imtable.t[key][imindex]
+                            dict2add[key] = self.imtable.t[key][imindex]
                         self.inputimagestable.t.add_row(dict2add)
 
                     self.cmdtable.t.add_row({'reflabel': reflabel, 'detector': detector, 'cmdID': cmdID,
                                              'Nim': len(inputimagelabels)})
                     cmdID += 1
 
-        if self.verbose>1:
+        if self.verbose > 1:
             print('\n### COMMANDS:')
             print(self.cmdtable.t)
             print('\n### INPUT FILES:')
             print(self.inputimagestable.t)
 
         print('**** ADD: additional check if input images are the same!! ****')
-        self.inputimagestable.write('%s.inputim.txt' % self.basename,verbose=True,clobber=True)
+        self.inputimagestable.write('%s.inputim.txt' % self.basename, verbose=True, clobber=True)
 
         mmm = CalibPrep()
         mmm.inputs = self.inputimagestable.t
@@ -773,12 +813,12 @@ class mkrefsclass(astrotableclass):
         print('Bryan: we need to look for ssb files in the ssb output dir, and then also in the optional pipeline_prod_search_dir. Let me know how I should pass this inof!')
         mmm.search_dir = self.ssbdir
         # add additional search dirs!
-        if self.cfg.params['output']['pipeline_prod_search_dir']!=None:
+        if self.cfg.params['output']['pipeline_prod_search_dir'] is not None:
             mmm.search_dir += ',%s' % (self.cfg.params['output']['pipeline_prod_search_dir'])
 
         mmm.output_dir = self.ssbdir
         mmm.prepare()
-
+        sys.exit()
 
         print('BACK IN MKREFS:')
         print(mmm.proc_table['index', 'cmdID', 'reflabel', 'output_name', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
@@ -811,7 +851,8 @@ class mkrefsclass(astrotableclass):
     def mk_ref_cmds(self):
         for i in range(len(self.cmdtable.t)):
 
-            print('### cmd ID %d: building cmd for %s' % (self.cmdtable.t['cmdID'][i],self.cmdtable.t['reflabel'][i]))
+            print('### cmd ID %d: building cmd for %s' % (self.cmdtable.t['cmdID'][i],
+                                                          self.cmdtable.t['reflabel'][i]))
             # (1) get teh input images from self.inputimagestable
             # (2) parse through the options
 
@@ -826,13 +867,13 @@ class mkrefsclass(astrotableclass):
 
 if __name__ == '__main__':
 
-
     mkrefs = mkrefsclass()
     parser = mkrefs.define_options()
     args = parser.parse_args()
 
     print("Input files:")
     print(args.reflabels_and_imagelist)
+
     #print(args)
     #for b in vars(args):
     #    print(b,vars(args)[b])
@@ -851,9 +892,9 @@ if __name__ == '__main__':
                         params4sections=args.pp)
 
     # set the basedir, basename, ssbdir, outsubdir, runID, runlabel
-    mkrefs.set_dirs(outrootdir = args.outrootdir, outsubdir = args.outsubdir,
-                    runID = args.runID, runIDNdigits = args.runIDNdigits, newrunID = args.newrunID,
-                    ssbdir = args.ssbdir,skip_runID_ssbdir = args.skip_runID_ssbdir)
+    mkrefs.set_dirs(outrootdir=args.outrootdir, outsubdir=args.outsubdir,
+                    runID=args.runID, runIDNdigits=args.runIDNdigits, newrunID=args.newrunID,
+                    ssbdir=args.ssbdir, skip_runID_ssbdir=args.skip_runID_ssbdir)
 
     # get the inputfile list and reflabel list. For input files, get into!
     mkrefs.organize_inputfiles(args.reflabels_and_imagelist)

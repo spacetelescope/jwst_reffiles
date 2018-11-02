@@ -115,6 +115,49 @@ class CalibPrep:
         #              ('jump', 'jump'), ('rampfit', 'rate')]
         self.pipe_step_dict = OrderedDict(PIPE_STEPS)
 
+    def activate_encompassing_entries(self):
+        """Once the search for ssb commands contained within other ssb commands has
+        been completed, go through the list of sets and activate the top level rows
+        that contain other commands. Remember that there can be nested values here.
+        (e.g. row 4 contains [0], row 3 contains [0,4], row 5 contains [0,3,4]) In this
+        example, we want to set the contained_within value to -1 for row 5, as that
+        single run of the pipeline will output products needed by rows 0, 3, and 4 also.
+
+        Rows that do not contain the command for any other rows will have an empty
+        set. These need to be set to -1 as well, so that they are run.
+        """
+        empty_entries = self.inputs['index_contained_within'] == set([])
+        self.inputs['index_contained_within'][empty_entries] = set([-1])
+
+        # Change the entries in the 'index_contained_within' to be lists, for easy
+        # indexing later.
+        new_contained_data = [list(entry) for entry in self.inputs['index_contained_within']]
+        new_contained_column = Column(new_contained_data, name='index_contained_within')
+        self.inputs.remove_column('index_contained_within')
+        self.inputs.add_column(new_contained_column)
+
+    def activate_one_from_repeats(self):
+        """Once the repeat search has been completed, activate only one copy of each
+        repeated entry.
+        """
+        repeats = self.inputs['repeat_of_index_number']
+
+        # Convert to a list so we can find unique elements
+        repeats_list = [sorted(list(s)) for s in repeats]
+        unique_repeats = np.unique(repeats_list)
+
+        for repeat_values in unique_repeats:
+            # Set the first instance of the repeated group to -1 so it will be run.
+            # Leave the other instances as-is so they won't be run
+            self.inputs['repeat_of_index_number'][repeat_values[0]] = set([-1])
+
+        # Change the entries in the 'repeat_of_index_number' to be lists, for easy
+        # indexing later.
+        new_repeat_data = [list(entry) for entry in self.inputs['repeat_of_index_number']]
+        new_repeat_column = Column(new_repeat_data, name='repeat_of_index_number')
+        self.inputs.remove_column('repeat_of_index_number')
+        self.inputs.add_column(new_repeat_column)
+
     def build_search_generator(self):
         '''Create a generator to use for searching for files
 
@@ -129,7 +172,7 @@ class CalibPrep:
                 print('WARNING: directory %s does not exist!' % self.search_dir)
                 print('WARNING: nothing found!')
                 return([])
-            generator = [os.walk(self.search_dir, topdown=True)]
+            generator = os.walk(self.search_dir, topdown=True)
         elif isinstance(self.search_dir, list):
             # If the search directory is a list, then construct a generator
             # for each directory, and chain them together into a single generator
@@ -141,8 +184,8 @@ class CalibPrep:
                     continue
                 generators.append(os.walk(searchdir, topdown=True))
 
-            #Any entries? If not return None
-            if len(generators)==0:
+            # Any entries? If not return None
+            if len(generators) == 0:
                 print('WARNING: nothing found!')
                 return([])
 
@@ -204,12 +247,11 @@ class CalibPrep:
         # is a duplicate of another row of the table. The other indicates if the command
         # in one row is contained within the command of another row. Both columns list the
         # index number of the row that it is a duplicate of or contained within.
-        repeat_column = Column(data=np.repeat(-1, len(self.inputs['real_input_file'])),
-                               name='repeat_of_index_number')
+        num_rows = len(self.inputs['real_input_file'])
+        repeat_column = Column(data=[set([i]) for i in range(num_rows)], name='repeat_of_index_number')
         self.inputs.add_column(repeat_column)
 
-        within_column = Column(data=np.repeat(-1, len(self.inputs['real_input_file'])),
-                               name='index_contained_within')
+        within_column = Column(data=[set([]) for i in range(num_rows)], name='index_contained_within')
         self.inputs.add_column(within_column)
 
         # We also need to make a new column to hold the strun commands. After this step,
@@ -217,13 +259,14 @@ class CalibPrep:
         # input, but the maximum string length for the input column has already been set.
         # So we need to make a replacement column with the updated commands so that the new
         # commands aren't truncated at the previous maximum string length
-        #new_commands = [''] * len(self.inputs['strun_command'])
+        # new_commands = [''] * len(self.inputs['strun_command'])
         new_commands = list(self.inputs['strun_command'].data)
 
         for row in self.inputs:
 
             print("Working on row: {}".format(row['index']))
 
+            # Find all entries that have the same INPUT filename
             repeated_filename = self.inputs['real_input_file'] == row['real_input_file']
 
             # Don't count the row itself when looking for matches
@@ -233,6 +276,8 @@ class CalibPrep:
             # If the same starting file is present in more than one row:
             if np.sum(repeated_filename.astype('int')) > 0:
                 matching_rows = self.inputs[repeated_filename]
+
+                print('matching rows:', matching_rows)
 
                 # Strip all whitespace from the list of ssb steps. Use this as
                 # a comparison to see if there are repeats among those with matching
@@ -248,18 +293,27 @@ class CalibPrep:
                         # Save the output name from this row if it is different from the
                         # comparison row.
                         additional_output = matching_row['output_name']
-                        if ((additional_output == outname) & (matching_row['repeat_of_index_number'] == -1) & (current_row_index < row_index)):
+                        if (additional_output == outname):
+                            # (len(matching_row['repeat_of_index_number']) == 0) &
+                            # (current_row_index < row_index)):
                             # Same output filename means the two rows are exact copies
-                            self.inputs[row_index]['repeat_of_index_number'] = current_row_index
+                            self.inputs[row_index]['repeat_of_index_number'].add(current_row_index)
                             #new_commands[row_index] = matching_row['strun_command']
 
                             #print("repeat: setting cmd for row: {}".format(row_index))
-                        elif ((additional_output != outname) & (matching_row['index_contained_within'] == -1)):
+                        elif (additional_output != outname):
                             print("sub-command: setting cmd for row: {}".format(row_index))
                             # Different output names means that to combine these rows we need
                             # to have two outputs. Identify which ssb step the intermediate
                             # output is from, and add it to the strun command
-                            self.inputs[row_index]['index_contained_within'] = current_row_index
+                            print('before', self.inputs['index_contained_within'])
+                            print(row_index)
+
+                            print(self.inputs[row_index:row_index+5]['index_contained_within'])
+                            self.inputs[row_index]['index_contained_within'].add(current_row_index)
+                            print(self.inputs[row_index:row_index+5]['index_contained_within'])
+
+                            print('after', self.inputs['index_contained_within'])
                             final_step = ssbsteps.split(',')[-1]
                             additional_out_str = (" --steps.{}.output_file = {}"
                                                   .format(self.pipe_step_dict[final_step], additional_output))
@@ -269,25 +323,38 @@ class CalibPrep:
                             #print(row['strun_command'])
                             #print('AFTER')
                             #print(row['strun_command'] + additional_out_str)
-                            new_command = row['strun_command'] + additional_out_str
+                            #new_command = row['strun_command'] + additional_out_str
+                            new_command = copy.deepcopy(new_commands[current_row_index]) + additional_out_str
                             new_commands[current_row_index] = new_command
                             #self.inputs[current_row_index]['strun_command'] = new_command
                             #print('AFTER SETTING')
                             #print(self.inputs[current_row_index]['strun_command'])
                         else:
                             print('input names match but no repeat nor subcommand. or already flagged')
-                            #new_commands[row_index] = matching_row['strun_command']
                     else:
                         print('ssb steps is not in or matching other ssbsteps.')
-                        #new_commands[row_index] = matching_row['strun_command']
             else:
                 print("No repeat nor sub-command.")
-                #new_commands[current_row_index] = row['strun_command']
 
         # Now remove the old strun_command column and insert the new one
         self.inputs.remove_column('strun_command')
         new_command_column = Column(data=new_commands, name='strun_command')
+
+        print(self.inputs.colnames)
+        print("Before adding updated commands and dealing with repeats:")
+        print(self.inputs['real_input_file', 'steps_to_run', 'index_contained_within', 'repeat_of_index_number'])
+
         self.inputs.add_column(new_command_column)
+
+        # Activate only one copy of each matching repeat set
+        self.activate_one_from_repeats()
+
+        # Check for subsets in the index_contained_within column, and keep only the entries
+        # that contain all others
+        self.activate_encompassing_entries()
+
+        print("after dealing with contained within:")
+        print(self.inputs['real_input_file', 'steps_to_run', 'index_contained_within', 'repeat_of_index_number'])
 
     def completed_steps(self, input_file):
         '''Identify and return the pipeline steps completed
@@ -647,16 +714,18 @@ class CalibPrep:
         if self.verbose:
             print("Input table updated.")
             print(self.proc_table)
-            ascii.write(self.proc_table, 'test_out.txt', overwrite=True)
-            ascii.write(self.inputs['index',  'repeat_of_index_number', 'index_contained_within', 'steps_to_run', 'real_input_file', 'strun_command'], "test_repeats.txt", overwrite=True)
+            #output_table_file = os.path.join(self.output_dir, 'ssb_commands.txt')
+            #print('output_table_file', output_table_file)
+            #ascii.write(self.proc_table, output_table_file, overwrite=True)
+            #ascii.write(self.inputs['index',  'repeat_of_index_number', 'index_contained_within', 'steps_to_run', 'real_input_file', 'strun_command'], "test_repeats.txt", overwrite=True)
 
         # Table containing only the command ID and the strun command
-        c_tab = Table()
-        c_tab.add_column(self.inputs['cmdID'])
-        c_tab.add_column(self.inputs['strun_command'])
+        #c_tab = Table()
+        #c_tab.add_column(self.inputs['cmdID'])
+        #c_tab.add_column(self.inputs['strun_command'])
 
-        if self.verbose:
-            ascii.write(c_tab, 'test_strun_commands.txt', overwrite=True)
+        #if self.verbose:
+        #    ascii.write(c_tab, 'test_strun_commands.txt', overwrite=True)
 
         # Done
         # calling function can now use self.proc_table and
