@@ -1280,6 +1280,11 @@ if __name__ == '__main__':
                     runID=args.runID, runIDNdigits=args.runIDNdigits, newrunID=args.newrunID,
                     ssbdir=args.ssbdir, skip_runID_ssbdir=args.skip_runID_ssbdir)
 
+    # Set up logging
+    configure_logging("jwst_reffiles", path=self.output_dir)
+    print("This needs to move higher up so that we can log all of the config file stuff")
+    print("But we need the output directory for the log file before we can configure logging")
+
     # get the inputfile list and reflabel list. For input files, get into!
     mkrefs.organize_inputfiles(args.reflabels_and_imagelist)
 

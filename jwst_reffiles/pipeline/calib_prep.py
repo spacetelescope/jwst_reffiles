@@ -86,6 +86,7 @@ import copy
 from collections import OrderedDict
 from glob import glob
 import itertools
+import logging
 import os
 import re
 import subprocess
@@ -99,10 +100,13 @@ from jwst import datamodels
 
 from jwst_reffiles.pipeline.pipeline_steps import get_pipeline_steps
 from jwst_reffiles.utils.definitions import CALDETECTOR1_CFG_FILES, PIPE_STEPS, PIPE_KEYWORDS, INSTRUMENTS
+from jwst_reffiles.utils.logging_functions import configure_logging, log_info, log_fail
 
 
 class CalibPrep:
-    def __init__(self, instrument):
+    def __init__(self):
+        self.logger = logging.getLogger('jwst_reffiles.pipeline.caib_prep.CalibPrep')
+        self.logger.info('Creating an instance of CalibPrep')
         self.__version__ = 0.1
         self.verbose = True
         self.inputs = None
@@ -193,8 +197,8 @@ class CalibPrep:
         if isinstance(self.search_dir, str):
             # Does the directory exist?
             if not os.path.isdir(self.search_dir):
-                print('WARNING: directory {} does not exist!'.format(self.search_dir))
-                print('WARNING: nothing found!')
+                self.logger.warning(('WARNING: directory {} does not exist! No search for existing '
+                                     'pipeline products done.'.format(self.search_dir)))
                 return([])
             generator = os.walk(self.search_dir, topdown=True)
         elif isinstance(self.search_dir, list):
@@ -204,13 +208,15 @@ class CalibPrep:
             for searchdir in self.search_dir:
                 # Does the directory exist?
                 if not os.path.isdir(searchdir):
-                    print('WARNING: directory {} does not exist!'.format(searchdir))
+                    self.logger.warning(('WARNING: directory {} does not exist! No search for existing '
+                                         'pipeline products done here.'.format(self.searchdir)))
                     continue
                 generators.append(os.walk(searchdir, topdown=True))
 
             # Any entries? If not return None
             if len(generators) == 0:
-                print('WARNING: nothing found!')
+                self.lggger.info(("No files found in search for existing pipeline-reduced files in "
+                                  "search directories."))
                 return([])
 
             # Chain together
@@ -267,6 +273,8 @@ class CalibPrep:
         to provide an intermediate output name to capture both versions of the calibrated
         file.'''
 
+        self.logger.debug("Finding repeated commands and commands contained within others.")
+
         # Create two columns to add to the table. One indicates whether an entry
         # is a duplicate of another row of the table. The other indicates if the command
         # in one row is contained within the command of another row. Both columns list the
@@ -287,6 +295,8 @@ class CalibPrep:
         new_commands = list(self.inputs['strun_command'].data)
 
         for row in self.inputs:
+            self.logger.debug("Working on row: {}".format(row['index']))
+
             # Find all entries that have the same INPUT filename
             repeated_filename = self.inputs['real_input_file'] == row['real_input_file']
 
@@ -297,6 +307,8 @@ class CalibPrep:
             # If the same starting file is present in more than one row:
             if np.sum(repeated_filename.astype('int')) > 0:
                 matching_rows = self.inputs[repeated_filename]
+
+                self.logger.debug('matching rows:{}'.format(matching_rows))
 
                 # Strip all whitespace from the list of ssb steps. Use this as
                 # a comparison to see if there are repeats among those with matching
@@ -325,17 +337,17 @@ class CalibPrep:
                             final_step = ssbsteps.split(',')[-1]
                             additional_out_str = (" --steps.{}.output_file={}"
                                                   .format(final_step, additional_output))
+
                             new_command = copy.deepcopy(new_commands[current_row_index]) + additional_out_str
                             new_commands[current_row_index] = new_command
                         else:
-                            pass
-                            #print('input names match but no repeat nor subcommand. or already flagged')
+                            self.logger.debug(('Row {}: Input names match but no repeat nor subcommand. '
+                                               'Or already flagged'.format(row['index'])))
                     else:
-                        pass
-                        #print('ssb steps is not in or matching other ssbsteps.')
+                        self.logger.debug('Row {}: ssb steps is not in or matching other ssbsteps.'
+                                          .format(row['index']))
             else:
-                pass
-                #print("No repeat nor sub-command.")
+                self.logger.debug("Row {}: No repeat nor sub-command.".format(row['index']))
 
         # Now remove the old strun_command column and insert the new one
         self.inputs.remove_column('strun_command')
@@ -458,6 +470,7 @@ class CalibPrep:
         elif final_suffix_piece == 'uncal':
             lastmatch = -1
         else:
+            self.logger.error("No entry {} in pipeline step dictionary.".format(final_suffix_piece))
             raise IndexError("No entry {} in pipeline step dictionary.".format(final_suffix_piece))
         for sval in stepvals[lastmatch+1:]:
             skip.remove(sval)
@@ -468,9 +481,9 @@ class CalibPrep:
         # Remove 'uncal' if it's in the file base
         true_base = true_base.replace('_uncal', '')
         if self.verbose:
-            print("True base name is {}".format(true_base))
-            print("Suffix is {}".format(suffix))
-            print("Skip vals are {}".format(skip))
+            self.logger.debug("True base name is {}".format(true_base))
+            self.logger.debug("Suffix is {}".format(suffix))
+            self.logger.debug("Skip vals are {}".format(skip))
         true_base = os.path.split(true_base)[1]
 
         # Create the output filename by adding the name of the latest
@@ -554,8 +567,10 @@ class CalibPrep:
         if df != -1:
             base = input_file[0:df]
         else:
-            raise ValueError(("WARNING: {} is not a valid fits file name."
-                              .format(input_file)))
+            self.logger.error("WARNING: {} is not a valid fits file name."
+                              .format(input_file))
+            raise ValueError("WARNING: {} is not a valid fits file name."
+                             .format(input_file))
         return base
 
     def output_exist_check(self, filename):
@@ -572,15 +587,23 @@ class CalibPrep:
                 try:
                     os.remove(filename)
                 except (FileNotFoundError, PermissionError) as error:
-                    print(error)
+                    self.logging.error(error)
             elif ((self.overwrite_existing_files is False) and
                   (self.output_dir == os.path.dirname(filename))):
                 raise ValueError(("WARNING: Output file {} already exists, "
                                   "and overwrite_existing_files set to False."
                                   .format(filename)))
 
+    @log_fail
+    @log_info
     def prepare(self):
         '''Main function'''
+
+        # Begin logging
+        #module_name = os.path.splitext(os.path.basename(__file__))[0]
+        #line below should only be in mkrefs.py
+        #configure_logging(module_name, path=self.output_dir)
+        #self.logger.info("Beginning calib_prep.prepare()")
 
         # Column of output names to add to table
         outfiles = []
@@ -598,27 +621,21 @@ class CalibPrep:
 
             req_steps = self.step_dict(line['ssbsteps'])
 
-            if self.verbose:
-                print("")
-                print("File: {}".format(file))
-                print("Input required steps: {}".format(line['ssbsteps']))
-                print("Required steps: {}".format(req_steps))
+            self.logger.info("File: {}".format(file))
+            self.logger.info("Input required steps: {}".format(line['ssbsteps']))
 
             # In order to search for other
             # versions of the file we need
             # to know the basename
             basename = self.get_file_basename(file)
-
-            if self.verbose:
-                print("Basename: {}".format(basename))
+            self.logger.info("Basename: {}".format(basename))
 
             # Create the output filename based on
             # the required pipeline steps
             outname, true_base = self.create_output(basename, req_steps)
             outfiles.append(outname)
 
-            if self.verbose:
-                print("Output name: {}".format(outname))
+            self.logger.info("Output name: {}".format(outname))
 
             # Check to see if a file with the same name as the
             # output filename already exists in the output directory.
@@ -637,22 +654,21 @@ class CalibPrep:
                 files = [os.path.join(self.search_dir, file)]
 
             if len(files) == 0:
-                print("No matching files found in {} for {}".format(self.search_dir, true_base))
-                print("Falling back to the input file: {}".format(file))
+                self.logger.info("No matching files found in {} for {}".format(self.search_dir, true_base))
+                self.logger.info("Falling back to the input file: {}".format(file))
                 files = [file]
 
-            if self.verbose:
-                print("Found files: {}".format(files))
+            self.logger.info("Found files: {}".format(files))
 
             # Determine the completed calibration steps
             # for each file
             current_state = {}
             for f in files:
+                self.logger.debug('File to go into completed_steps is {}'.format(f))
                 state = self.completed_steps(f)
                 current_state[f] = state
 
-                if self.verbose:
-                    print("    file {}, current state: {}".format(f, current_state[f]))
+                self.logger.debug("    File {}, current state: {}".format(f, current_state[f]))
 
             # Select the file to use
             if self.use_only_given:
@@ -661,8 +677,7 @@ class CalibPrep:
                 input_file = self.choose_file(files, req_steps, current_state)
 
             realinput.append(input_file)
-            if self.verbose:
-                print("File to use: {}".format(input_file))
+            self.logger.debug("File to use: {}".format(input_file))
 
             # Create list of pipeline steps that must be
             # run on the file
@@ -680,8 +695,7 @@ class CalibPrep:
                 trstr = 'None'
             all_to_run.append(trstr)
 
-            if self.verbose:
-                print("Steps that need to be run: {}".format(to_run))
+            self.logger.info("Steps that need to be run: {}".format(to_run))
 
         # Add the output filename column to the input table
         realcol = Column(data=realinput, name='real_input_file')
@@ -708,8 +722,7 @@ class CalibPrep:
 
         self.proc_table = copy.deepcopy(self.inputs)
 
-        if self.verbose:
-            print("Input table updated.")
+        self.logger.info("Input table updated.")
 
         # Done
         # calling function can now use self.proc_table and
@@ -749,12 +762,14 @@ class CalibPrep:
         stepslist = [element.strip() for element in stepstr.split(',')]
         for ele in stepslist:
             if ele not in self.pipe_step_list:
+                self.logging.error(("WARNING: unrecognized pipeline step: {}"
+                                    .format(ele)))
                 raise ValueError(("WARNING: unrecognized pipeline step: {}"
                                   .format(ele)))
             try:
                 req[ele] = True
             except KeyError as error:
-                print(error)
+                self.logger.warning(error)
         return req
 
     def steps_to_run(self, infile, req, current):
@@ -789,9 +804,9 @@ class CalibPrep:
             elif ((req[key] is True) & (current[key] is False)):
                 torun[key] = True
             elif ((req[key] is False) & (current[key] is True)):
-                print(("WARNING: Input file {} has had {} step run, "
-                       "but the requirements say that it should not "
-                       "be. Need a new input file.".format(infile, key)))
+                self.logger.warning(("WARNING: Input file {} has had {} step run, "
+                                     "but the requirements say that it should not "
+                                     "be. Need a new input file.".format(infile, key)))
         return torun
 
     def strun_command(self, input_files, steps_to_run, outfile_name, overrides=[], instrument='nircam',
