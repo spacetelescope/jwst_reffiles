@@ -827,6 +827,8 @@ class mkrefsclass(astrotableclass):
 
         mmm.output_dir = self.ssbdir
         mmm.prepare()
+        print('Table column names:')
+        print(mmm.proc_table.colnames)
         sys.exit()
 
         print('BACK IN MKREFS:')
