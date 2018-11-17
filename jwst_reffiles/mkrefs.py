@@ -18,6 +18,7 @@ import scipy
 
 from jwst_reffiles.mkref import mkrefclass
 from jwst_reffiles.pipeline.calib_prep import CalibPrep
+from jwst_reffiles.pipeline import pipeline_steps
 from jwst_reffiles.utils.tools import astrotableclass, yamlcfgclass
 from jwst_reffiles.utils.tools import makepath
 
@@ -730,6 +731,14 @@ class mkrefsclass(astrotableclass):
         if self.verbose:
             print('\n##################################\n### Constructing commands\n##################################')
 
+        # Expand ssbstep list if a shorthand is used
+        for reflabel in self.reflabellist:
+            step_name = self.cfg.params[reflabel]['ssbsteps'].strip()
+            if step_name[-1] == '-':
+                self.cfg.params[reflabel]['ssbsteps'] = pipeline_steps.step_minus(step_name, self.cfg.params['instrument'])
+            elif step_name[-1] == '+':
+                self.cfg.params[reflabel]['ssbsteps'] = pipeline_steps.step_plus(step_name, self.cfg.params['instrument'])
+
         # this is just to get the correct dtype for the reflabel  columns
         dummyreflabel = astrotableclass()
         dummyreflabel.t['reflabel'] = self.reflabellist
@@ -807,7 +816,7 @@ class mkrefsclass(astrotableclass):
         print('**** ADD: additional check if input images are the same!! ****')
         self.inputimagestable.write('%s.inputim.txt' % self.basename, verbose=True, clobber=True)
 
-        mmm = CalibPrep()
+        mmm = CalibPrep(self.cfg.params['instrument'])
         mmm.inputs = self.inputimagestable.t
 
         print('Bryan: we need to look for ssb files in the ssb output dir, and then also in the optional pipeline_prod_search_dir. Let me know how I should pass this inof!')
