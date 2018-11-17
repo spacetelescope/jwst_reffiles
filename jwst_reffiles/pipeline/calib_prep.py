@@ -96,11 +96,12 @@ from astropy.table import Column, Table
 import numpy as np
 from jwst import datamodels
 
-from jwst_reffiles.utils.definitions import PIPE_STEPS, PIPE_KEYWORDS
+from jwst_reffiles.pipeline.pipeline_steps import get_pipeline_steps
+from jwst_reffiles.utils.definitions import PIPE_STEPS, PIPE_KEYWORDS, INSTRUMENTS
 
 
 class CalibPrep:
-    def __init__(self):
+    def __init__(self, instrument):
         self.__version__ = 0.1
         self.verbose = True
         self.inputs = None
@@ -108,12 +109,12 @@ class CalibPrep:
         self.use_only_given = False
         self.overwrite_existing_files = True
         self.output_dir = ''
+        #self.pipe_step_dict = OrderedDict(PIPE_STEPS)
 
-        #pipe_steps = [('dq', 'dq_init'), ('sat', 'saturation'), ('super', 'superbias'),
-        #              ('ref', 'refpix'), ('ipc', 'ipc'), ('lin', 'linearity'),
-        #              ('persistence', 'persistence'), ('dark', 'dark_current'),
-        #              ('jump', 'jump'), ('rampfit', 'rate')]
-        self.pipe_step_dict = OrderedDict(PIPE_STEPS)
+        instrument = instrument.lower()
+        if instrument not in INSTRUMENTS:
+            raise ValueError("WARNING: {} is not a valid instrument name.".format(instrument))
+        self.pipe_step_list = get_pipeline_steps(instrument)
 
     def activate_encompassing_entries(self):
         """Once the search for ssb commands contained within other ssb commands has
@@ -315,8 +316,10 @@ class CalibPrep:
 
                             print('after', self.inputs['index_contained_within'])
                             final_step = ssbsteps.split(',')[-1]
+                            #additional_out_str = (" --steps.{}.output_file = {}"
+                            #                      .format(self.pipe_step_dict[final_step], additional_output))
                             additional_out_str = (" --steps.{}.output_file = {}"
-                                                  .format(self.pipe_step_dict[final_step], additional_output))
+                                                  .format(final_step, additional_output))
                             #print('')
                             #print('')
                             #print('BEFORE')
@@ -369,8 +372,8 @@ class CalibPrep:
         -------
         completed : dict
         '''
-        completed = copy.deepcopy(self.pipe_step_dict)
-        for key in completed:
+        completed = {}
+        for key in self.pipe_step_list:
             completed[key] = False
 
         #starttime = time.time()
@@ -426,14 +429,14 @@ class CalibPrep:
         step = None
         suffix = 'uncal'
         final_suffix_piece = 'uncal'
-        skip = list(self.pipe_step_dict.values())
+        skip = copy.deepcopy(self.pipe_step_list)
         baseend = len(base)
-        for key in self.pipe_step_dict:
+        for key in self.pipe_step_list:
             if req[key]:
                 step = key
-                suffix = "{}_{}".format(suffix, self.pipe_step_dict[key])
-                final_suffix_piece = self.pipe_step_dict[key]
-                skip.remove(self.pipe_step_dict[key])
+                suffix = "{}_{}".format(suffix, key)
+                final_suffix_piece = key
+                skip.remove(key)
                 # In the case where the filenamne has multiple pipeline step names attached,
                 # walk back until we find the actual basename of the file
                 #if self.pipe_step_dict[key] in base:
@@ -452,7 +455,7 @@ class CalibPrep:
 
         # Remove the entries in skip that are after the last
         # required pipeline step
-        stepvals = np.array(list(self.pipe_step_dict.values()))
+        stepvals = np.array(self.pipe_step_list)
         if final_suffix_piece in stepvals:
             lastmatch = np.where(stepvals == final_suffix_piece)[0][0]
         elif final_suffix_piece == 'uncal':
@@ -754,8 +757,8 @@ class CalibPrep:
         '''
         # Make a copy of pipeline step dictionary and
         # intialize all steps to False
-        req = copy.deepcopy(self.pipe_step_dict)
-        for key in req:
+        req = {}
+        for key in self.pipe_step_list:
             req[key] = False
         if stepstr is None:
             return req
@@ -764,7 +767,7 @@ class CalibPrep:
         # and split into a list
         stepslist = [element.strip() for element in stepstr.split(',')]
         for ele in stepslist:
-            if ele not in list(req.keys()):
+            if ele not in self.pipe_step_list:
                 raise ValueError(("WARNING: unrecognized pipeline step: {}"
                                   .format(ele)))
             try:
@@ -835,8 +838,15 @@ class CalibPrep:
 
         # Quick fix for ramp fitting, which uses a different
         # output suffix than step name, unlike the other steps
-        step_names = copy.deepcopy(self.pipe_step_dict)
-        step_names['rampfit'] = 'ramp_fit'
+
+        #step_names = copy.deepcopy(self.pipe_step_dict)
+        # Create a dictionary of step names and corresponding step class names
+        # In all cases except ramp-fitting, the key and value will be identical
+        step_names = {}
+        for key in self.pipe_step_list:
+            step_names[key] = key
+        # Update the ramp-fitting suffix
+        step_names['rate'] = 'ramp_fit'
 
         cmds = []
 
