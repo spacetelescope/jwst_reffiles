@@ -429,7 +429,6 @@ class CalibPrep:
         step = None
         suffix = 'uncal'
         final_suffix_piece = 'uncal'
-        #skip = list(self.pipe_step_dict.values())
         skip = copy.deepcopy(self.pipe_step_list)
         baseend = len(base)
         for key in self.pipe_step_list:
