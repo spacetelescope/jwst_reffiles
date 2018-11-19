@@ -49,7 +49,7 @@ def get_pipeline_steps(instrument):
 
 def step_minus(step_name, instrument):
     """Enable "-" shorthand when talking about pipeline steps. For example,
-    "rate-" will indicate all pipeline steps up to (but not including) ramp-fitting.
+    "rate-" will indicate all pipeline steps up to and including ramp-fitting.
     For a given step_name-, return the list of step names to be run.
 
     Parameters
@@ -65,48 +65,9 @@ def step_minus(step_name, instrument):
     -------
 
     step_list : list
-        List of step names up to but not including the input step
-    """
-    step_name = step_name.split('-')[0].lower()
-    all_steps = get_pipeline_steps(instrument)
-
-    # Basic error check
-    if step_name not in all_steps:
-        raise ValueError("WARNING: {} is not a valid pipeline step name.".format(step_name))
-
-    step_list = []
-    for step in all_steps:
-        if step == step_name:
-            break
-        else:
-            step_list.append(step)
-
-    # Assuming this will be called by mkrefs, we need to return a comma-separated list of steps
-    step_list_csv = str(step_list).strip('[]').replace("'", "")
-    return step_list_csv
-
-
-def step_plus(step_name, instrument):
-    """Enable "+" shorthand when talking about pipeline steps. For example,
-    "rate+" will indicate all pipeline steps up to and including ramp-fitting.
-    For a given step_name+, return the list of step names to be run.
-
-    Parameters
-    ----------
-
-    step_name : str
-        Name of step name (including the trailing '+')
-
-    instrument : str
-        Name of JWST instrument
-
-    Returns
-    -------
-
-    step_list : list
         List of step names up to and including the input step
     """
-    step_name = step_name.split('+')[0].lower()
+    step_name = step_name.split('-')[0].lower()
     all_steps = get_pipeline_steps(instrument)
 
     # Basic error check
