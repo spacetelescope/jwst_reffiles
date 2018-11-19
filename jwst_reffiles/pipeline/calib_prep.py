@@ -393,7 +393,7 @@ class CalibPrep:
                 value = header.get(key)
                 if value == 'COMPLETE':
                     completed[PIPE_KEYWORDS[key]] = True
-        return completed
+        return OrderedDict(completed)
 
     def create_output(self, base, req):
         '''Create the output name of the pipeline-processed
@@ -761,7 +761,7 @@ class CalibPrep:
         for key in self.pipe_step_list:
             req[key] = False
         if stepstr is None:
-            return req
+            return OrderedDict(req)
 
         # Strip all whitespace from the list of steps
         # and split into a list
@@ -774,7 +774,7 @@ class CalibPrep:
                 req[ele] = True
             except KeyError as error:
                 print(error)
-        return req
+        return OrderedDict(req)
 
     def steps_to_run(self, infile, req, current):
         '''Return a list of the pipeline steps that need
@@ -842,7 +842,7 @@ class CalibPrep:
         #step_names = copy.deepcopy(self.pipe_step_dict)
         # Create a dictionary of step names and corresponding step class names
         # In all cases except ramp-fitting, the key and value will be identical
-        step_names = {}
+        step_names = OrderedDict({})
         for key in self.pipe_step_list:
             step_names[key] = key
         # Update the ramp-fitting suffix

@@ -829,6 +829,9 @@ class mkrefsclass(astrotableclass):
         mmm.prepare()
         print('Table column names:')
         print(mmm.proc_table.colnames)
+        #print(mmm.proc_table['ssbsteps'])
+        #print(mmm.proc_table['steps_to_run'])
+        #print(mmm.proc_table['output_name'])
         sys.exit()
 
         print('BACK IN MKREFS:')
