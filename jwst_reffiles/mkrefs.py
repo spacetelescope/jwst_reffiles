@@ -724,7 +724,7 @@ class mkrefsclass(astrotableclass):
             raise RuntimeError("ERROR: imtypes=%s not yet implemented!" % imtypes)
         return(imagesets, imagelabels)
 
-    def mk_ssb_cmds(self):
+    def mk_ssb_cmds(self,force_redo_ssb=False):
         '''
         Construct the reflabel commands, get the input files
         '''
@@ -829,27 +829,35 @@ class mkrefsclass(astrotableclass):
         mmm.prepare()
         print('Table column names:')
         print(mmm.proc_table.colnames)
-        #print(mmm.proc_table['ssbsteps'])
-        #print(mmm.proc_table['steps_to_run'])
-        #print(mmm.proc_table['output_name'])
-        sys.exit()
+        #sys.exit()
 
-        print('BACK IN MKREFS:')
-        print(mmm.proc_table['index', 'cmdID', 'reflabel', 'output_name', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
-        print(mmm.proc_table['strun_command'][-1])
-        sys.exit()
+        #print('BACK IN MKREFS:')
+        #print(mmm.proc_table['index', 'cmdID', 'reflabel', 'output_name', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
+        #print(mmm.proc_table['strun_command'][-1])
+        #sys.exit()
 
         self.ssbcmdtable = astrotableclass()
         self.ssbcmdtable.t = mmm.proc_table
+
+        self.check_if_inputfiles_exists()
+
         self.ssbcmdtable.write('%s.ssbcmds.txt' % self.basename,verbose=True,clobber=True)
 
         self.cmdtable.write('%s.refcmds.txt' % self.basename,verbose=True,clobber=True)
 
+        sys.exit(0)
+        
         #print('strun commands:')
         #print(mmm.strun)
 
         return(0)
 
+    def check_if_inputfiles_exists(self,outcol='file_exists'):
+        print('XXXX %d' % len(self.ssbcmdtable.t))
+        file_exists = np.full((len(self.ssbcmdtable.t)),False)
+        print(file_exists)
+        sys.exit(0)
+        
     def run_ssb_cmds(self,batchmode=False):
         print("### run ssb commands: NOT YET IMPLEMENTED!!!")
         return(0)
