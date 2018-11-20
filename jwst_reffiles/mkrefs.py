@@ -829,7 +829,6 @@ class mkrefsclass(astrotableclass):
         mmm.prepare()
         print('Table column names:')
         print(mmm.proc_table.colnames)
-        #sys.exit()
 
         #print('BACK IN MKREFS:')
         #print(mmm.proc_table['index', 'cmdID', 'reflabel', 'output_name', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
