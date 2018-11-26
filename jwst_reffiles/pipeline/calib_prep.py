@@ -631,7 +631,8 @@ class CalibPrep:
             # has not allowed the removal of files, throw an error.
             # Similarly, if permissions prevent you from successfully
             # removing the file, throw an error
-            self.output_exist_check(os.path.join(self.output_dir, outname))
+            # AR: I remove this! We don't want to remove files that already exist! Only if --force_redo_ssb
+            #self.output_exist_check(os.path.join(self.output_dir, outname))
 
             # Search the self.search_dir directories for partially
             # processed files.

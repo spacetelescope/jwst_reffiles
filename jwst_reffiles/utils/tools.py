@@ -40,6 +40,30 @@ def makepath4file(filename, raiseError=True):
     else:
         return(0)
 
+def executecommand(cmd,successword,errorlog=None,cmdlog=None,verbose=1):
+    if verbose: print('executing: %s' % cmd)
+    (cmd_in,cmd_out)=os.popen4(cmd)
+    output = cmd_out.readlines()
+    if successword=='':
+        successflag = 1
+    else:
+        m = re.compile(successword)
+        successflag = 0
+        for line in output:
+            if m.search(line):
+                successflag = 1
+    errorflag = not successflag
+    if errorflag:
+        print('error: executing %s' % cmd)
+        if errorlog != None:
+            append2file(errorlog,['\n error executing: '+cmd+'\n'])
+            append2file(errorlog,output)
+        if cmdlog != None:
+            append2file(cmdlog,['\n error executing:',cmd])
+    else:
+        if cmdlog != None:
+            append2file(cmdlog,[cmd])
+    return errorflag, output
 
 class yamlcfgclass:
     def __init__(self):
