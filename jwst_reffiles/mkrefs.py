@@ -20,7 +20,7 @@ from jwst_reffiles.mkref import mkrefclass
 from jwst_reffiles.pipeline.calib_prep import CalibPrep
 from jwst_reffiles.pipeline import pipeline_steps
 from jwst_reffiles.utils.tools import astrotableclass, yamlcfgclass
-from jwst_reffiles.utils.tools import makepath,executecommand
+from jwst_reffiles.utils.tools import makepath,executecommand,append2file,rmfile
 
 # get the root dir of the code. This is needed only if the scripts are not installed as a module!
 #if 'JWST_MKREFS_SRCDIR' in os.environ:
@@ -923,22 +923,33 @@ class mkrefsclass(astrotableclass):
 
         # pick the strun commands that need to be executed
         self.pick_strun_cmds_to_execute(force_redo_strun = force_redo_strun, maxNstrun = maxNstrun)
-        
+
+        # set strun_executed to None
+        self.ssbcmdtable.t['strun_executed'] = np.full((len(self.ssbcmdtable.t)),None)
+
         print('VVVV',self.ssbcmdtable.t.colnames)
         self.ssbcmdtable.write('%s.ssbcmds.txt' % self.basename,verbose=True,clobber=True,exclude_names=['repeat_of_index_number', 'index_contained_within'])
 
         self.cmdtable.write('%s.refcmds.txt' % self.basename,verbose=True,clobber=True)
 
         if self.verbose>1:
-            print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_exists','already_in_batch','execute_strun'])
+            print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_exists','already_in_batch','execute_strun','strun_executed'])
         
         #print('strun commands:')
         #print(mmm.strun)
 
         return(0)
 
+    def getlogfilenames(self,filename):
+        (basename,suffix) = os.path.splitext(filename)
+        print (basename,suffix)
+        errorlog = '{}.err.txt'.format(basename)
+        outlog = '{}.log.txt'.format(basename)
+        if suffix != '.fits':
+            print('WARNING: It seems like the filename {} is not a fits file.'.format(filename))
+        return(outlog,errorlog)
         
-    def run_ssb_cmds(self,batchmode=False):
+    def run_ssb_cmds(self,batchmode=False,ssblogFlag=False,ssberrorlogFlag=True):
         if self.onlyshow:
             if self.verbose: print('\n*** ONLYSHOW: skipping running the strun commands!\n')
             return(0)
@@ -946,41 +957,57 @@ class mkrefsclass(astrotableclass):
         # cleaning up old output files:
         for i in range(len(self.ssbcmdtable.t)):
             if self.ssbcmdtable.t['execute_strun'][i]:
-                filename = self.ssbcmdtable.t['output_name'][i]
-                if os.path.lexists(filename):
-                    os.remove(filename)
-                if os.path.isfile(filename):
-                    if raiseError == 1:
-                        raise RuntimeError('ERROR: Cannot remove %s' % filename)
-                    else:
-                        print('ERROR: Cannot remove %s' % filename)
+                outfile = self.ssbcmdtable.t['output_name'][i]
+                (logfilename,errlogfilename) = self.getlogfilenames(outfile)
+                rmfile(outfile)
+                rmfile(logfilename)
+                # Don't clean up errlogfilename, we want to keep track of old errors...
 
-        strun_executed = np.full((len(self.ssbcmdtable.t)),None)
+        indeces2run = np.where(self.ssbcmdtable.t['execute_strun'])
 
         if batchmode:
             print("### run strun commands in batch mode: NOT YET IMPLEMENTED!!!")
             
             # submit the batch here, return errorflag in case there is an issue submitting the batch
             errorflag = 0
+            strun_list = self.ssbcmdtable.t['strun_command'][indeces2run]
 
+            # This is the list to be submitted to the batch
+            print(strun_list)
+
+            # mark the entries that are submitted to the batch
             if not errorflag:
-                pass
-            
-            sys.exit(0)
+                self.ssbcmdtable.t['execute_strun'][indeces2run]='batch'
+
         else:
-            for i in range(len(self.ssbcmdtable.t)):
-                if self.ssbcmdtable.t['execute_strun'][i]:
-                    strun_cmd = self.ssbcmdtable.t['strun_command'][i]
-                    outfile = self.ssbcmdtable.t['output_name'][i]
-                    print('### Exectuting strun command for index %d: %s' % (i,strun_cmd))
-                    # in debug mode: just touch the output file.
-                    if self.debug:
-                        (errorflag,output) = executecommand('touch %s' % outfile,'',raiseError=True)
-                    else:
-                        (errorflag,output) = executecommand(strun_cmd,'')
-                        if errorflag:
-                            pass
-                            
+            t4strun = self.ssbcmdtable.t[indeces2run] 
+            print(t4strun['index','execute_strun'])
+            for i in range(len(t4strun)):
+                strun_cmd = t4strun['strun_command'][i]
+                outfile = t4strun['output_name'][i]
+
+                # decide if logfiles, depending on config filea
+                (logfilename,errlogfilename) = self.getlogfilenames(outfile)
+                if not self.cfg.params['output']['ssblogFlag']: logfilename=None
+                if not self.cfg.params['output']['ssberrorlogFlag']: errlogfilename=None
+                
+                print('### Executing strun command for index %d: %s' % (indeces2run[0][i],strun_cmd))
+                (errorflag) = executecommand(strun_cmd, '', cmdlog=logfilename, errorlog=errlogfilename)
+
+                # extra error checking
+                if not os.path.isfile(outfile):
+                    print('ERROR: file {} did not get created with strun command!'.format(outfile))
+                    errorflag|=2
+
+                # fill ssbtable with results.
+                if errorflag:
+                    self.ssbcmdtable.t['strun_executed'][indeces2run[0][i]]='ERROR{}_serial'.format(errorflag)
+                else:
+                    self.ssbcmdtable.t['strun_executed'][indeces2run[0][i]]='serial'
+                        
+        if self.verbose>1:
+            print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_exists','already_in_batch','execute_strun','strun_executed'])
+
         return(0)
 
     def run_ref_cmds(self,batchmode=False):
@@ -1010,6 +1037,15 @@ class mkrefsclass(astrotableclass):
 
 if __name__ == '__main__':
 
+    #cmd = 'echop hello1;echo GGGGGGG;echo SUCCESS'
+    #outputfile = '/Users/arest/nircam/jwst_reffiles/jwst_reffiles/delmeout.txt'
+    #errfile='/Users/arest/nircam/jwst_reffiles/jwst_reffiles/delmeerr.txt'
+    #(errorflag,stdoutlist,stderrlist) = executecommand(cmd,'SUCCESS', cmdlog=outputfile, errorlog=errfile, cmdlog_access_mode='a', verbose=2, cmdlog_save_as_chunk_flag = True,return_output=True)
+    #print('VVV',errorflag)
+    #print('BBB',stdoutlist)
+    #print('NNN',stderrlist)
+    #sys.exit(0)
+    
     mkrefs = mkrefsclass()
     parser = mkrefs.define_options()
     args = parser.parse_args()
@@ -1050,7 +1086,7 @@ if __name__ == '__main__':
     mkrefs.mk_ssb_cmds(force_redo_strun=args.force_redo_strun, maxNstrun=args.maxNstrun)
 
     # run the ssb commands
-    mkrefs.run_ssb_cmds(batchmode=args.batchmode)
+    mkrefs.run_ssb_cmds(batchmode=args.batchmode,)
 
     # create the reference file commands
     mkrefs.mk_ref_cmds()
