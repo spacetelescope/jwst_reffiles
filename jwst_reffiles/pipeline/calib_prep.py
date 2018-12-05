@@ -88,6 +88,7 @@ from glob import glob
 import itertools
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -170,7 +171,7 @@ class CalibPrep:
         if isinstance(self.search_dir, str):
             # Does the directory exist?
             if not os.path.isdir(self.search_dir):
-                print('WARNING: directory %s does not exist!' % self.search_dir)
+                print('WARNING: directory {} does not exist!'.format(self.search_dir))
                 print('WARNING: nothing found!')
                 return([])
             generator = os.walk(self.search_dir, topdown=True)
@@ -181,7 +182,7 @@ class CalibPrep:
             for searchdir in self.search_dir:
                 # Does the directory exist?
                 if not os.path.isdir(searchdir):
-                    print('WARNING: directory %s does not exist!' % searchdir)
+                    print('WARNING: directory {} does not exist!'.format(searchdir))
                     continue
                 generators.append(os.walk(searchdir, topdown=True))
 
@@ -504,9 +505,8 @@ class CalibPrep:
 
         files = []
         for dirpath, dirnames, fnames in generator_object:
-            mch = [f for f in fnames if base in os.path.join(dirpath, f)]
-            # or could try:
-            # fnmatch.filter(fnames,base)
+            mch = [f for f in fnames if base in os.path.join(dirpath, f) and f[-4:] == 'fits']
+
             for m in mch:
                 files.append(os.path.join(dirpath, m))
         return files
@@ -854,7 +854,17 @@ class CalibPrep:
         # Determine appropriate reference file overrides
         # something
 
-        initial = 'strun calwebb_detector1.cfg '
+        # Assume the calwebb_detector1.cfg config file is in self.output_directory. If not,
+        # copy it there from the repo.
+        cfg_file = os.path.join(self.output_dir, 'calwebb_detector1.cfg')
+        if not os.path.isfile(cfg_file):
+            print('INFO: calwebb_detector1.cfg file does not exist in {}. Creating.'
+                  .format(self.output_dir))
+            cfg_reference = os.path.join(os.path.dirname(__file__), 'calwebb_detector1.cfg')
+            subprocess.call(['cp', cfg_reference, cfg_file])
+
+        # Create the strun command
+        initial = 'strun {} '.format(cfg_file)
         for infile, steps, outfile in zip(input, steps_to_run, outfile_name):
             with_file = initial + infile
 
