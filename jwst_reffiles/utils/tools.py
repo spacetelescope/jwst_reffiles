@@ -5,14 +5,17 @@ In addition: config file using yaml
 A. Rest
 '''
 
-import os
+import os,io
 import re
 import sys
 import types
+import subprocess
+import pytz
 
 import astropy
 from astropy.io import ascii
 from astropy.time import Time
+from datetime import datetime
 import astropy.io.fits as fits
 import numpy as np
 from numpy import recarray
@@ -40,6 +43,211 @@ def makepath4file(filename, raiseError=True):
     else:
         return(0)
 
+def save2file(filename,lines,verbose=0):
+    if os.path.lexists(filename):
+        os.remove(filename)
+    if os.path.isfile(filename):
+        raise RuntimeError('ERROR: Cannot remove %s' % filename)
+    errorcode = append2file(filename,lines,verbose=verbose)
+    return(errorcode)
+    
+def append2file(filename,lines,verbose=0):
+    if filename==None:
+        if verbose>2: print('No filename, returning')
+        return(0)
+    
+    if isinstance(lines,str):
+        lines = [lines,]
+    if lines==None:
+        return(0)
+    if len(lines)==0:
+        return(0)
+
+    if os.path.isfile(filename):
+        if verbose:print('Appending to file %s' % filename)
+        buff = open(filename, 'a')
+    else:
+        if verbose:print('Writing to file %s' % filename)
+        buff = open(filename, 'w')
+        
+    r=re.compile('\n$')
+    #if first line does not have a \n, assume none of them have and add it!
+    if not r.search(lines[0]):
+       for i in range(len(lines)):
+           lines[i]+='\n'
+
+    buff.writelines(lines)
+    buff.close()
+
+    return(0)
+
+def rmfile(filename,raiseError=1):
+    " if file exists, remove it "
+    if os.path.lexists(filename):
+        os.remove(filename)
+        if os.path.isfile(filename):
+            if raiseError == 1:
+                raise RuntimeError('Cannot remove {}'.format(filename))
+            else:
+                print('ERROR: Cannot remove {}'.format(filename))
+                return(1)
+    return(0)
+
+def executecommand(cmd,successword,shell=True, errorlog=None, cmdlog=None, clobbercmdlog=False,
+                   cmdlog_access_mode='w', errorlog_access_mode='a', cmdlog_save_as_chunk_flag = True,
+                   log_buffering=-1, return_output=False, 
+                   verbose=2,
+                   timezone='US/Eastern'):
+    """ execute the given command cmd as a shell command.
+
+    cmdlog and errorlog can be a filename or a file handle.
+    
+    clobbercmdlog=True and cmdlog_access_mode only apply if cmdlog is
+    a filename. log_access_mode can be all allowed access_mode values
+    for subprocess.Popen.  if clobbercmdlog=True, the cmdlog file is
+    deleted before logging begins, even if cmdlog_access_mode='a'.
+
+    if cmdlog!=None: As default, cmdlog_save_as_chunk_flag=True, which
+    means that the output of the cmd is save in cmdlog *after* the
+    command is finished. If there is an error, it could be that then
+    the output is not saved in the cmdlog, thus for debugging, the
+    user can set cmdlog_save_as_chunk_flag=False, and then each
+    individual output line is immediately saved into cmdlog
+
+    The output of the command is shown on screen in real-time if
+    verbose>1.
+
+    The errorlog captures the stderr output. By default, old errors
+    are not deleted (i.e. errorlog_access_mode='a'). If there is an
+    error, this routine returns 1 
+
+    if return_output=True, then the stdout and stderr are returned as
+    lists: (returncode,stdout_lines,stderr_lines). Otherwise, only
+    retruncode is returned
+
+    """
+
+    errorcode=0
+
+    time_cmdstart = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    if verbose: print('{} executing: {}'.format(time_cmdstart,cmd))
+    
+    # check if logs are strings or file handles
+    print(type(cmdlog))
+    if cmdlog!=None:
+        if isinstance(cmdlog,str):
+            if clobbercmdlog:
+                rmfile(cmdlog)
+            cmdlog_filehandle = open(cmdlog, cmdlog_access_mode, log_buffering)
+        elif isinstance(cmdlog,io.IOBase):
+            if clobbercmdlog:
+                raise RuntimeError('Cannot clobber a filehandle (cmdlog)')
+            cmdlog_filehandle = cmdlog
+        else:
+            raise RuntimeError('Can\'t understand cmdlog')
+        cmdlog_filehandle.write('{} executing: {}\n'.format(time_cmdstart,cmd))
+    else:
+        cmdlog_filehandle = None
+
+    if errorlog!=None:
+        if isinstance(errorlog,str):
+            errorlog_filehandle = open(errorlog, errorlog_access_mode, log_buffering)
+        elif isinstance(errorlog,io.IOBase):
+            errorlog_filehandle = errorlog
+        else:
+            raise RuntimeError('Can\'t understand errorlog')
+    else:
+        errorlog_filehandle = None
+        
+
+    # start the subprocess...
+    p = subprocess.Popen(cmd,shell=shell,stdout=subprocess.PIPE,stderr=subprocess.PIPE, close_fds=True)
+
+    # capture the output while the subprocess is running
+    if verbose>1:
+        print('Output:')
+    stdout_lines=[]
+
+    # Use a regular expression to search for a word that indicate that the command executed successfully: set successflag=0, and compile the search expression. 
+    if successword!='':
+        successflag = 0
+        m = re.compile(successword)
+    else:
+        successflag = 1
+        m = None
+        
+    while p.poll()==None:
+            l1 = p.stdout.readline()
+            if l1==b'':
+                continue
+            l=l1.decode('UTF-8').strip()
+            if verbose>1: print(l)
+            if cmdlog_filehandle != None or errorlog_filehandle != None:
+                if l!='': 
+                    if cmdlog_save_as_chunk_flag or errorlog_filehandle != None or return_output:
+                        stdout_lines.append(l+'\n')
+                    if not cmdlog_save_as_chunk_flag:
+                        #cmdlog_filehandle.write(l1)
+                        cmdlog_filehandle.write(l+'\n')
+
+            # check if the success word is in the output.
+            if m!=None and successflag ==0:
+                if m.search(l):
+                    successflag = 1
+                
+            
+    # Done!
+    time_cmdend = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    endstring = 'execution finished ({} to {}): {}'.format(time_cmdstart,time_cmdend,cmd)
+    if verbose:
+        print(endstring)
+
+    # if wanted, save the output into the cmdlog
+    if cmdlog_filehandle != None:
+        if cmdlog_save_as_chunk_flag:
+            cmdlog_filehandle.writelines(stdout_lines)
+        cmdlog_filehandle.write(endstring+'\n')
+            
+    # check for errors!
+    stderr_lines = p.stderr.readlines()
+
+    # Coulnd't find success word? add to the error messages...
+    if successflag!=1:
+        errline = 'ERROR: could not find success expression {} in the output!'.format(successword)
+        print(errline)
+        stderr_lines.append('{}\n'.format(errline).encode())
+
+    # if errors, print them again and save in errorlog
+    if len(stderr_lines)>0:
+
+        errline = '\n* THERE WERE ERRORS IN THE EXECUTION OF CMD ({} to {}): {}'.format(time_cmdstart,time_cmdend,cmd)
+        print(errline)
+        if errorlog_filehandle != None:
+            #errorlog_filehandle.write('{}\n'.format(errline).encode())
+            errorlog_filehandle.write(errline+'\n')
+        print('* Error messages:')
+        for l1 in stderr_lines:
+            l=l1.decode('UTF-8').strip()
+            print('*',l)
+            if errorlog_filehandle != None:
+                errorlog_filehandle.write(l+'\n')
+        errorcode = 1
+        
+    # close the files
+    if cmdlog_filehandle != None:
+        # if the file handle was opened within routine, close it. if the filehandle was passed, don't close it
+        if isinstance(cmdlog,str):
+            cmdlog_filehandle.close()
+    if errorlog_filehandle != None:
+        # if the file handle was opened within routine, close it. if the filehandle was passed, don't close it
+        if isinstance(errorlog,str):
+            errorlog_filehandle.close()
+
+    if return_output:
+        return(errorcode,stdout_lines,stderr_lines)
+    else:
+        return(errorcode)
+        
 
 class yamlcfgclass:
     def __init__(self):

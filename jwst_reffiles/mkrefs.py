@@ -20,7 +20,7 @@ from jwst_reffiles.mkref import mkrefclass
 from jwst_reffiles.pipeline.calib_prep import CalibPrep
 from jwst_reffiles.pipeline import pipeline_steps
 from jwst_reffiles.utils.tools import astrotableclass, yamlcfgclass
-from jwst_reffiles.utils.tools import makepath
+from jwst_reffiles.utils.tools import makepath,executecommand,append2file,rmfile
 
 # get the root dir of the code. This is needed only if the scripts are not installed as a module!
 #if 'JWST_MKREFS_SRCDIR' in os.environ:
@@ -101,9 +101,13 @@ class mkrefsclass(astrotableclass):
 
         parser.add_argument('--ssbdir', default=None,
                             help='Directory into which ssb files are stored (default=%(default)s)')
-        #parser.add_argument('--imdates2subdir', help=("add firstdate_lastdate subdir of the input images "
-        #                                              "used (default=%(default)s)"), action="store_true",default=False)
 
+        parser.add_argument('--force_redo_strun', help="Redo the ssb reduction with strun even if file already exists",
+                            action="store_true", default=False)
+        parser.add_argument('--maxNstrun', type=int, default=None,
+                            help='limit the number of strun commands to be run')
+
+        
         # Loop through all allowed reflabels, and add the options
         for reflabel in self.allowed_reflabels:
             print(reflabel)
@@ -724,7 +728,73 @@ class mkrefsclass(astrotableclass):
             raise RuntimeError("ERROR: imtypes=%s not yet implemented!" % imtypes)
         return(imagesets, imagelabels)
 
-    def mk_ssb_cmds(self):
+    def pick_strun_cmds_to_execute(self, force_redo_strun=False, maxNstrun = None, execute_strun_col='execute_strun'):
+        """ pick the strun commands to be executed! execute if
+        primary_strun=True, and both
+        file_exists,already_in_batch=False.  if force_redo_strun, then
+        execute even if file_exists, and throw error message if
+        already_in_batch """
+        execute_strun = np.full((len(self.ssbcmdtable.t)),False)
+        Nstrun=0
+        for i in range(len(self.ssbcmdtable.t)):
+            exeflag=self.ssbcmdtable.t['primary_strun'][i]
+
+            # Don't redo it if file already exists and if it is not force_redo_strun
+            if (not force_redo_strun) and self.ssbcmdtable.t['file_exists'][i]:
+                exeflag=False
+            
+            if self.ssbcmdtable.t['already_in_batch'][i]:
+                exeflag=False
+                # force_redo_strun? Cannot do that, otherwise all hell would break loose with overwriting files etc
+                if force_redo_strun:
+                    raise RuntimeError("Cannot use --force_redo_strun when strun command %s of index %d is still running in batch mode!" % (self.ssbcmdtable.t['strun_command'][i],i))
+
+            if maxNstrun!=None and Nstrun>=maxNstrun:
+                if self.verbose>=3:
+                    print('Skipping executing strun command for index %d, since maxNstrun=%d' % (i,maxNstrun))
+                exeflag=False
+
+            if exeflag:
+                Nstrun+=1
+                   
+            execute_strun[i]=exeflag
+            
+        self.ssbcmdtable.t[execute_strun_col]=execute_strun
+        return(0)
+
+    def check_if_primary_strun(self, primary_strun_col='primary_strun'):
+        """ check which entries are primary strun commands. """
+        primary_strun = np.full((len(self.ssbcmdtable.t)),True)
+        for i in range(len(self.ssbcmdtable.t)):
+            if self.ssbcmdtable.t['index_contained_within'][i][0]!=-1:
+                primary_strun[i]=False
+            if self.ssbcmdtable.t['repeat_of_index_number'][i][0]!=-1:
+                primary_strun[i]=False
+        self.ssbcmdtable.t[primary_strun_col]=primary_strun
+        return(0)
+
+    def check_if_inputfiles_exists(self, file_exists_col='file_exists'):
+        """ Check if input file exists, and fill the column file_exists_col with True or False """
+        file_exists = np.full((len(self.ssbcmdtable.t)),False)
+        for i in range(len(self.ssbcmdtable.t)):
+            if os.path.isfile(self.ssbcmdtable.t['output_name'][i]):
+                file_exists[i]=True
+        self.ssbcmdtable.t[file_exists_col]=file_exists
+        return(0)
+
+    def check_if_already_in_batch(self, already_in_batch_col='already_in_batch'):
+        """ check if the reduced input files are already running in batch (Condor), and set 'already_in_batch' to True or False """
+
+        print('\n*************************\n Check for Batch still needs to be implemented here!! \n *************************\n')
+
+        already_in_batch = np.full((len(self.ssbcmdtable.t)),False)
+        for i in range(len(self.ssbcmdtable.t)):
+            # ADD CHECK HERE!!!
+            print('Check for {}'.format(self.ssbcmdtable.t['strun_command'][i]))
+        self.ssbcmdtable.t[already_in_batch_col]=already_in_batch
+        return(0)
+
+    def mk_ssb_cmds(self,force_redo_strun=False,maxNstrun=None):
         '''
         Construct the reflabel commands, get the input files
         '''
@@ -829,29 +899,115 @@ class mkrefsclass(astrotableclass):
         mmm.prepare()
         print('Table column names:')
         print(mmm.proc_table.colnames)
-        #print(mmm.proc_table['ssbsteps'])
-        #print(mmm.proc_table['steps_to_run'])
-        #print(mmm.proc_table['output_name'])
-        sys.exit()
 
-        print('BACK IN MKREFS:')
-        print(mmm.proc_table['index', 'cmdID', 'reflabel', 'output_name', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
-        print(mmm.proc_table['strun_command'][-1])
-        sys.exit()
+        #print('BACK IN MKREFS:')
+        #print(mmm.proc_table['index', 'cmdID', 'reflabel', 'output_name', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
+        #print(mmm.proc_table['strun_command'][-1])
+        #sys.exit()
 
         self.ssbcmdtable = astrotableclass()
         self.ssbcmdtable.t = mmm.proc_table
-        self.ssbcmdtable.write('%s.ssbcmds.txt' % self.basename,verbose=True,clobber=True)
+
+        # check which entries are primary strun commands. Only primary
+        # strun commands need to be executed, secondary strun commands
+        # are already covered by primary strun commands
+        self.check_if_primary_strun()
+        
+        # check if the reduced input files exist or not, and fill
+        # 'file_exists' column with True or False
+        self.check_if_inputfiles_exists()
+
+        # check if the reduced input files are already running in
+        # batch (Condor), and set 'already_in_batch' to True or False
+        self.check_if_already_in_batch()
+
+        # pick the strun commands that need to be executed
+        self.pick_strun_cmds_to_execute(force_redo_strun = force_redo_strun, maxNstrun = maxNstrun)
+
+        # set strun_executed to None
+        self.ssbcmdtable.t['strun_executed'] = np.full((len(self.ssbcmdtable.t)),None)
+
+        print('VVVV',self.ssbcmdtable.t.colnames)
+        self.ssbcmdtable.write('%s.ssbcmds.txt' % self.basename,verbose=True,clobber=True,exclude_names=['repeat_of_index_number', 'index_contained_within'])
 
         self.cmdtable.write('%s.refcmds.txt' % self.basename,verbose=True,clobber=True)
 
+        if self.verbose>1:
+            print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_exists','already_in_batch','execute_strun','strun_executed'])
+        
         #print('strun commands:')
         #print(mmm.strun)
 
         return(0)
 
-    def run_ssb_cmds(self,batchmode=False):
-        print("### run ssb commands: NOT YET IMPLEMENTED!!!")
+    def getlogfilenames(self,filename):
+        (basename,suffix) = os.path.splitext(filename)
+        print (basename,suffix)
+        errorlog = '{}.err.txt'.format(basename)
+        outlog = '{}.log.txt'.format(basename)
+        if suffix != '.fits':
+            print('WARNING: It seems like the filename {} is not a fits file.'.format(filename))
+        return(outlog,errorlog)
+        
+    def run_ssb_cmds(self,batchmode=False,ssblogFlag=False,ssberrorlogFlag=True):
+        if self.onlyshow:
+            if self.verbose: print('\n*** ONLYSHOW: skipping running the strun commands!\n')
+            return(0)
+        
+        # cleaning up old output files:
+        for i in range(len(self.ssbcmdtable.t)):
+            if self.ssbcmdtable.t['execute_strun'][i]:
+                outfile = self.ssbcmdtable.t['output_name'][i]
+                (logfilename,errlogfilename) = self.getlogfilenames(outfile)
+                rmfile(outfile)
+                rmfile(logfilename)
+                # Don't clean up errlogfilename, we want to keep track of old errors...
+
+        indeces2run = np.where(self.ssbcmdtable.t['execute_strun'])
+
+        if batchmode:
+            print("### run strun commands in batch mode: NOT YET IMPLEMENTED!!!")
+            
+            # submit the batch here, return errorflag in case there is an issue submitting the batch
+            errorflag = 0
+            strun_list = self.ssbcmdtable.t['strun_command'][indeces2run]
+
+            # This is the list to be submitted to the batch
+            print(strun_list)
+
+            # mark the entries that are submitted to the batch
+            if not errorflag:
+                self.ssbcmdtable.t['execute_strun'][indeces2run]='batch'
+
+        else:
+            t4strun = self.ssbcmdtable.t[indeces2run] 
+            print(t4strun['index','execute_strun'])
+            for i in range(len(t4strun)):
+                strun_cmd = t4strun['strun_command'][i]
+                outfile = t4strun['output_name'][i]
+
+                # decide if logfiles, depending on config filea
+                (logfilename,errlogfilename) = self.getlogfilenames(outfile)
+                if not self.cfg.params['output']['ssblogFlag']: logfilename=None
+                if not self.cfg.params['output']['ssberrorlogFlag']: errlogfilename=None
+                
+                print('### Executing strun command for index %d: %s' % (indeces2run[0][i],strun_cmd))
+                (errorflag) = executecommand(strun_cmd, '', cmdlog=logfilename, errorlog=errlogfilename)
+
+                # extra error checking
+                if not os.path.isfile(outfile):
+                    print('ERROR: file {} did not get created with strun command!'.format(outfile))
+                    errorflag|=2
+
+                # fill ssbtable with results.
+                if errorflag:
+                    self.ssbcmdtable.t['strun_executed'][indeces2run[0][i]]='ERROR{}_serial'.format(errorflag)
+                else:
+                    self.ssbcmdtable.t['strun_executed'][indeces2run[0][i]]='serial'
+                        
+        if self.verbose>1:
+            print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_exists','already_in_batch','execute_strun','strun_executed'])
+
         return(0)
 
     def run_ref_cmds(self,batchmode=False):
@@ -881,6 +1037,15 @@ class mkrefsclass(astrotableclass):
 
 if __name__ == '__main__':
 
+    #cmd = 'echop hello1;echo GGGGGGG;echo SUCCESS'
+    #outputfile = '/Users/arest/nircam/jwst_reffiles/jwst_reffiles/delmeout.txt'
+    #errfile='/Users/arest/nircam/jwst_reffiles/jwst_reffiles/delmeerr.txt'
+    #(errorflag,stdoutlist,stderrlist) = executecommand(cmd,'SUCCESS', cmdlog=outputfile, errorlog=errfile, cmdlog_access_mode='a', verbose=2, cmdlog_save_as_chunk_flag = True,return_output=True)
+    #print('VVV',errorflag)
+    #print('BBB',stdoutlist)
+    #print('NNN',stderrlist)
+    #sys.exit(0)
+    
     mkrefs = mkrefsclass()
     parser = mkrefs.define_options()
     args = parser.parse_args()
@@ -918,10 +1083,10 @@ if __name__ == '__main__':
     #sys.exit(0)
 
     # create the ssb commands
-    mkrefs.mk_ssb_cmds()
+    mkrefs.mk_ssb_cmds(force_redo_strun=args.force_redo_strun, maxNstrun=args.maxNstrun)
 
     # run the ssb commands
-    mkrefs.run_ssb_cmds(batchmode=args.batchmode)
+    mkrefs.run_ssb_cmds(batchmode=args.batchmode,)
 
     # create the reference file commands
     mkrefs.mk_ref_cmds()
