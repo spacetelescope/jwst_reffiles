@@ -297,6 +297,13 @@ class CalibPrep:
             current_row_index = row['index']
             repeated_filename[current_row_index] = False
 
+            print(repeated_filename)
+            if current_row_index == 13:
+                print('REPEATED FILENAME: ', np.sum(repeated_filename.astype('int')))
+
+
+
+            
             # If the same starting file is present in more than one row:
             if np.sum(repeated_filename.astype('int')) > 0:
                 matching_rows = self.inputs[repeated_filename]
@@ -311,12 +318,14 @@ class CalibPrep:
                 for matching_row in matching_rows:
                     ssbsteps = re.sub(r'\s+', '', matching_row['steps_to_run'])
                     row_index = matching_row['index']
+
                     if ssbsteps in row_ssb:
                         # If the list of ssb steps is contained within the list of
                         # steps from the comparison file, then this entry is duplicate.
                         # Save the output name from this row if it is different from the
                         # comparison row.
                         additional_output = matching_row['output_name']
+
                         if (additional_output == outname):
                             # (len(matching_row['repeat_of_index_number']) == 0) &
                             # (current_row_index < row_index)):
@@ -395,7 +404,7 @@ class CalibPrep:
         -------
         completed : dict
         '''
-        completed = {}
+        completed = OrderedDict({})
         for key in self.pipe_step_list:
             completed[key] = False
 
@@ -416,7 +425,7 @@ class CalibPrep:
                 value = header.get(key)
                 if value == 'COMPLETE':
                     completed[PIPE_KEYWORDS[key]] = True
-        return OrderedDict(completed)
+        return completed
 
     def create_output(self, base, req):
         '''Create the output name of the pipeline-processed
@@ -779,11 +788,11 @@ class CalibPrep:
         '''
         # Make a copy of pipeline step dictionary and
         # intialize all steps to False
-        req = {}
+        req = OrderedDict({})
         for key in self.pipe_step_list:
             req[key] = False
         if stepstr is None:
-            return OrderedDict(req)
+            return req
 
         # Strip all whitespace from the list of steps
         # and split into a list
@@ -796,7 +805,7 @@ class CalibPrep:
                 req[ele] = True
             except KeyError as error:
                 print(error)
-        return OrderedDict(req)
+        return req
 
     def steps_to_run(self, infile, req, current):
         '''Return a list of the pipeline steps that need
