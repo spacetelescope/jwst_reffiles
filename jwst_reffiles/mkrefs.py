@@ -933,8 +933,8 @@ class mkrefsclass(astrotableclass):
         self.cmdtable.write('%s.refcmds.txt' % self.basename,verbose=True,clobber=True)
 
         if self.verbose>1:
-            print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_exists','already_in_batch','execute_strun','strun_executed'])
-
+            print(self.ssbcmdtable.t['index','real_input_file','ssbsteps','repeat_of_index_number', 'index_contained_within','primary_strun','file_exists','already_in_batch','execute_strun','strun_executed'])
+        
         #print('strun commands:')
         #print(mmm.strun)
 
@@ -1085,6 +1085,8 @@ if __name__ == '__main__':
     # create the ssb commands
     mkrefs.mk_ssb_cmds(force_redo_strun=args.force_redo_strun, maxNstrun=args.maxNstrun)
 
+    sys.exit(0)
+    
     # run the ssb commands
     mkrefs.run_ssb_cmds(batchmode=args.batchmode,)
 
