@@ -107,7 +107,7 @@ class mkrefsclass(astrotableclass):
         parser.add_argument('--maxNstrun', type=int, default=None,
                             help='limit the number of strun commands to be run')
 
-        
+
         # Loop through all allowed reflabels, and add the options
         for reflabel in self.allowed_reflabels:
             print(reflabel)
@@ -742,7 +742,7 @@ class mkrefsclass(astrotableclass):
             # Don't redo it if file already exists and if it is not force_redo_strun
             if (not force_redo_strun) and self.ssbcmdtable.t['file_exists'][i]:
                 exeflag=False
-            
+
             if self.ssbcmdtable.t['already_in_batch'][i]:
                 exeflag=False
                 # force_redo_strun? Cannot do that, otherwise all hell would break loose with overwriting files etc
@@ -756,9 +756,9 @@ class mkrefsclass(astrotableclass):
 
             if exeflag:
                 Nstrun+=1
-                   
+
             execute_strun[i]=exeflag
-            
+
         self.ssbcmdtable.t[execute_strun_col]=execute_strun
         return(0)
 
@@ -901,9 +901,9 @@ class mkrefsclass(astrotableclass):
         print(mmm.proc_table.colnames)
 
         #print('BACK IN MKREFS:')
-        #print(mmm.proc_table['index', 'cmdID', 'reflabel', 'output_name', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
+        print(mmm.proc_table['index', 'cmdID', 'reflabel', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
         #print(mmm.proc_table['strun_command'][-1])
-        #sys.exit()
+        sys.exit()
 
         self.ssbcmdtable = astrotableclass()
         self.ssbcmdtable.t = mmm.proc_table
@@ -912,7 +912,7 @@ class mkrefsclass(astrotableclass):
         # strun commands need to be executed, secondary strun commands
         # are already covered by primary strun commands
         self.check_if_primary_strun()
-        
+
         # check if the reduced input files exist or not, and fill
         # 'file_exists' column with True or False
         self.check_if_inputfiles_exists()
@@ -934,7 +934,7 @@ class mkrefsclass(astrotableclass):
 
         if self.verbose>1:
             print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_exists','already_in_batch','execute_strun','strun_executed'])
-        
+
         #print('strun commands:')
         #print(mmm.strun)
 
@@ -948,12 +948,12 @@ class mkrefsclass(astrotableclass):
         if suffix != '.fits':
             print('WARNING: It seems like the filename {} is not a fits file.'.format(filename))
         return(outlog,errorlog)
-        
+
     def run_ssb_cmds(self,batchmode=False,ssblogFlag=False,ssberrorlogFlag=True):
         if self.onlyshow:
             if self.verbose: print('\n*** ONLYSHOW: skipping running the strun commands!\n')
             return(0)
-        
+
         # cleaning up old output files:
         for i in range(len(self.ssbcmdtable.t)):
             if self.ssbcmdtable.t['execute_strun'][i]:
@@ -967,7 +967,7 @@ class mkrefsclass(astrotableclass):
 
         if batchmode:
             print("### run strun commands in batch mode: NOT YET IMPLEMENTED!!!")
-            
+
             # submit the batch here, return errorflag in case there is an issue submitting the batch
             errorflag = 0
             strun_list = self.ssbcmdtable.t['strun_command'][indeces2run]
@@ -980,7 +980,7 @@ class mkrefsclass(astrotableclass):
                 self.ssbcmdtable.t['execute_strun'][indeces2run]='batch'
 
         else:
-            t4strun = self.ssbcmdtable.t[indeces2run] 
+            t4strun = self.ssbcmdtable.t[indeces2run]
             print(t4strun['index','execute_strun'])
             for i in range(len(t4strun)):
                 strun_cmd = t4strun['strun_command'][i]
@@ -990,7 +990,7 @@ class mkrefsclass(astrotableclass):
                 (logfilename,errlogfilename) = self.getlogfilenames(outfile)
                 if not self.cfg.params['output']['ssblogFlag']: logfilename=None
                 if not self.cfg.params['output']['ssberrorlogFlag']: errlogfilename=None
-                
+
                 print('### Executing strun command for index %d: %s' % (indeces2run[0][i],strun_cmd))
                 (errorflag) = executecommand(strun_cmd, '', cmdlog=logfilename, errorlog=errlogfilename)
 
@@ -1004,7 +1004,7 @@ class mkrefsclass(astrotableclass):
                     self.ssbcmdtable.t['strun_executed'][indeces2run[0][i]]='ERROR{}_serial'.format(errorflag)
                 else:
                     self.ssbcmdtable.t['strun_executed'][indeces2run[0][i]]='serial'
-                        
+
         if self.verbose>1:
             print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_exists','already_in_batch','execute_strun','strun_executed'])
 
@@ -1045,7 +1045,7 @@ if __name__ == '__main__':
     #print('BBB',stdoutlist)
     #print('NNN',stderrlist)
     #sys.exit(0)
-    
+
     mkrefs = mkrefsclass()
     parser = mkrefs.define_options()
     args = parser.parse_args()

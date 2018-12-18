@@ -88,6 +88,7 @@ from glob import glob
 import itertools
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -132,8 +133,16 @@ class CalibPrep:
 
         # Change the entries in the 'index_contained_within' to be lists, for easy
         # indexing later.
-        new_contained_data = [list(entry) for entry in self.inputs['index_contained_within']]
+        new_contained_data = [sorted(list(entry)) for entry in self.inputs['index_contained_within']]
+
+        # To ensure that each entry in the Column is a list (rather than a scalar)
+        # add a dummy value that is a 2-element list.
+        new_contained_data.append([-42, -43])
         new_contained_column = Column(new_contained_data, name='index_contained_within')
+
+        # Now remove dummy value
+        new_contained_column = new_contained_column[0:-1]
+
         self.inputs.remove_column('index_contained_within')
         self.inputs.add_column(new_contained_column)
 
@@ -145,7 +154,16 @@ class CalibPrep:
 
         # Convert to a list so we can find unique elements
         repeats_list = [sorted(list(s)) for s in repeats]
+
+        # It seems that when all elements of repeats_list are one element lists,
+        #np.unique returns a list, whereas if some of the lists within repeat_list
+        #are multiple-element lists, then np.unique returns a list of lists. Try adding
+        # this dummy entry to force unique to always return a list of lists
+        repeats_list.append([-42, -42])
         unique_repeats = np.unique(repeats_list)
+
+        # Now pop the dummy entry out of unique_repeats
+        unique_repeats = unique_repeats[1:]
 
         for repeat_values in unique_repeats:
             # Set the first instance of the repeated group to -1 so it will be run.
@@ -154,8 +172,13 @@ class CalibPrep:
 
         # Change the entries in the 'repeat_of_index_number' to be lists, for easy
         # indexing later.
-        new_repeat_data = [list(entry) for entry in self.inputs['repeat_of_index_number']]
+        new_repeat_data = [sorted(list(entry)) for entry in self.inputs['repeat_of_index_number']]
+
+        # Repeat the dummy value trick here so that the column will contain lists
+        new_repeat_data.append([-42, -42])
         new_repeat_column = Column(new_repeat_data, name='repeat_of_index_number')
+        new_repeat_column = new_repeat_column[0:-1]
+
         self.inputs.remove_column('repeat_of_index_number')
         self.inputs.add_column(new_repeat_column)
 
@@ -170,7 +193,7 @@ class CalibPrep:
         if isinstance(self.search_dir, str):
             # Does the directory exist?
             if not os.path.isdir(self.search_dir):
-                print('WARNING: directory %s does not exist!' % self.search_dir)
+                print('WARNING: directory {} does not exist!'.format(self.search_dir))
                 print('WARNING: nothing found!')
                 return([])
             generator = os.walk(self.search_dir, topdown=True)
@@ -181,7 +204,7 @@ class CalibPrep:
             for searchdir in self.search_dir:
                 # Does the directory exist?
                 if not os.path.isdir(searchdir):
-                    print('WARNING: directory %s does not exist!' % searchdir)
+                    print('WARNING: directory {} does not exist!'.format(searchdir))
                     continue
                 generators.append(os.walk(searchdir, topdown=True))
 
@@ -501,12 +524,10 @@ class CalibPrep:
         files : list
             List of found files containing the input base string
         '''
-
         files = []
         for dirpath, dirnames, fnames in generator_object:
-            mch = [f for f in fnames if base in os.path.join(dirpath, f)]
-            # or could try:
-            # fnmatch.filter(fnames,base)
+            mch = [f for f in fnames if base in os.path.join(dirpath, f) and f[-4:] == 'fits']
+
             for m in mch:
                 files.append(os.path.join(dirpath, m))
         return files
@@ -854,7 +875,17 @@ class CalibPrep:
         # Determine appropriate reference file overrides
         # something
 
-        initial = 'strun calwebb_detector1.cfg '
+        # Assume the calwebb_detector1.cfg config file is in self.output_directory. If not,
+        # copy it there from the repo.
+        cfg_file = os.path.join(self.output_dir, 'calwebb_detector1.cfg')
+        if not os.path.isfile(cfg_file):
+            print('INFO: calwebb_detector1.cfg file does not exist in {}. Creating.'
+                  .format(self.output_dir))
+            cfg_reference = os.path.join(os.path.dirname(__file__), 'calwebb_detector1.cfg')
+            subprocess.call(['cp', cfg_reference, cfg_file])
+
+        # Create the strun command
+        initial = 'strun {} '.format(cfg_file)
         for infile, steps, outfile in zip(input, steps_to_run, outfile_name):
             with_file = initial + infile
 
