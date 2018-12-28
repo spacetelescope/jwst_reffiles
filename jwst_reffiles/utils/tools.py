@@ -518,7 +518,7 @@ class astrotableclass:
                 else:
                     print('WARNING! col %s does not exist, so cannot format it!' % name)
 
-    def write(self, filename, clobber=True, verbose=False, format='commented_header',
+    def write(self, filename, indeces=None, clobber=True, verbose=False, format='commented_header',
               makepathFlag=True, **kwargs):
         if verbose:
             print('Saving %s' % filename)
@@ -535,9 +535,15 @@ class astrotableclass:
             if os.path.isfile(filename):
                 print('ERROR: could not save %s' % filename)
                 return(2)
+            
+        if indeces is None:
+            ascii.write(self.t, filename, format=format, **kwargs)
+        else:
+            ascii.write(self.t[indeces], filename, format=format, **kwargs)
 
-        ascii.write(self.t, filename, format=format, **kwargs)
-
+        return(0)
+    
+            
     def fitsheader2table(self, fitsfilecolname, rowindices=None, requiredfitskeys=None,
                          optionalfitskey=None, raiseError=True, skipcolname=None, headercol=None):
         if rowindices is None:

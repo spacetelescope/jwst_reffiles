@@ -25,9 +25,10 @@ class mkrefclass:
 
         self.inputfiles = None
 
-    def defaultoptions(self, parser=None, usage=None, conflict_handler=None):
+    def default_optional_arguments(self, parser=None, usage=None, conflict_handler=None):
         if parser is None:
             parser = argparse.ArgumentParser(usage=usage, conflict_handler=conflict_handler)
+
         parser.add_argument('--verbose', '-v', action='count')
         parser.add_argument('-d', '--debug', help="debug", action='count')
 
@@ -53,23 +54,27 @@ class mkrefclass:
 
         return parser
 
-    def inputfileoptions(self, parser):
-        """ add here the input file options --D?, --F?, --S? """
-        print("PLACEHOLDER for input file options")
+    def positional_arguments(self, parser):
+        """ 
+        The filename of the output reference file is the first argument.
+        The filename of the input image list is the second argument
+        """
+        parser.add_argument("outputreffilename", nargs=1, help=("The filename of the output reference file"))
+        parser.add_argument("imageslist_filename", nargs=1, help=("The filename of the input image list"))
         return(0)
 
-    def extraoptions(self, parser, only_optional_arguments=False):
+    def extra_optional_arguments(self, parser, only_optional_arguments=False):
         """ add here the extra options for a given reference file maker """
         print("PLACEHOLDER for extraoptions")
         return(0)
 
-    def alloptions(self, reftype=None, parser=None, subparsers=None, subparserlist=None, usage=None):
+    def allargs(self,  parser=None, subparsers=None, subparserlist=None, usage=None):
         if parser is None:
             parser = argparse.ArgumentParser(usage=usage, conflict_handler='resolve')
 
-        self.defaultoptions(parser=parser, usage=None)
+        self.default_optional_arguments(parser=parser)
 
-        self.extraoptions(parser)
+        self.extra_optional_arguments(parser)
         self.inputfileoptions(parser)
 
         return(parser)

@@ -28,9 +28,9 @@ class mkrefclassX(mkrefclass):
         return(0)
         
     def extraoptions(self, parser):
-        parser.add_argument('-d', '--dummy_gain_option1',
+        parser.add_argument('-d', '--dummy_gain_option1', default=None, nargs=2,
                             help='testoption1 gainarmin')
-        parser.add_argument('--dummy_gain_option2',
+        parser.add_argument('--dummy_gain_option2', default=None,
                             help='testoption2 gainarmin')
         return(0)
 

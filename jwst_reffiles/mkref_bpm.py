@@ -22,7 +22,7 @@ class mkrefclassX(mkrefclass):
         return(0)
         
     def extraoptions(self, parser):
-        parser.add_argument('-x','--dummy_bpm_option1',
+        parser.add_argument('-x','--dummy_bpm_option1',nargs=2,
                             help='testoption1 bpm')
         return(0)
 

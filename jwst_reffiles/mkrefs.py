@@ -8,7 +8,7 @@ import glob
 import os
 import re
 import sys
-import types
+import types,copy
 
 import astropy.io.fits as fits
 from astropy.io import ascii
@@ -33,8 +33,70 @@ rootdir = os.path.dirname(os.path.realpath(__file__))
 
 
 class cmdsclass(astrotableclass):
-    def __init__(self):
-        astrotableclass.__init__(self)
+    def __init__(self, *args, verbose=0, **kwargs):
+        astrotableclass.__init__(self, *args, **kwargs)
+        self.verbose=verbose
+        
+    def check_if_files_exists(self, file_col='output_name', file_exists_col='file_exists'):
+        """ Check if files in file_col exists, and fill the column file_exists_col with True or False """
+        file_exists = np.full((len(self.t)),False)
+        for i in range(len(self.t)):
+            if os.path.isfile(self.t[file_col][i]):
+                file_exists[i]=True
+        self.t[file_exists_col]=file_exists
+        return(0)
+        
+    def check_if_already_in_batch(self, already_in_batch_col='already_in_batch'):
+        """ check if the reduced input files are already running in batch (Condor), and set 'already_in_batch' to True or False """
+
+        print('\n*************************\n Check for Batch still needs to be implemented here!! \n *************************\n')
+
+        already_in_batch = np.full((len(self.t)),False)
+        for i in range(len(self.t)):
+            # ADD CHECK HERE!!!
+            print('Check for {}'.format(self.t['strun_command'][i]))
+        self.t[already_in_batch_col]=already_in_batch
+        return(0)
+        
+    def pick_cmds_to_execute(self, execute_cmds=None, force_redo=False, maxNexe=None, execute_cmds_col='execute_cmds'):
+        """ pick the commands to be executed!  execute_cmds can
+        contain an initial one-dimensional input array of True or
+        False set execute_cmds to False if file_exists or
+        already_in_batch=False.  if force_redo, then execute even if
+        file_exists, and throw error message if already_in_batch """
+
+        if execute_cmds is None:
+            execute_cmds = np.full((len(self.t)),True)
+        else:
+            # just some error checking...
+            if len(self.t) != len(execute_cmds):
+                raise RuntimeError("Length of initial execute_commands array is not the same than the length of the cmd table ({}!={})".format(len(self.t),len(execute_cmds)))
+
+        Nexe=0
+        for i in range(len(self.t)):
+            exeflag = execute_cmds[i]
+            
+            # Don't redo it if file already exists and if it is not force_redo
+            if (not force_redo) and self.t['file_already_exists'][i]:
+                exeflag=False
+
+            if self.t['already_in_batch'][i]:
+                exeflag=False
+                # force_redo? Cannot do that, otherwise all hell would break loose with overwriting files etc
+                if force_redo:
+                    raise RuntimeError("Cannot use --force_redo when command %s of index %d is still running in batch mode!" % (self.t['strun_command'][i],i))
+
+            if maxNexe!=None and Nexe>=maxNexe:
+                if self.verbose>=3:
+                    print('Skipping executing command for index %d, since maxNexe=%d' % (i,maxNexe))
+                exeflag=False
+
+            if exeflag: Nexe+=1
+
+            execute_cmds[i]=exeflag
+
+        self.t[execute_cmds_col]=execute_cmds
+        return(0)
 
 
 class mkrefsclass(astrotableclass):
@@ -60,13 +122,16 @@ class mkrefsclass(astrotableclass):
         #self.darks = None
         #self.flats = None
 
+        self.ssbtable_excludecols4saving = ['repeat_of_index_number', 'index_contained_within']
+        
         #
         self.DDtable = astrotableclass()
         self.FFtable = astrotableclass()
         self.DDFFtable = astrotableclass()
 
-        self.cmdtable = cmdsclass()
-
+        self.refcmdtable = cmdsclass()
+        
+        
         self.allowed_reflabels = ['bpm', 'rdnoise_nircam', 'gain_armin']
 
     def define_options(self, parser=None, usage=None, conflict_handler='resolve'):
@@ -241,12 +306,6 @@ class mkrefsclass(astrotableclass):
 
         return(self.runID, self.runlabel)
 
-    #def getssbdir(self, ssbdir=None, **kwarg):
-    #    if ssbdir != None and ssbdir != '':
-    #        return(ssbdir)
-    #    ssbdir = '%s/ssb' % self.getbasedir(**kwarg)
-    #    return(ssbdir)
-
     def set_dirs(self, outrootdir=None, outsubdir=None, runID=None, runIDNdigits=1, newrunID=False,
                  ssbdir=None, skip_runID_ssbdir=False):
         # get the runID
@@ -275,54 +334,10 @@ class mkrefsclass(astrotableclass):
 
         return(0)
 
-    def setoutbasename(self, reftype, imagelist, outbasename=None, outrootdir=None, outsubdir=None,
-                       addsuffix=None):
-        #if outbasename is not None:
-        #    self.outbasename = outbasename
-        #    return(outbasename)
-
-        if len(imagelist) > 1:
-            print('### more than 1 input file in setoutbasename not yet implemented!!!! exiting .... ###')
-            sys.exit(0)
-
-        # if outdir is passed or specified, use it, if not use the directiroy of the input filename
-        (imdir, imbasename) = os.path.split(os.path.abspath(imagelist[0]))
-        if outrootdir is None:
-            if self.cfg.params['output']['outrootdir'] == '':
-                raise RuntimeError("No output rootdir!")
-            else:
-                outrootdir = self.cfg.params['output']['outrootdir']
-
-        outbasename = '%s' % outrootdir
-
-        # outsubdir: test if outsubdir is passed or if it is specified in the config file ...
-        if outsubdir is None and self.cfg.params['output']['outsubdir'] != '':
-            outsubdir = self.cfg.params['output']['outsubdir']
-        # ... and if yes, add it
-        if outsubdir is not None:
-            outbasename += '/%s' % outsubdir
-
-        outbasename += '/'
-        if reftype is not None:
-            outbasename += '%s_' % (reftype)
-        outbasename += re.sub('\.fits$', '', imbasename)
-
-        # addsuffix: test if addsuffix is passed or if it is specified in the config file ...
-        if addsuffix is None and self.cfg.params['output']['addsuffix'] != '':
-            addsuffix = self.cfg.params['output']['addsuffix']
-        # ... and if yes, add it
-        if addsuffix is not None:
-            if not re.search('\.', addsuffix):
-                outbasename += '.'
-            outbasename += '%s' % addsuffix
-
-        if self.verbose > 1:
-            print('Output basenbame:', outbasename)
-
-        self.outbasename = outbasename
-
+    def getrefoutbasename(self, reflabel, reftype, cmdID):
+        outbasename = '{}/{}/{}.{}.cmd{}_{}'.format(self.basedir,reflabel,reflabel,os.path.basename(self.basename),cmdID,reftype)
         return(outbasename)
-
+        
     def trim_imagelist(self, imagelist, basenamepattern=None):
         '''
         only keep fits file that match basenamepattern
@@ -728,7 +743,7 @@ class mkrefsclass(astrotableclass):
             raise RuntimeError("ERROR: imtypes=%s not yet implemented!" % imtypes)
         return(imagesets, imagelabels)
 
-    def pick_strun_cmds_to_execute(self, force_redo_strun=False, maxNstrun = None, execute_strun_col='execute_strun'):
+    def DELMEpick_strun_cmds_to_execute(self, force_redo_strun=False, maxNstrun = None, execute_strun_col='execute_strun'):
         """ pick the strun commands to be executed! execute if
         primary_strun=True, and both
         file_exists,already_in_batch=False.  if force_redo_strun, then
@@ -740,7 +755,7 @@ class mkrefsclass(astrotableclass):
             exeflag=self.ssbcmdtable.t['primary_strun'][i]
 
             # Don't redo it if file already exists and if it is not force_redo_strun
-            if (not force_redo_strun) and self.ssbcmdtable.t['file_exists'][i]:
+            if (not force_redo_strun) and self.ssbcmdtable.t['file_already_exists'][i]:
                 exeflag=False
 
             if self.ssbcmdtable.t['already_in_batch'][i]:
@@ -773,27 +788,6 @@ class mkrefsclass(astrotableclass):
         self.ssbcmdtable.t[primary_strun_col]=primary_strun
         return(0)
 
-    def check_if_inputfiles_exists(self, file_exists_col='file_exists'):
-        """ Check if input file exists, and fill the column file_exists_col with True or False """
-        file_exists = np.full((len(self.ssbcmdtable.t)),False)
-        for i in range(len(self.ssbcmdtable.t)):
-            if os.path.isfile(self.ssbcmdtable.t['output_name'][i]):
-                file_exists[i]=True
-        self.ssbcmdtable.t[file_exists_col]=file_exists
-        return(0)
-
-    def check_if_already_in_batch(self, already_in_batch_col='already_in_batch'):
-        """ check if the reduced input files are already running in batch (Condor), and set 'already_in_batch' to True or False """
-
-        print('\n*************************\n Check for Batch still needs to be implemented here!! \n *************************\n')
-
-        already_in_batch = np.full((len(self.ssbcmdtable.t)),False)
-        for i in range(len(self.ssbcmdtable.t)):
-            # ADD CHECK HERE!!!
-            print('Check for {}'.format(self.ssbcmdtable.t['strun_command'][i]))
-        self.ssbcmdtable.t[already_in_batch_col]=already_in_batch
-        return(0)
-
     def mk_ssb_cmds(self,force_redo_strun=False,maxNstrun=None):
         '''
         Construct the reflabel commands, get the input files
@@ -810,22 +804,28 @@ class mkrefsclass(astrotableclass):
                 self.cfg.params[reflabel]['ssbsteps'] = pipeline_steps.step_plus(step_name, self.cfg.params['instrument'])
 
         # this is just to get the correct dtype for the reflabel  columns
-        dummyreflabel = astrotableclass()
-        dummyreflabel.t['reflabel'] = self.reflabellist
-        dummyreflabel.t['ssbsteps'] = [self.cfg.params[reflabel]['ssbsteps'] for reflabel in self.reflabellist]
+        #dummyreflabel = astrotableclass()
+        #dummyreflabel.t['reflabel'] = self.reflabellist
+        #dummyreflabel.t['ssbsteps'] = [self.cfg.params[reflabel]['ssbsteps'] for reflabel in self.reflabellist]
 
-        self.cmdtable = astrotableclass(names=('reflabel', 'detector', 'cmdID', 'Nim'),
-                                        dtype=(dummyreflabel.t['reflabel'].dtype,
-                                               self.imtable.t['DETECTOR'].dtype, 'i8', 'i8'))
-        #self.cmdtable = astrotableclass(names=('reflabel','detector','cmdID','Nim'))
-        self.cmdtable.t['cmdID', 'Nim'].format = '%5d'
-        self.cmdtable.t['reflabel', 'detector'].format = '%s'
+        self.refcmdtable = astrotableclass(names=('reflabel', 'detector', 'cmdID', 'Nim', 'outbasename'),
+#                                        dtype=(dummyreflabel.t['reflabel'].dtype,
+#                                               self.imtable.t['DETECTOR'].dtype, 'i8', 'i8',np.dtype(object)))
+                                        dtype=(np.dtype(object),np.dtype(object), 'i8', 'i8',np.dtype(object)))
+        #self.refcmdtable = astrotableclass(names=('reflabel','detector','cmdID','Nim'))
+        self.refcmdtable.t['cmdID', 'Nim'].format = '%5d'
+        self.refcmdtable.t['reflabel', 'detector', 'outbasename'].format = '%s'
+
+        #print(self.imtable.t['DETECTOR'].dtype)
+        #sys.exit(0)
+        
         self.inputimagestable = astrotableclass(names=('cmdID', 'reflabel', 'imlabel', 'imtype', 'detector',
                                                        'ssbsteps', 'imindex', 'imID', 'MJD', 'fitsfile'),
-                                                dtype=('i8', dummyreflabel.t['reflabel'].dtype, 'S40',
+#                                                dtype=('i8', dummyreflabel.t['reflabel'].dtype, 'S40',
+                                                dtype=('i8', np.dtype(object), np.dtype(object),
                                                        self.imtable.t['imtype'].dtype,
                                                        self.imtable.t['DETECTOR'].dtype,
-                                                       dummyreflabel.t['ssbsteps'].dtype,
+                                                       np.dtype(object),
                                                        'i8', 'i8', 'f8', self.imtable.t['fitsfile'].dtype))
         self.inputimagestable.t['cmdID', 'imindex', 'imID'].format = '%5d'
         self.inputimagestable.t['MJD'].format = '%.8f'
@@ -873,13 +873,16 @@ class mkrefsclass(astrotableclass):
                             dict2add[key] = self.imtable.t[key][imindex]
                         self.inputimagestable.t.add_row(dict2add)
 
-                    self.cmdtable.t.add_row({'reflabel': reflabel, 'detector': detector, 'cmdID': cmdID,
-                                             'Nim': len(inputimagelabels)})
+                    self.refcmdtable.t.add_row({'reflabel': reflabel,
+                                             'detector': detector,
+                                             'cmdID': cmdID,
+                                             'Nim': len(inputimagelabels),
+                                             'outbasename':self.getrefoutbasename(reflabel, self.cfg.params[reflabel]['reftype'], cmdID)})
                     cmdID += 1
 
         if self.verbose > 1:
             print('\n### COMMANDS:')
-            print(self.cmdtable.t)
+            print(self.refcmdtable.t)
             print('\n### INPUT FILES:')
             print(self.inputimagestable.t)
 
@@ -903,9 +906,8 @@ class mkrefsclass(astrotableclass):
         #print('BACK IN MKREFS:')
         print(mmm.proc_table['index', 'cmdID', 'reflabel', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
         #print(mmm.proc_table['strun_command'][-1])
-        sys.exit()
 
-        self.ssbcmdtable = astrotableclass()
+        self.ssbcmdtable = cmdsclass(verbose=self.verbose)
         self.ssbcmdtable.t = mmm.proc_table
 
         # check which entries are primary strun commands. Only primary
@@ -914,27 +916,28 @@ class mkrefsclass(astrotableclass):
         self.check_if_primary_strun()
 
         # check if the reduced input files exist or not, and fill
-        # 'file_exists' column with True or False
-        self.check_if_inputfiles_exists()
+        # 'file_already_exists' column with True or False
+        #self.check_if_files_exists(self.ssbcmdtable.t, file_col='output_name',file_exists_col='file_already_exists')
+        self.ssbcmdtable.check_if_files_exists(file_col='output_name', file_exists_col='file_already_exists')
 
         # check if the reduced input files are already running in
         # batch (Condor), and set 'already_in_batch' to True or False
-        self.check_if_already_in_batch()
+        self.ssbcmdtable.check_if_already_in_batch()
 
         # pick the strun commands that need to be executed
-        self.pick_strun_cmds_to_execute(force_redo_strun = force_redo_strun, maxNstrun = maxNstrun)
-
+        self.ssbcmdtable.pick_cmds_to_execute(execute_cmds=copy.deepcopy(self.ssbcmdtable.t['primary_strun']), force_redo = force_redo_strun, maxNexe = maxNstrun, execute_cmds_col='execute_strun')
+        
         # set strun_executed to None
         self.ssbcmdtable.t['strun_executed'] = np.full((len(self.ssbcmdtable.t)),None)
 
-        print('VVVV',self.ssbcmdtable.t.colnames)
+        if self.verbose>2: print('ssb table colnames:',self.ssbcmdtable.t.colnames)
         self.ssbcmdtable.write('%s.ssbcmds.txt' % self.basename,verbose=True,clobber=True,exclude_names=['repeat_of_index_number', 'index_contained_within'])
 
-        self.cmdtable.write('%s.refcmds.txt' % self.basename,verbose=True,clobber=True)
+        self.refcmdtable.write('%s.refcmds.txt' % self.basename,verbose=True,clobber=True)
 
         if self.verbose>1:
-            print(self.ssbcmdtable.t['index','real_input_file','ssbsteps','repeat_of_index_number', 'index_contained_within','primary_strun','file_exists','already_in_batch','execute_strun','strun_executed'])
-        
+            print(self.ssbcmdtable.t['index','real_input_file','ssbsteps','repeat_of_index_number', 'index_contained_within','primary_strun','file_already_exists','already_in_batch','execute_strun','strun_executed'])
+
         #print('strun commands:')
         #print(mmm.strun)
 
@@ -981,7 +984,20 @@ class mkrefsclass(astrotableclass):
 
         else:
             t4strun = self.ssbcmdtable.t[indeces2run]
-            print(t4strun['index','execute_strun'])
+            print(t4strun['index','execute_strun','output_name'])
+
+            if self.debug:
+                for i in range(len(t4strun)):
+                    outfile = t4strun['output_name'][i]
+                    self.ssbcmdtable.t['strun_executed'][indeces2run[0][i]]='serial'
+                    os.system("touch %s" % outfile)
+
+                #self.check_if_files_exists(self.ssbcmdtable.t, file_col='output_name', file_exists_col='file_exists')
+                self.ssbcmdtable.check_if_files_exists(file_col='output_name', file_exists_col='file_exists')
+                print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_already_exists','already_in_batch','execute_strun','strun_executed','file_exists'])
+                return(0)
+
+                
             for i in range(len(t4strun)):
                 strun_cmd = t4strun['strun_command'][i]
                 outfile = t4strun['output_name'][i]
@@ -1005,8 +1021,11 @@ class mkrefsclass(astrotableclass):
                 else:
                     self.ssbcmdtable.t['strun_executed'][indeces2run[0][i]]='serial'
 
+            #self.check_if_files_exists(self.ssbcmdtable.t, file_col='output_name', file_exists_col='file_exists')
+            self.ssbcmdtable.check_if_files_exists(file_col='output_name', file_exists_col='file_exists')
+                    
         if self.verbose>1:
-            print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_exists','already_in_batch','execute_strun','strun_executed'])
+            print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_already_exists','already_in_batch','execute_strun','strun_executed','file_exists'])
 
         return(0)
 
@@ -1019,13 +1038,64 @@ class mkrefsclass(astrotableclass):
         sys.exit(0)
 
     def mk_ref_cmds(self):
-        for i in range(len(self.cmdtable.t)):
+        if self.verbose>2:
+            print('refcmd table colnames:',self.refcmdtable.t.colnames)
+            print(self.refcmdtable.t)
 
-            print('### cmd ID %d: building cmd for %s' % (self.cmdtable.t['cmdID'][i],
-                                                          self.cmdtable.t['reflabel'][i]))
-            # (1) get teh input images from self.inputimagestable
+        #loop through refcomds table, and create the individual commands
+        for i in range(len(self.refcmdtable.t)):
+            reflabel = self.refcmdtable.t['reflabel'][i]            
+            print('### cmd ID %d: building cmd for %s' % (self.refcmdtable.t['cmdID'][i],reflabel))
+
+            refcmd = 'mkref_{}.py {}.fits'.format(reflabel,self.refcmdtable.t['outbasename'][i])
+            
+            # (1) get the input images from self.ssbcmdtable
             # (2) parse through the options
 
+            # these are the input images for this reference file command
+            indeces2run, = np.where(self.ssbcmdtable.t['cmdID']==self.refcmdtable.t['cmdID'][i])
+            # print the images and some error checking
+            if self.verbose>2 or (len(t_inputimages)!=self.refcmdtable.t['Nim'][i]):
+                print('Images found for this ref command:')
+                print(self.ssbcmdtable.t['index','cmdID','reflabel','imlabel','imtype','imindex','imID','fitsfile'][indeces2run])
+
+                # some error checking: this should never be true
+                if (len(indeces2run)!=self.refcmdtable.t['Nim'][i]):
+                    raise RuntimeError("Expected {} images, but {} found!".format(self.refcmdtable.t['Nim'][i],len(indeces2run)))
+
+            #t_inputimages = self.ssbcmdtable.t[indeces2run]
+
+            inputlist_filename = '{}.imlist.txt'.format(self.refcmdtable.t['outbasename'][i])
+            self.ssbcmdtable.write(inputlist_filename, indeces=indeces2run, verbose=self.verbose, clobber=True, exclude_names=self.ssbtable_excludecols4saving)
+            refcmd += ' {}'.format(inputlist_filename)
+
+            # now get the options specific to the mkref_X.py command
+            parser4mkref = argparse.ArgumentParser(conflict_handler='resolve')            
+            mkrefpackage = __import__("mkref_%s" % reflabel)
+            mkref_tmp = mkrefpackage.mkrefclassX()
+            mkref_tmp.defaultoptions(parser4mkref)
+            mkref_tmp.extraoptions(parser4mkref)
+            print(parser4mkref)
+            args_tmp = parser4mkref.parse_known_args()
+            allowed_args_dict = vars(args_tmp[0])
+
+            optionstring = ''
+            for arg in allowed_args_dict:
+                if allowed_args_dict[arg] is None:
+                    # skip None options. These should be default!
+                    continue
+                if isinstance(allowed_args_dict[arg],list):
+                    print('BBBBB000','{}:{}'.format(arg,' '.join(allowed_args_dict[arg])))
+                    optionstring+= ' --{} {}'.format(arg,' '.join(allowed_args_dict[arg]))
+                else:   
+                    print('BBBBB000','{}:{}'.format(arg,allowed_args_dict[arg]))
+                    optionstring+= ' --{} {}'.format(arg,allowed_args_dict[arg])
+
+            print (optionstring)
+            refcmd += optionstring
+            print (refcmd)
+            sys.exit(0)
+            
     def combinerefs(self):
         print("### combinerefs: NOT YET IMPLEMENTED!!!")
         sys.exit(0)
@@ -1082,17 +1152,20 @@ if __name__ == '__main__':
     mkrefs.check_inputfiles()
     #sys.exit(0)
 
-    # create the ssb commands
+    # initialize the refcmds table. This table does not contain yet the refcmds...
+    #mkrefs.mk_refcmds_table()
+
+    # create the ssb commands. this also initializes the refcmds table
     mkrefs.mk_ssb_cmds(force_redo_strun=args.force_redo_strun, maxNstrun=args.maxNstrun)
 
-    sys.exit(0)
-    
     # run the ssb commands
     mkrefs.run_ssb_cmds(batchmode=args.batchmode,)
 
     # create the reference file commands
     mkrefs.mk_ref_cmds()
 
+    sys.exit(0)
+    
     # run the reference file  commands
     mkrefs.run_ref_cmds(batchmode=args.batchmode)
 
