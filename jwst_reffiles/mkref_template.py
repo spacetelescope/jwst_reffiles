@@ -18,16 +18,26 @@ import scipy
 from jwst_reffiles.utils.tools import astrotableclass,yamlcfgclass
 
 
-class mkrefclass:
+class mkrefclass_template:
     def __init__(self):
-        self.cfg = None
-        self.outbasename = None
+        self.cfg = yamlcfgclass()
 
-        self.inputfiles = None
+################################################################################
+# The following functions (until the next section) should only be modified
+# in exceptional circumstances in the child classes of mkref_X.py
+################################################################################
+    
+        
+    def positional_arguments(self, parser):
+        """ 
+        The filename of the output reference file is the first argument.
+        The filename of the input image list is the second argument
+        """
+        parser.add_argument("outputreffilename", nargs=1, help=("The filename of the output reference file"))
+        parser.add_argument("imageslist_filename", nargs=1, help=("The filename of the input image list"))
+        return(0)
 
-    def default_optional_arguments(self, parser=None, usage=None, conflict_handler=None):
-        if parser is None:
-            parser = argparse.ArgumentParser(usage=usage, conflict_handler=conflict_handler)
+    def default_optional_arguments(self, parser):
 
         parser.add_argument('--verbose', '-v', action='count')
         parser.add_argument('-d', '--debug', help="debug", action='count')
@@ -39,7 +49,7 @@ class mkrefclass:
         else:
             cfgfile = None
         parser.add_argument('-c', '--cfgfile', default=cfgfile, help='main config file. (default=%(default)s)')
-        parser.add_argument('-e', '--extracfgfile', action='append', default=None,
+        parser.add_argument('-e', '--extracfgfile', default=None,
                             help=('additional config file. These cfg files do not need to have all '
                                   'parameters. They overwrite the parameters in the main cfg file.'))
         parser.add_argument('-p', '--params', action='append', default=None, nargs=2,
@@ -52,32 +62,38 @@ class mkrefclass:
                             help=('"section param val". change parameters in given section of '
                                   'config file (default=%(default)s)'))
 
-        return parser
-
-    def positional_arguments(self, parser):
-        """ 
-        The filename of the output reference file is the first argument.
-        The filename of the input image list is the second argument
-        """
-        parser.add_argument("outputreffilename", nargs=1, help=("The filename of the output reference file"))
-        parser.add_argument("imageslist_filename", nargs=1, help=("The filename of the input image list"))
         return(0)
 
-    def extra_optional_arguments(self, parser, only_optional_arguments=False):
+    def allargs(self,  parser=None, usage=None, conflict_handler='resolve'):
+        if parser is None:
+            parser = argparse.ArgumentParser(usage=usage, conflict_handler=conflict_handler)
+
+        self.positional_arguments(parser)
+
+        self.default_optional_arguments(parser)
+
+        self.extra_optional_arguments(parser)
+
+        return(parser)
+
+    def DELMEloadcfgfiles(self, maincfgfile, extracfgfiles=None, params=None, params4all=None,
+                     params4sections=None, requireParamExists=True, verbose=0):
+        if self.cfg is None:
+            self.cfg = yamlcfgclass()
+        if self.cfg.loadcfgfiles(maincfgfile, extracfgfiles=extracfgfiles,
+                                 params=params, params4all=params4all, params4sections=params4sections,
+                                 requireParamExists=requireParamExists, verbose=verbose):
+            raise RuntimeError("Something went wrong when loading config files!")
+        return(0)
+
+################################################################################
+# The functions below can be modified in the child classes of mkref_X.py
+################################################################################
+
+    def extra_optional_arguments(self, parser):
         """ add here the extra options for a given reference file maker """
         print("PLACEHOLDER for extraoptions")
         return(0)
-
-    def allargs(self,  parser=None, subparsers=None, subparserlist=None, usage=None):
-        if parser is None:
-            parser = argparse.ArgumentParser(usage=usage, conflict_handler='resolve')
-
-        self.default_optional_arguments(parser=parser)
-
-        self.extra_optional_arguments(parser)
-        self.inputfileoptions(parser)
-
-        return(parser)
 
     def callagorithm(self,args):
         """ add here the call to your algorithm, passing the appropriate args parameters """
@@ -85,36 +101,11 @@ class mkrefclass:
         # import myscript from myfile
         # myscript.myroutine(args.D1,args.D2, args.F1, args.F2, myparameter=args.whateveroption)
 
-        
-    def loadcfgfiles(self, maincfgfile, extracfgfiles=None, params=None, params4all=None,
-                     params4sections=None, requireParamExists=True):
-        if self.cfg is None:
-            self.cfg = yamlcfgclass()
-        if self.cfg.loadcfgfiles(maincfgfile, extracfgfiles=extracfgfiles,
-                                 params=params, params4all=params4all, params4sections=params4sections,
-                                 requireParamExists=requireParamExists, verbose=self.verbose):
-            raise RuntimeError("Something went wrong when loading config files!")
-        return(0)
-
-    def mkref(self, arglist, onlyinit=False):
-        (parser, subparser, subparserlist) = self.refoptions()
-        args = parser.parse_args(arglist)
-
-        # set verbose level
-        self.verbose = args.verbose
-        self.debug = args.debug
-
-        # Load config files
-        self.loadcfgfiles(args.cfgfile,
-                          extracfgfiles=args.extracfgfile,
-                          params=args.params,
-                          params4all=args.pall,
-                          params4sections=args.pp)
 
 
 
 if __name__ == '__main__':
-    mkref = mkrefclassX()
-    (parser) = mkref.refoptions()
+    mkref = mkrefclass_template()
+    parser = mkref.allargs()
     args = parser.parse_args()
     mkref.callagorithm(args)

@@ -16,7 +16,7 @@ import astropy
 import numpy as np
 import scipy
 
-from jwst_reffiles.mkref import mkrefclass
+from jwst_reffiles.mkref_template import mkrefclass_template
 from jwst_reffiles.pipeline.calib_prep import CalibPrep
 from jwst_reffiles.pipeline import pipeline_steps
 from jwst_reffiles.utils.tools import astrotableclass, yamlcfgclass
@@ -104,7 +104,7 @@ class mkrefsclass(astrotableclass):
         astrotableclass.__init__(self)
 
         # config file
-        self.cfg = None
+        self.cfg = yamlcfgclass()
 
         self.verbose = 0
         self.debug = False
@@ -116,6 +116,9 @@ class mkrefsclass(astrotableclass):
         self.ssbdir = None
         self.runID = None
         self.runlabel = None
+
+        # this allows access to some of the base functions (e.g., loading cfg file, default_optional_arguments)
+        self.mkref_template = mkrefclass_template()
 
         self.imtable = astrotableclass()
         self.images4ssb = astrotableclass()
@@ -129,6 +132,7 @@ class mkrefsclass(astrotableclass):
         self.FFtable = astrotableclass()
         self.DDFFtable = astrotableclass()
 
+        self.ssbcmdtable = cmdsclass()
         self.refcmdtable = cmdsclass()
         
         
@@ -172,20 +176,21 @@ class mkrefsclass(astrotableclass):
         parser.add_argument('--maxNstrun', type=int, default=None,
                             help='limit the number of strun commands to be run')
 
-
-        # Loop through all allowed reflabels, and add the options
+        # this gets the default optional paramters (verbose, debug, cfg file etc)
+        self.mkref_template.default_optional_arguments(parser)
+        # Loop through all allowed reflabels, and add the extra options
         for reflabel in self.allowed_reflabels:
-            print(reflabel)
             mkrefpackage = __import__("mkref_%s" % reflabel)
-            mkref = mkrefpackage.mkrefclassX()
-            # Only load defaultoptions once...
-            if reflabel == self.allowed_reflabels[0]:
-                mkref.defaultoptions(parser)
+            mkref = mkrefpackage.mkrefclass()
             # get the reflabel specific options
-            mkref.extraoptions(parser)
+            mkref.extra_optional_arguments(parser)
+
         return(parser)
 
-    def loadcfgfiles(self, maincfgfile, extracfgfiles=None, params=None, params4all=None,
+    def loadcfgfiles(self, *pargs, **kwargs):
+        return(self.mkref_template.loadcfgfiles(*pargs, **kwargs))
+        
+    def DELMEloadcfgfiles(self, maincfgfile, extracfgfiles=None, params=None, params4all=None,
                      params4sections=None, requireParamExists=True):
         if self.cfg is None:
             self.cfg = yamlcfgclass()
@@ -907,7 +912,7 @@ class mkrefsclass(astrotableclass):
         print(mmm.proc_table['index', 'cmdID', 'reflabel', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
         #print(mmm.proc_table['strun_command'][-1])
 
-        self.ssbcmdtable = cmdsclass(verbose=self.verbose)
+        self.ssbcmdtable.verbose = self.verbose
         self.ssbcmdtable.t = mmm.proc_table
 
         # check which entries are primary strun commands. Only primary
@@ -1038,11 +1043,15 @@ class mkrefsclass(astrotableclass):
         sys.exit(0)
 
     def mk_ref_cmds(self):
-        if self.verbose>2:
+
+        self.refcmdtable.t['refcmd']=None
+        if self.verbose>1:
             print('refcmd table colnames:',self.refcmdtable.t.colnames)
-            print(self.refcmdtable.t)
+            if self.verbose>3:
+                print(self.refcmdtable.t)
 
         #loop through refcomds table, and create the individual commands
+        
         for i in range(len(self.refcmdtable.t)):
             reflabel = self.refcmdtable.t['reflabel'][i]            
             print('### cmd ID %d: building cmd for %s' % (self.refcmdtable.t['cmdID'][i],reflabel))
@@ -1072,29 +1081,48 @@ class mkrefsclass(astrotableclass):
             # now get the options specific to the mkref_X.py command
             parser4mkref = argparse.ArgumentParser(conflict_handler='resolve')            
             mkrefpackage = __import__("mkref_%s" % reflabel)
-            mkref_tmp = mkrefpackage.mkrefclassX()
-            mkref_tmp.defaultoptions(parser4mkref)
-            mkref_tmp.extraoptions(parser4mkref)
-            print(parser4mkref)
-            args_tmp = parser4mkref.parse_known_args()
-            allowed_args_dict = vars(args_tmp[0])
+            mkref_reflabel = mkrefpackage.mkrefclass()
+            mkref_reflabel.default_optional_arguments(parser4mkref)
+            mkref_reflabel.extra_optional_arguments(parser4mkref)
+            # parse_known_args goes through all the arguments and
+            # figures out which one are allowed for that particular
+            # parser
+            args_reflabel = parser4mkref.parse_known_args()
 
+            # now get the allowed arguments and their values
+            allowed_args_dict = vars(args_reflabel[0])
+            # we want to have the sorted list of keys to this
+            # dictionary, so that the commands always look the same!
+            allowed_args = sorted(allowed_args_dict.keys())
+
+            # loop through
             optionstring = ''
-            for arg in allowed_args_dict:
+            for arg in allowed_args:
+                # skip None options. These should be defaults!
                 if allowed_args_dict[arg] is None:
-                    # skip None options. These should be default!
                     continue
+
+                # skip adding the cfgfile option if it is the same as the default!
+                if arg=='cfgfile':
+                    if allowed_args_dict[arg]==parser4mkref.get_default('cfgfile'):
+                        continue
+
+                # there seem to be three cases for the argument values: single values, lists, and lists of lists
                 if isinstance(allowed_args_dict[arg],list):
-                    print('BBBBB000','{}:{}'.format(arg,' '.join(allowed_args_dict[arg])))
-                    optionstring+= ' --{} {}'.format(arg,' '.join(allowed_args_dict[arg]))
+                    if isinstance(allowed_args_dict[arg][0],list):
+                        for arg2 in allowed_args_dict[arg]:
+                            optionstring+= ' --{} {}'.format(arg,' '.join(arg2))
+                    else:
+                        optionstring+= ' --{} {}'.format(arg,' '.join(allowed_args_dict[arg]))
                 else:   
-                    print('BBBBB000','{}:{}'.format(arg,allowed_args_dict[arg]))
                     optionstring+= ' --{} {}'.format(arg,allowed_args_dict[arg])
 
             print (optionstring)
             refcmd += optionstring
             print (refcmd)
-            sys.exit(0)
+            self.refcmdtable.t['refcmd'][i]=refcmd
+        if self.verbose>2:
+            print(self.refcmdtable.t)
             
     def combinerefs(self):
         print("### combinerefs: NOT YET IMPLEMENTED!!!")
@@ -1134,11 +1162,12 @@ if __name__ == '__main__':
     mkrefs.onlyshow = args.onlyshow
 
     # Load config files
-    mkrefs.loadcfgfiles(args.cfgfile,
-                        extracfgfiles=args.extracfgfile,
-                        params=args.params,
-                        params4all=args.pall,
-                        params4sections=args.pp)
+    mkrefs.cfg.loadcfgfiles(args.cfgfile,
+                            extracfgfiles=args.extracfgfile,
+                            params=args.params,
+                            params4all=args.pall,
+                            params4sections=args.pp,
+                            verbose=args.verbose)
 
     # set the basedir, basename, ssbdir, outsubdir, runID, runlabel
     mkrefs.set_dirs(outrootdir=args.outrootdir, outsubdir=args.outsubdir,

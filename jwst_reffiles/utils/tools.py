@@ -456,16 +456,14 @@ class yamlcfgclass:
 
         # read in the additional config files
         if extracfgfiles is not None:
-            if type(extracfgfiles) is bytes:
+            if isinstance(extracfgfiles,str):
                 self.addcfgfile(extracfgfiles, requireParamExists=requireParamExists, verbose=verbose)
-            elif type(extracfgfiles) is list:
+            elif isinstance(extracfgfiles,list):
                 for filename in extracfgfiles:
                     self.addcfgfile(filename, requireParamExists=requireParamExists, verbose=verbose)
             else:
-                if raiseErrorFlag:
-                    print('ERROR: this is the extra cfg filelist:', extracfgfiles)
-                    raise RuntimeError("ERROR: Don't know what to do with this filelist!!")
-                return(1)
+                print('ERROR: this is the extra cfg filelist:', extracfgfiles)
+                raise RuntimeError("ERROR: Don't know what to do with this filelist!!")
 
         # change the configs based on -p and --pp options
         self.setvals(params, requireParamExists=requireParamExists)
