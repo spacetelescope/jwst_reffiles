@@ -37,16 +37,24 @@ class cmdsclass(astrotableclass):
         astrotableclass.__init__(self, *args, **kwargs)
         self.verbose=verbose
         
-    def check_if_files_exists(self, file_col='output_name', file_exists_col='file_exists'):
+    def check_if_files_exists(self, file_col='output_name', file_exists_col='file_exists',addsuffix=None):
         """ Check if files in file_col exists, and fill the column file_exists_col with True or False """
         file_exists = np.full((len(self.t)),False)
         for i in range(len(self.t)):
-            if os.path.isfile(self.t[file_col][i]):
-                file_exists[i]=True
+            if addsuffix == None:
+                if os.path.isfile(self.t[file_col][i]):
+                    file_exists[i]=True
+            else:
+                filename = self.t[file_col][i]
+                if re.search('\.$',filename)==None: filename+='.'
+                filename += addsuffix
+                if os.path.isfile(filename):
+                    file_exists[i]=True
+                    
         self.t[file_exists_col]=file_exists
         return(0)
         
-    def check_if_already_in_batch(self, already_in_batch_col='already_in_batch'):
+    def check_if_already_in_batch(self, cmd_col='strun_command', already_in_batch_col='already_in_batch'):
         """ check if the reduced input files are already running in batch (Condor), and set 'already_in_batch' to True or False """
 
         print('\n*************************\n Check for Batch still needs to be implemented here!! \n *************************\n')
@@ -54,7 +62,8 @@ class cmdsclass(astrotableclass):
         already_in_batch = np.full((len(self.t)),False)
         for i in range(len(self.t)):
             # ADD CHECK HERE!!!
-            print('Check for {}'.format(self.t['strun_command'][i]))
+            print('Check for {}'.format(self.t[cmd_col][i]))
+            #already_in_batch[i]=True if in batch
         self.t[already_in_batch_col]=already_in_batch
         return(0)
         
@@ -813,10 +822,8 @@ class mkrefsclass(astrotableclass):
         #dummyreflabel.t['reflabel'] = self.reflabellist
         #dummyreflabel.t['ssbsteps'] = [self.cfg.params[reflabel]['ssbsteps'] for reflabel in self.reflabellist]
 
-        self.refcmdtable = astrotableclass(names=('reflabel', 'detector', 'cmdID', 'Nim', 'outbasename'),
-#                                        dtype=(dummyreflabel.t['reflabel'].dtype,
-#                                               self.imtable.t['DETECTOR'].dtype, 'i8', 'i8',np.dtype(object)))
-                                        dtype=(np.dtype(object),np.dtype(object), 'i8', 'i8',np.dtype(object)))
+        self.refcmdtable = cmdsclass(names=('reflabel', 'detector', 'cmdID', 'Nim', 'outbasename'),
+                                     dtype=(np.dtype(object),np.dtype(object), 'i8', 'i8',np.dtype(object)))
         #self.refcmdtable = astrotableclass(names=('reflabel','detector','cmdID','Nim'))
         self.refcmdtable.t['cmdID', 'Nim'].format = '%5d'
         self.refcmdtable.t['reflabel', 'detector', 'outbasename'].format = '%s'
@@ -922,7 +929,6 @@ class mkrefsclass(astrotableclass):
 
         # check if the reduced input files exist or not, and fill
         # 'file_already_exists' column with True or False
-        #self.check_if_files_exists(self.ssbcmdtable.t, file_col='output_name',file_exists_col='file_already_exists')
         self.ssbcmdtable.check_if_files_exists(file_col='output_name', file_exists_col='file_already_exists')
 
         # check if the reduced input files are already running in
@@ -938,7 +944,7 @@ class mkrefsclass(astrotableclass):
         if self.verbose>2: print('ssb table colnames:',self.ssbcmdtable.t.colnames)
         self.ssbcmdtable.write('%s.ssbcmds.txt' % self.basename,verbose=True,clobber=True,exclude_names=['repeat_of_index_number', 'index_contained_within'])
 
-        self.refcmdtable.write('%s.refcmds.txt' % self.basename,verbose=True,clobber=True)
+        #self.refcmdtable.write('%s.refcmds.txt' % self.basename,verbose=True,clobber=True)
 
         if self.verbose>1:
             print(self.ssbcmdtable.t['index','real_input_file','ssbsteps','repeat_of_index_number', 'index_contained_within','primary_strun','file_already_exists','already_in_batch','execute_strun','strun_executed'])
@@ -1042,7 +1048,7 @@ class mkrefsclass(astrotableclass):
         print("### submitbatch: NOT YET IMPLEMENTED!!!")
         sys.exit(0)
 
-    def mk_ref_cmds(self):
+    def mk_ref_cmds(self, force_redo_refcmds=False, maxNrefcmds=None):
 
         self.refcmdtable.t['refcmd']=None
         if self.verbose>1:
@@ -1050,8 +1056,7 @@ class mkrefsclass(astrotableclass):
             if self.verbose>3:
                 print(self.refcmdtable.t)
 
-        #loop through refcomds table, and create the individual commands
-        
+        #loop through refcomds table, and create the individual commands        
         for i in range(len(self.refcmdtable.t)):
             reflabel = self.refcmdtable.t['reflabel'][i]            
             print('### cmd ID %d: building cmd for %s' % (self.refcmdtable.t['cmdID'][i],reflabel))
@@ -1121,9 +1126,30 @@ class mkrefsclass(astrotableclass):
             refcmd += optionstring
             print (refcmd)
             self.refcmdtable.t['refcmd'][i]=refcmd
-        if self.verbose>2:
-            print(self.refcmdtable.t)
-            
+        if self.verbose>1:
+            print(self.refcmdtable.t['reflabel', 'cmdID', 'refcmd'])
+
+        # check if the reduced input files exist or not, and fill
+        # 'file_already_exists' column with True or False
+        self.refcmdtable.check_if_files_exists(file_col='outbasename', file_exists_col='file_already_exists',addsuffix='fits')
+
+        # check if the reduced input files are already running in
+        # batch (Condor), and set 'already_in_batch' to True or False
+        self.refcmdtable.check_if_already_in_batch(cmd_col='refcmd')
+
+        # pick the strun commands that need to be executed
+        self.refcmdtable.pick_cmds_to_execute(execute_cmds=None, force_redo = force_redo_refcmds, maxNexe = maxNrefcmds, execute_cmds_col='execute_refcmd')
+        
+        # set strun_executed to None
+        self.refcmdtable.t['refcmd_executed'] = np.full((len(self.refcmdtable.t)),None)
+
+        self.refcmdtable.write('%s.refcmds.txt' % self.basename,verbose=True,clobber=True)
+
+        if self.verbose>1:
+            if self.verbose>2: print('ref table colnames:',self.refcmdtable.t.colnames)
+            print(self.refcmdtable.t['reflabel', 'detector', 'cmdID', 'outbasename', 'file_already_exists','already_in_batch','execute_refcmd','refcmd_executed'])
+
+        #print('strun commands:')
     def combinerefs(self):
         print("### combinerefs: NOT YET IMPLEMENTED!!!")
         sys.exit(0)
