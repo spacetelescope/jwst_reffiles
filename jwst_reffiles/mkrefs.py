@@ -5,10 +5,7 @@ A. Rest
 '''
 import argparse
 import glob
-import os
-import re
-import sys
-import types,copy
+import os,re,sys,types,copy,random
 
 import astropy.io.fits as fits
 from astropy.io import ascii
@@ -33,23 +30,40 @@ rootdir = os.path.dirname(os.path.realpath(__file__))
 
 
 class cmdsclass(astrotableclass):
-    def __init__(self, *args, verbose=0, **kwargs):
+    def __init__(self, cmdtype, *args, verbose=0, debug=False, **kwargs):
         astrotableclass.__init__(self, *args, **kwargs)
         self.verbose=verbose
+        self.debug=debug
+        self.cmdtype=cmdtype
+        if not (cmdtype in ['ssb','ref','refmaster']):
+            raise RuntimeError("cmd type {} not defined yet!".format(cmdtype))
+
+    def filename_with_suffix(self, filename, addsuffix=None):
+        if addsuffix != None:
+            if re.search('\.$',filename)==None and re.search('^\.',addsuffix)==None: filename+='.'
+            filename += addsuffix
+        return(filename)
         
     def check_if_files_exists(self, file_col='output_name', file_exists_col='file_exists',addsuffix=None):
         """ Check if files in file_col exists, and fill the column file_exists_col with True or False """
+
         file_exists = np.full((len(self.t)),False)
+
         for i in range(len(self.t)):
-            if addsuffix == None:
-                if os.path.isfile(self.t[file_col][i]):
-                    file_exists[i]=True
-            else:
-                filename = self.t[file_col][i]
-                if re.search('\.$',filename)==None: filename+='.'
-                filename += addsuffix
-                if os.path.isfile(filename):
-                    file_exists[i]=True
+            filename = self.filename_with_suffix(self.t[file_col][i],addsuffix=addsuffix)
+            if os.path.isfile(filename):
+                file_exists[i]=True
+       
+        #for i in range(len(self.t)):
+        #    if addsuffix == None:
+        #        if os.path.isfile(self.t[file_col][i]):
+        #            file_exists[i]=True
+        #    else:
+        #        filename = self.t[file_col][i]
+        #        if re.search('\.$',filename)==None: filename+='.'
+        #        filename += addsuffix
+        #        if os.path.isfile(filename):
+        #            file_exists[i]=True
                     
         self.t[file_exists_col]=file_exists
         return(0)
@@ -70,7 +84,7 @@ class cmdsclass(astrotableclass):
     def pick_cmds_to_execute(self, execute_cmds=None, force_redo=False, maxNexe=None, execute_cmds_col='execute_cmds'):
         """ pick the commands to be executed!  execute_cmds can
         contain an initial one-dimensional input array of True or
-        False set execute_cmds to False if file_exists or
+        False. set execute_cmds to False if file_exists or
         already_in_batch=False.  if force_redo, then execute even if
         file_exists, and throw error message if already_in_batch """
 
@@ -107,7 +121,140 @@ class cmdsclass(astrotableclass):
         self.t[execute_cmds_col]=execute_cmds
         return(0)
 
+    def getlogfilenames(self, filename, logFlag=False, errorlogFlag=False):
+        (basename,suffix) = os.path.splitext(filename)
 
+        if errorlogFlag:
+            errorlog = '{}.err.txt'.format(basename)
+        else:
+            errorlog = None
+
+        if logFlag:
+            outlog = '{}.log.txt'.format(basename)
+        else:
+            outlog = None
+            
+        if suffix != '.fits':
+            print('WARNING: It seems like the filename {} is not a fits file.'.format(filename))
+        return(outlog,errorlog)
+
+    def clean_old_output_files(self, indeces2run, outputfile_col='output_name', addsuffix=None):
+        """ cleaning up old output files """
+
+        outputfiles = self.t[outputfile_col][indeces2run]
+
+        for outfile in outputfiles:
+            outfile = self.filename_with_suffix(outfile,addsuffix=addsuffix)
+            (logfilename,errlogfilename) = self.getlogfilenames(outfile, logFlag=True, errorlogFlag=True)
+            rmfile(outfile)
+            rmfile(logfilename)
+            # Don't clean up errlogfilename, we want to keep track of old errors...
+       
+        return(0)
+
+    def DELMEclean_old_output_files(self, execute_cmds_col, outputfile_col, addsuffix=None,
+                               batchmode=False, logFlag=False, errorlogFlag=True):
+        """ cleaning up old output files """
+        
+        for i in range(len(self.t)):
+            if self.t[execute_cmds_col][i]:
+                outfile = self.t[outputfile_col][i]
+                (logfilename,errlogfilename) = self.getlogfilenames(outfile)
+                rmfile(outfile)
+                rmfile(logfilename)
+                # Don't clean up errlogfilename, we want to keep track of old errors...
+
+        return(0)
+        
+    def dummy_batch(self, batchfilename):
+        """ dummy call to batch mode to return reasonable values """
+        print("### run commands in batch mode: NOT YET IMPLEMENTED!!!")
+        # this are just dummy return values until batch mode is implemented
+        (errorflag, batchID)=(1,random.randint(1, 100000))
+        
+        return(errorflag, batchID)
+
+    def run_cmds_batchmode(self, indeces2run, batchfilename, batchIDfilename=None,
+                           logFlag=False, errorlogFlag=False,
+                           cmds_col='strun_command', cmds_executed_col='strun_executed',
+                           outputfile_col='output_name', addsuffix='fits'):
+                
+        # submit the batch here, return errorflag in case there is an issue submitting the batch
+        errorflag = 0
+        strun_list = self.t[cmds_col][indeces2run]
+
+        # remove the old batchfile if exists!
+        if os.path.isfile(batchfilename):
+            os.remove(batchfilename)
+            if os.path.isfile(batchfilename):
+                raise RuntimeError('ERROR: could not save batch file {}'.format(batchfilename))
+
+        # Save the cmds into the batch file
+        if self.verbose: print('Saving cmds to {} for batch'.format(batchfilename))
+        strun_list = [l+'\n' for l in strun_list]
+        if open(batchfilename,'w').writelines(strun_list):
+            raise RuntimeError('ERROR: could not save batch file {}'.format(batchfilename))
+
+        # this are just a dummy call to get an errorflag and random batchID. this will be replaces with the real batch call
+        # ***************
+        # need to be implemented: log and errorlog based on logFlag, errorlogFlag!
+        # 
+        #for i in indeces2run:
+        #    (logfilename,errlogfilename) = self.getlogfilenames(self.t[outputfile_col][i], logFlag=logFlag, errorlogFlag=errorlogFlag)
+        (errorflag,batchID) = self.dummy_batch(batchfilename)
+
+        # append the batch ID into the batch ID file. This allows later on to test if batch jobs are still running!
+        if self.verbose: print('Appending batch ID to {}'.format(batchIDfilename))
+        if open(batchIDfilename,'a').writelines(['{}\n'.format(batchID)]):
+            raise RuntimeError('ERROR: could not save batch ID file {}'.format(batchIDfilename))
+                
+        # mark the entries that are submitted to the batch
+        if errorflag:
+            self.t[cmds_executed_col][indeces2run]='ERROR{}_batch'.format(errorflag)
+        else:
+            self.t[cmds_executed_col][indeces2run]='batch'
+
+        return(0)
+
+    def run_cmds_serial(self, indeces2run, logFlag=False, errorlogFlag=False,
+                        cmds_col='strun_command', cmds_executed_col='strun_executed',
+                        outputfile_col='output_name', addsuffix='fits'):
+
+        print(self.t)
+
+        if self.debug:
+            print('********* DEBUG!!!! ******\nJust touching the output files!!!')
+            print('HHHHH',indeces2run,outputfile_col)
+            for i in indeces2run:
+                outfile = self.filename_with_suffix(self.t[outputfile_col][i],addsuffix=addsuffix)
+                print('NNN',outfile)
+                os.system("touch %s" % outfile)
+                self.t[cmds_executed_col][i]='serial'
+            return(0)
+
+        for i in indeces2run:
+            cmd = self.t[cmds_col][i]
+
+            # decide if logfiles, depending on config filea
+            outfile = self.filename_with_suffix(self.t[outputfile_col][i],addsuffix=addsuffix)
+            (logfilename,errlogfilename) = self.getlogfilenames(outfile, logFlag=logFlag, errorlogFlag=errorlogFlag)
+            
+            print('### Executing strun command for index %d: %s' % (i,cmd))
+            (errorflag) = executecommand(cmd, '', cmdlog=logfilename, errorlog=errlogfilename)
+               
+            # extra error checking
+            if not os.path.isfile(outfile):
+                print('ERROR: file {} did not get created with strun command!'.format(outfile))
+                errorflag|=2
+
+            # fill table with results.
+            if errorflag:
+                self.t[cmds_executed_col][i]='ERROR{}_serial'.format(errorflag)
+            else:
+                self.t[cmds_executed_col][i]='serial'
+
+        return(0)
+    
 class mkrefsclass(astrotableclass):
     def __init__(self):
         astrotableclass.__init__(self)
@@ -141,9 +288,9 @@ class mkrefsclass(astrotableclass):
         self.FFtable = astrotableclass()
         self.DDFFtable = astrotableclass()
 
-        self.ssbcmdtable = cmdsclass()
-        self.refcmdtable = cmdsclass()
-        
+        self.ssbcmdtable = cmdsclass('ssb')
+        self.refcmdtable = cmdsclass('ref')
+        self.refmastercmdtable = cmdsclass('refmaster')
         
         self.allowed_reflabels = ['bpm', 'rdnoise_nircam', 'gain_armin']
 
@@ -185,7 +332,10 @@ class mkrefsclass(astrotableclass):
         parser.add_argument('--maxNstrun', type=int, default=None,
                             help='limit the number of strun commands to be run')
 
-        # this gets the default optional paramters (verbose, debug, cfg file etc)
+        ###
+        ### get the options from the individual mkref_X.py commands!
+        ###
+        # this gets the default optional paramters (verbose, debug, cfg file etc) from the mkref_template class
         self.mkref_template.default_optional_arguments(parser)
         # Loop through all allowed reflabels, and add the extra options
         for reflabel in self.allowed_reflabels:
@@ -802,13 +952,17 @@ class mkrefsclass(astrotableclass):
         self.ssbcmdtable.t[primary_strun_col]=primary_strun
         return(0)
 
-    def mk_ssb_cmds(self,force_redo_strun=False,maxNstrun=None):
+    def mk_ssb_cmds(self, force_redo_strun=False, maxNstrun=None):
         '''
         Construct the reflabel commands, get the input files
         '''
+        
         if self.verbose:
             print('\n##################################\n### Constructing commands\n##################################')
 
+        self.ssbcmdtable.verbose=self.verbose
+        self.ssbcmdtable.debug=self.debug 
+            
         # Expand ssbstep list if a shorthand is used
         for reflabel in self.reflabellist:
             step_name = self.cfg.params[reflabel]['ssbsteps'].strip()
@@ -822,7 +976,9 @@ class mkrefsclass(astrotableclass):
         #dummyreflabel.t['reflabel'] = self.reflabellist
         #dummyreflabel.t['ssbsteps'] = [self.cfg.params[reflabel]['ssbsteps'] for reflabel in self.reflabellist]
 
-        self.refcmdtable = cmdsclass(names=('reflabel', 'detector', 'cmdID', 'Nim', 'outbasename'),
+        self.refcmdtable = cmdsclass('ref',
+                                     verbose=self.verbose, debug=self.debug,
+                                     names=('reflabel', 'detector', 'cmdID', 'Nim', 'outbasename'),
                                      dtype=(np.dtype(object),np.dtype(object), 'i8', 'i8',np.dtype(object)))
         #self.refcmdtable = astrotableclass(names=('reflabel','detector','cmdID','Nim'))
         self.refcmdtable.t['cmdID', 'Nim'].format = '%5d'
@@ -942,7 +1098,7 @@ class mkrefsclass(astrotableclass):
         self.ssbcmdtable.t['strun_executed'] = np.full((len(self.ssbcmdtable.t)),None)
 
         if self.verbose>2: print('ssb table colnames:',self.ssbcmdtable.t.colnames)
-        self.ssbcmdtable.write('%s.ssbcmds.txt' % self.basename,verbose=True,clobber=True,exclude_names=['repeat_of_index_number', 'index_contained_within'])
+        self.ssbcmdtable.write('%s.ssbcmds.txt' % self.basename, verbose=True, clobber=True, exclude_names=self.ssbtable_excludecols4saving)
 
         #self.refcmdtable.write('%s.refcmds.txt' % self.basename,verbose=True,clobber=True)
 
@@ -954,16 +1110,38 @@ class mkrefsclass(astrotableclass):
 
         return(0)
 
-    def getlogfilenames(self,filename):
-        (basename,suffix) = os.path.splitext(filename)
-        print (basename,suffix)
-        errorlog = '{}.err.txt'.format(basename)
-        outlog = '{}.log.txt'.format(basename)
-        if suffix != '.fits':
-            print('WARNING: It seems like the filename {} is not a fits file.'.format(filename))
-        return(outlog,errorlog)
+    def run_ssb_cmds(self, batchmode=False, ssblogFlag=False, ssberrorlogFlag=True):
 
-    def run_ssb_cmds(self,batchmode=False,ssblogFlag=False,ssberrorlogFlag=True):
+        if self.onlyshow:
+            if self.verbose: print('\n*** ONLYSHOW: skipping running the strun commands!\n')
+            return(0)
+
+        # indeces of the commands that need to be run
+        indeces2run, = np.where(self.ssbcmdtable.t['execute_strun'])
+        
+        # get rid of old output files
+        self.ssbcmdtable.clean_old_output_files(indeces2run, outputfile_col='output_name')
+        
+        if batchmode:
+            self.ssbcmdtable.run_cmds_batchmode(indeces2run, '%s.ssb_batch.txt' % self.basename,
+                                                batchIDfilename='%s.ssb_batchID.txt' % self.basename,
+                                                logFlag=ssblogFlag, errorlogFlag=ssberrorlogFlag,
+                                                cmds_col='strun_command', cmds_executed_col='strun_executed' )
+        else:
+            self.ssbcmdtable.run_cmds_serial(indeces2run,
+                                             logFlag=ssblogFlag, errorlogFlag=ssberrorlogFlag, 
+                                             cmds_col='strun_command', cmds_executed_col='strun_executed' )
+
+        self.ssbcmdtable.check_if_files_exists(file_col='output_name', file_exists_col='file_exists')
+        if self.verbose>1:
+            print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_already_exists','already_in_batch','execute_strun','strun_executed','file_exists'])
+
+        # Save the ssb cmd table with the new columns
+        self.ssbcmdtable.write('%s.ssbcmds.txt' % self.basename, verbose=True, clobber=True, exclude_names=self.ssbtable_excludecols4saving)
+
+        return(0)
+            
+    def DELMErun_ssb_cmds(self, batchmode=False, ssblogFlag=False, ssberrorlogFlag=True):
         if self.onlyshow:
             if self.verbose: print('\n*** ONLYSHOW: skipping running the strun commands!\n')
             return(0)
@@ -1038,10 +1216,6 @@ class mkrefsclass(astrotableclass):
         if self.verbose>1:
             print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_already_exists','already_in_batch','execute_strun','strun_executed','file_exists'])
 
-        return(0)
-
-    def run_ref_cmds(self,batchmode=False):
-        print("### run ref commands: NOT YET IMPLEMENTED!!!")
         return(0)
 
     def submitbatch(self):
@@ -1149,7 +1323,43 @@ class mkrefsclass(astrotableclass):
             if self.verbose>2: print('ref table colnames:',self.refcmdtable.t.colnames)
             print(self.refcmdtable.t['reflabel', 'detector', 'cmdID', 'outbasename', 'file_already_exists','already_in_batch','execute_refcmd','refcmd_executed'])
 
-        #print('strun commands:')
+    def run_ref_cmds(self,batchmode=False, reflogFlag=False, referrorlogFlag=True):
+
+        if self.onlyshow:
+            if self.verbose: print('\n*** ONLYSHOW: skipping running the ref commands!\n')
+            return(0)
+
+        # indeces of the commands that need to be run
+        indeces2run, = np.where(self.refcmdtable.t['execute_refcmd'])
+        
+        # get rid of old output files
+        self.refcmdtable.clean_old_output_files(indeces2run, outputfile_col='outbasename', addsuffix='fits')
+        
+        if batchmode:
+            # execute in batch mode
+            self.refcmdtable.run_cmds_batchmode(indeces2run, '%s.ref_batch.txt' % self.basename,
+                                                batchIDfilename='%s.ref_batchID.txt' % self.basename,
+                                                logFlag=reflogFlag, errorlogFlag=referrorlogFlag,
+                                                cmds_col='refcmd', cmds_executed_col='refcmd_executed',
+                                                outputfile_col='outbasename', addsuffix='fits')
+        else:
+            # execute serially
+            self.refcmdtable.run_cmds_serial(indeces2run,
+                                             logFlag=reflogFlag, errorlogFlag=referrorlogFlag, 
+                                             cmds_col='refcmd', cmds_executed_col='refcmd_executed',
+                                             outputfile_col='outbasename', addsuffix='fits')
+
+        self.refcmdtable.check_if_files_exists(file_col='outbasename', file_exists_col='file_exists', addsuffix='fits')
+        if self.verbose>1:
+            print(self.refcmdtable.t['reflabel', 'detector', 'cmdID', 'Nim', 'outbasename','file_already_exists','already_in_batch','execute_refcmd','refcmd_executed','file_exists'])
+
+        # Save the ref cmd table with the new columns
+        self.refcmdtable.write('%s.refcmds.txt' % self.basename,verbose=True,clobber=True)
+
+        sys.exit(0)
+        
+        return(0)
+
     def combinerefs(self):
         print("### combinerefs: NOT YET IMPLEMENTED!!!")
         sys.exit(0)
@@ -1161,26 +1371,13 @@ class mkrefsclass(astrotableclass):
 
 if __name__ == '__main__':
 
-    #cmd = 'echop hello1;echo GGGGGGG;echo SUCCESS'
-    #outputfile = '/Users/arest/nircam/jwst_reffiles/jwst_reffiles/delmeout.txt'
-    #errfile='/Users/arest/nircam/jwst_reffiles/jwst_reffiles/delmeerr.txt'
-    #(errorflag,stdoutlist,stderrlist) = executecommand(cmd,'SUCCESS', cmdlog=outputfile, errorlog=errfile, cmdlog_access_mode='a', verbose=2, cmdlog_save_as_chunk_flag = True,return_output=True)
-    #print('VVV',errorflag)
-    #print('BBB',stdoutlist)
-    #print('NNN',stderrlist)
-    #sys.exit(0)
-
     mkrefs = mkrefsclass()
     parser = mkrefs.define_options()
     args = parser.parse_args()
 
-    print("Input files:")
-    print(args.reflabels_and_imagelist)
-
-    #print(args)
-    #for b in vars(args):
-    #    print(b,vars(args)[b])
-    #sys.exit()
+    if args.verbose>1:
+        print("Input files:")
+        print(args.reflabels_and_imagelist)
 
     # set verbose, debug, and onlyshow level
     mkrefs.verbose = args.verbose
@@ -1214,13 +1411,11 @@ if __name__ == '__main__':
     mkrefs.mk_ssb_cmds(force_redo_strun=args.force_redo_strun, maxNstrun=args.maxNstrun)
 
     # run the ssb commands
-    mkrefs.run_ssb_cmds(batchmode=args.batchmode,)
+    mkrefs.run_ssb_cmds(batchmode=args.batchmode)
 
     # create the reference file commands
     mkrefs.mk_ref_cmds()
 
-    sys.exit(0)
-    
     # run the reference file  commands
     mkrefs.run_ref_cmds(batchmode=args.batchmode)
 
