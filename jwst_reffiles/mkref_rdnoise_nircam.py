@@ -13,7 +13,7 @@ from jwst_reffiles.utils.tools import astrotableclass,yamlcfgclass
 class mkrefclass(mkrefclass_template):
     def __init__(self,*args, **kwargs):
         mkrefclass_template.__init__(self,*args, **kwargs)
-        self.reflabel='rdnoisenircam'
+        self.reflabel='rdnoise_nircam'
         self.reftype='rdnoise'
 
     def extra_optional_arguments(self, parser):

@@ -26,7 +26,7 @@ from jwst_reffiles.utils.tools import makepath,executecommand,append2file,rmfile
 #                     '%s/gain' % rootdir,
 #                     '%s/badpix_map' % rootdir])
 #else:
-rootdir = os.path.dirname(os.path.realpath(__file__))
+#rootdir = os.path.dirname(os.path.realpath(__file__))
 
 
 class cmdsclass(astrotableclass):
@@ -200,7 +200,8 @@ class cmdsclass(astrotableclass):
         # need to be implemented: log and errorlog based on logFlag, errorlogFlag!
         # 
         #for i in indeces2run:
-        #    (logfilename,errlogfilename) = self.getlogfilenames(self.t[outputfile_col][i], logFlag=logFlag, errorlogFlag=errorlogFlag)
+        #    outfile = self.filename_with_suffix(self.t[outputfile_col][i],addsuffix=addsuffix)
+        #    (logfilename,errlogfilename) = self.getlogfilenames(outfile, logFlag=logFlag, errorlogFlag=errorlogFlag)
         (errorflag,batchID) = self.dummy_batch(batchfilename)
 
         # append the batch ID into the batch ID file. This allows later on to test if batch jobs are still running!
@@ -220,14 +221,10 @@ class cmdsclass(astrotableclass):
                         cmds_col='strun_command', cmds_executed_col='strun_executed',
                         outputfile_col='output_name', addsuffix='fits'):
 
-        print(self.t)
-
         if self.debug:
             print('********* DEBUG!!!! ******\nJust touching the output files!!!')
-            print('HHHHH',indeces2run,outputfile_col)
             for i in indeces2run:
                 outfile = self.filename_with_suffix(self.t[outputfile_col][i],addsuffix=addsuffix)
-                print('NNN',outfile)
                 os.system("touch %s" % outfile)
                 self.t[cmds_executed_col][i]='serial'
             return(0)
@@ -239,7 +236,7 @@ class cmdsclass(astrotableclass):
             outfile = self.filename_with_suffix(self.t[outputfile_col][i],addsuffix=addsuffix)
             (logfilename,errlogfilename) = self.getlogfilenames(outfile, logFlag=logFlag, errorlogFlag=errorlogFlag)
             
-            print('### Executing strun command for index %d: %s' % (i,cmd))
+            print('### Executing command for index %d: %s' % (i,cmd))
             (errorflag) = executecommand(cmd, '', cmdlog=logfilename, errorlog=errlogfilename)
                
             # extra error checking
@@ -292,7 +289,7 @@ class mkrefsclass(astrotableclass):
         self.refcmdtable = cmdsclass('ref')
         self.refmastercmdtable = cmdsclass('refmaster')
         
-        self.allowed_reflabels = ['bpm', 'rdnoise_nircam', 'gain_armin']
+        self.allowed_reflabels = ['example_bpm', 'bpm', 'rdnoise_nircam', 'gain_armin']
 
     def define_options(self, parser=None, usage=None, conflict_handler='resolve'):
         if parser is None:
@@ -332,6 +329,11 @@ class mkrefsclass(astrotableclass):
         parser.add_argument('--maxNstrun', type=int, default=None,
                             help='limit the number of strun commands to be run')
 
+        parser.add_argument('--force_redo_ref', help="Redo the reference file even if file already exists",
+                            action="store_true", default=False)
+        parser.add_argument('--maxNref', type=int, default=None,
+                            help='limit the number of reference file commands to be run')
+
         ###
         ### get the options from the individual mkref_X.py commands!
         ###
@@ -341,6 +343,8 @@ class mkrefsclass(astrotableclass):
         for reflabel in self.allowed_reflabels:
             mkrefpackage = __import__("mkref_%s" % reflabel)
             mkref = mkrefpackage.mkrefclass()
+            if reflabel != mkref.reflabel:
+                raise RuntimeError('reflabel={} in script {} is inconsistent with mkref script name {}!'.format(mkref.reflabel,"mkref_%s" % reflabel,"mkref_%s" % reflabel))
             # get the reflabel specific options
             mkref.extra_optional_arguments(parser)
 
@@ -1274,7 +1278,7 @@ class mkrefsclass(astrotableclass):
             # dictionary, so that the commands always look the same!
             allowed_args = sorted(allowed_args_dict.keys())
 
-            # loop through
+            # loop through allowed options
             optionstring = ''
             for arg in allowed_args:
                 # skip None options. These should be defaults!
@@ -1286,22 +1290,36 @@ class mkrefsclass(astrotableclass):
                     if allowed_args_dict[arg]==parser4mkref.get_default('cfgfile'):
                         continue
 
-                # there seem to be three cases for the argument values: single values, lists, and lists of lists
-                if isinstance(allowed_args_dict[arg],list):
-                    if isinstance(allowed_args_dict[arg][0],list):
-                        for arg2 in allowed_args_dict[arg]:
-                            optionstring+= ' --{} {}'.format(arg,' '.join(arg2))
-                    else:
-                        optionstring+= ' --{} {}'.format(arg,' '.join(allowed_args_dict[arg]))
-                else:   
-                    optionstring+= ' --{} {}'.format(arg,allowed_args_dict[arg])
-
-            print (optionstring)
+                #the argument with -- is the key for the argparse dictionary!
+                #argparse info: https://svn.python.org/projects/python/trunk/Lib/argparse.py
+                arg_dashes = '--{}'.format(arg)
+                if   isinstance(parser4mkref._option_string_actions[arg_dashes],argparse._CountAction):
+                    # 1st special case: counter
+                    print(arg,'CountAction',allowed_args_dict[arg],parser4mkref._option_string_actions[arg_dashes].nargs)
+                    for n in range(allowed_args_dict[arg]):
+                        optionstring+=' {}'.format(parser4mkref._option_string_actions[arg_dashes].option_strings[-1])
+                elif isinstance(parser4mkref._option_string_actions[arg_dashes],argparse._AppendAction) and (parser4mkref._option_string_actions[arg_dashes].nargs==None):
+                    # 2nd special case: append with nargs=None: argument is a simple list, not a list of lists if nargs!=None!
+                    for n in range(len(allowed_args_dict[arg])):
+                       optionstring+=' {} {}'.format(parser4mkref._option_string_actions[arg_dashes].option_strings[-1],allowed_args_dict[arg][n]) 
+                else:                    
+                    # there seem to be three cases for the normal argument values: single values, lists, and lists of lists
+                    if isinstance(allowed_args_dict[arg],list):
+                        if isinstance(allowed_args_dict[arg][0],list):
+                            for arg2 in allowed_args_dict[arg]:
+                                optionstring+= ' {} {}'.format(parser4mkref._option_string_actions[arg_dashes].option_strings[-1],' '.join(arg2))
+                        else:
+                            optionstring+= ' {} {}'.format(parser4mkref._option_string_actions[arg_dashes].option_strings[-1],' '.join(allowed_args_dict[arg]))
+                    else:   
+                        optionstring+= ' {} {}'.format(parser4mkref._option_string_actions[arg_dashes].option_strings[-1],allowed_args_dict[arg])
+                    
             refcmd += optionstring
-            print (refcmd)
             self.refcmdtable.t['refcmd'][i]=refcmd
-        if self.verbose>1:
-            print(self.refcmdtable.t['reflabel', 'cmdID', 'refcmd'])
+
+            if self.verbose>2: print (refcmd)
+
+        #if self.verbose>1:
+        #    print(self.refcmdtable.t['reflabel', 'cmdID', 'refcmd'])
 
         # check if the reduced input files exist or not, and fill
         # 'file_already_exists' column with True or False
@@ -1344,6 +1362,7 @@ class mkrefsclass(astrotableclass):
                                                 outputfile_col='outbasename', addsuffix='fits')
         else:
             # execute serially
+            self.refcmdtable.debug=False
             self.refcmdtable.run_cmds_serial(indeces2run,
                                              logFlag=reflogFlag, errorlogFlag=referrorlogFlag, 
                                              cmds_col='refcmd', cmds_executed_col='refcmd_executed',
@@ -1378,7 +1397,7 @@ if __name__ == '__main__':
     if args.verbose>1:
         print("Input files:")
         print(args.reflabels_and_imagelist)
-
+        
     # set verbose, debug, and onlyshow level
     mkrefs.verbose = args.verbose
     mkrefs.debug = args.debug
@@ -1414,7 +1433,7 @@ if __name__ == '__main__':
     mkrefs.run_ssb_cmds(batchmode=args.batchmode)
 
     # create the reference file commands
-    mkrefs.mk_ref_cmds()
+    mkrefs.mk_ref_cmds(force_redo_refcmds=args.force_redo_ref, maxNrefcmds=args.maxNref)
 
     # run the reference file  commands
     mkrefs.run_ref_cmds(batchmode=args.batchmode)
