@@ -6,22 +6,17 @@ A. Rest
 
 import argparse,os,re,sys,types
 
-from mkref_template import mkrefclass
+from mkref_template import mkrefclass_template
 
 from jwst_reffiles.utils.tools import astrotableclass,yamlcfgclass
 
-class mkrefclassX(mkrefclass):
+class mkrefclass(mkrefclass_template):
     def __init__(self,*args, **kwargs):
-        mkrefclass.__init__(self,*args, **kwargs)
-        self.reflabel='rdnoisenircam'
+        mkrefclass_template.__init__(self,*args, **kwargs)
+        self.reflabel='rdnoise_nircam'
         self.reftype='rdnoise'
 
-    def inputfileoptions(self, parser):
-        parser.add_argument('--D1',
-                            help='specify the dark exposure (default=%(default)s)')
-        return(0)
-        
-    def extraoptions(self, parser):
+    def extra_optional_arguments(self, parser):
         parser.add_argument('-x','--dummy_rdnoise_option1',
                             help='testoption1 readnoise')
         parser.add_argument('--dummy_rdnoise_option2',
@@ -30,10 +25,7 @@ class mkrefclassX(mkrefclass):
 
 
 if __name__ == '__main__':
-    print('bbb',sys.argv)
-    mkref = mkrefclassX()
-    (parser) = mkref.refoptions()
+    mkref = mkrefclass()
+    parser = mkref.allargs()
     args = parser.parse_args()
-    print('bbb',args)
-    sys.exit(0)
-    #mkref.mkref(sys.argv[1:])
+    mkref.callagorithm(args)
