@@ -138,7 +138,6 @@ class cmdsclass(astrotableclass):
             rmfile(outfile)
             rmfile(logfilename)
             # Don't clean up errlogfilename, we want to keep track of old errors...
-
         return(0)
 
     def dummy_batch(self, batchfilename):
