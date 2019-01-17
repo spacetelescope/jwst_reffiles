@@ -19,6 +19,7 @@ from jwst.pipeline import Detector1Pipeline
 
 import jwst_reffiles
 from jwst_reffiles.pipeline.calib_prep import CalibPrep
+from jwst_reffiles.pipeline.pipeline_steps import get_pipeline_steps
 from jwst_reffiles.utils.definitions import PIPE_STEPS
 
 
@@ -32,11 +33,11 @@ def choose_file_test(cp_object):
 
     # Create a step dictionary for each input file that lists its
     # current calibration state
-    file1_state = create_step_dictionary('dq, sat')
-    file2_state = create_step_dictionary('dq, sat, super')
-    file3_state = create_step_dictionary('dq, sat, super, ref')
-    file4_state = create_step_dictionary('dq, sat, super, ref, ipc')
-    file5_state = create_step_dictionary('dq, sat, super, ref, ipc, jump')
+    file1_state = create_step_dictionary('dq_init, saturation')
+    file2_state = create_step_dictionary('dq_init, saturation, superbias')
+    file3_state = create_step_dictionary('dq_init, saturation, superbias, refpix')
+    file4_state = create_step_dictionary('dq_init, saturation, superbias, refpix, ipc')
+    file5_state = create_step_dictionary('dq_init, saturation, superbias, refpix, ipc, jump')
     all_current = [file1_state, file2_state, file3_state, file4_state, file5_state]
     current_state = {}
     for i, filename in enumerate(files):
@@ -44,10 +45,10 @@ def choose_file_test(cp_object):
 
     # Create dictionary giving the required pipeline steps to compare
     required = []
-    required.append(create_step_dictionary('dq, sat, super, ref, ipc, dark, jump'))
-    required.append(create_step_dictionary('dq, sat'))
-    required.append(create_step_dictionary('dq, sat, ref'))
-    required.append(create_step_dictionary('dq, sat, super, ref, ipc, jump, rampfit'))
+    required.append(create_step_dictionary('dq_init, saturation, superbias, refpix, ipc, dark_current, jump'))
+    required.append(create_step_dictionary('dq_init, saturation'))
+    required.append(create_step_dictionary('dq_init, saturation, refpix'))
+    required.append(create_step_dictionary('dq_init, saturation, superbias, refpix, ipc, jump, rate'))
     # required.append(create_step_dictionary('dq'))
 
     # Select the best files
@@ -64,7 +65,7 @@ def completed_steps_test(cp_object):
     correctly translated into a boolean dictionary"""
     filename = os.path.join(os.path.split(os.path.abspath(__file__))[0], 'test_data',
                             'file_for_completed_steps_test.fits')
-    truth = create_step_dictionary('dq, sat, super, ref, lin')
+    truth = create_step_dictionary('dq_init, saturation, superbias, refpix, linearity')
     test_case = cp_object.completed_steps(filename)
     assert truth == test_case
 
@@ -73,7 +74,7 @@ def create_output_test(cp_object):
     """Test that the correct output filename is generated for a given
     requested calibration state and input file
     """
-    requested = create_step_dictionary('dq, sat, ref, super, jump')
+    requested = create_step_dictionary('dq_init, saturation, superbias, refpix, jump')
     basefilename = 'dark_current_file_number_42_uncal'
     base_and_suffix = basefilename.replace('uncal', 'dq_init_saturation_superbias_refpix_jump.fits')
     truth = os.path.join(cp_object.output_dir, base_and_suffix)
@@ -87,7 +88,7 @@ def create_step_dictionary(steplist):
 
     Parameters
     ----------
-    steplist : list
+    steplist : str
         Comma separated list of pipeline steps to set to True
 
     Returns
@@ -95,10 +96,9 @@ def create_step_dictionary(steplist):
     step_dict : dict
         Dictionary with requested steps set to True
     """
-    all_false = copy.deepcopy(OrderedDict(PIPE_STEPS))
-    for key in all_false:
-        all_false[key] = False
-
+    all_false = OrderedDict()
+    for key in get_pipeline_steps('nircam'):
+            all_false[key] = False
     step_dict = copy.deepcopy(all_false)
     pipesteps = [element.strip() for element in steplist.split(',')]
     for stepname in pipesteps:
@@ -119,7 +119,7 @@ def get_basename_test(cp_object):
 def initialize_calib_prep():
     """Create instance of calibPrep and prepare for later tests
     """
-    instance = CalibPrep()
+    instance = CalibPrep('nircam')
     instance.verbose = False
     # instance.inputs = ascii.read('test_calib_input_table.txt')
     instance.inputs = 'nothing'
@@ -133,11 +133,11 @@ def steps_to_run_test(cp_object):
     is generated given an input file in some current state of calibration
     as well as a list of total calibration steps required.
     """
-    required = create_step_dictionary('dq, sat, super, ref, dark, jump')
-    current1 = create_step_dictionary('sat, ref, dark')
-    current2 = create_step_dictionary('dq')
-    truth1 = create_step_dictionary('dq, super, jump')
-    truth2 = create_step_dictionary('sat, super, ref, dark, jump')
+    required = create_step_dictionary('dq_init, saturation, superbias, refpix, dark_current, jump')
+    current1 = create_step_dictionary('saturation, refpix, dark_current')
+    current2 = create_step_dictionary('dq_init')
+    truth1 = create_step_dictionary('dq_init, superbias, jump')
+    truth2 = create_step_dictionary('saturation, superbias, refpix, dark_current, jump')
     torun1 = cp_object.steps_to_run('dummy.fits', required, current1)
     torun2 = cp_object.steps_to_run('dummy.fits', required, current2)
     assert torun1 == truth1
@@ -152,32 +152,33 @@ def strun_command_test(cp_object):
 
     in_names = ['dummy.fits', 'dummy.fits', 'dummy.fits']
     input_names = Column(data=in_names)
-    torun1 = 'sat,super,dark,jump'
-    torun2 = 'dq,super,ref'
-    torun3 = 'dark,lin,rampfit'
+    torun1 = 'saturation,superbias,dark_current,jump'
+    torun2 = 'dq_init,superbias,refpix'
+    torun3 = 'dark_current,linearity,rate'
     steps_to_run = Column(data=[torun1, torun2, torun3])
     out_names = ['dummy_sat_superbias_dark_jump.fits', 'dummy_dq_init_superbias_refpix.fits',
                  'dummy_dark_linearity_rate.fits']
     suffixes = ['sat_superbias_dark_jump', 'dq_init_superbias_refpix', 'dark_linearity_rate']
     output_filename = Column(data=out_names)
-    constructed_commands = cp_object.strun_command(input_names, steps_to_run, output_filename)
-    truth1 = ('strun calwebb_detector1.cfg {} --steps.dq_init.skip=True --steps.refpix.skip=True '
-              '--steps.ipc.skip=True --steps.linearity.skip=True --steps.persistence.skip=True '
+    constructed_commands = cp_object.strun_command(input_names, steps_to_run, output_filename, testing=True)
+    pipeline_cfg_file = os.path.join(cp_object.output_dir, 'calwebb_detector1.cfg')
+    truth1 = ('strun {} {} --steps.group_scale.skip=True --steps.dq_init.skip=True --steps.ipc.skip=True '
+              '--steps.refpix.skip=True --steps.linearity.skip=True --steps.persistence.skip=True '
               '--steps.ramp_fit.skip=True --steps.jump.suffix={} --steps.jump.output_dir={}'
               ' --steps.jump.save_results=True --save_results=False --steps.refpix.odd_even_rows=False'
-              .format(in_names[0], suffixes[0], cp_object.output_dir))
-    truth2 = ('strun calwebb_detector1.cfg {} --steps.saturation.skip=True --steps.ipc.skip=True '
+              .format(pipeline_cfg_file, in_names[0], suffixes[0], cp_object.output_dir))
+    truth2 = ('strun {} {} --steps.group_scale.skip=True --steps.saturation.skip=True --steps.ipc.skip=True '
               '--steps.linearity.skip=True --steps.persistence.skip=True --steps.dark_current.skip=True '
               '--steps.jump.skip=True --steps.ramp_fit.skip=True --steps.refpix.suffix={}'
               ' --steps.refpix.output_dir={} --steps.refpix.save_results=True --save_results=False '
               '--steps.refpix.odd_even_rows=False'
-              .format(in_names[1], suffixes[1], cp_object.output_dir))
-    truth3 = ('strun calwebb_detector1.cfg {} --steps.dq_init.skip=True --steps.saturation.skip=True '
-              '--steps.superbias.skip=True --steps.refpix.skip=True --steps.ipc.skip=True '
+              .format(pipeline_cfg_file, in_names[1], suffixes[1], cp_object.output_dir))
+    truth3 = ('strun {} {} --steps.group_scale.skip=True --steps.dq_init.skip=True --steps.saturation.skip=True '
+              '--steps.ipc.skip=True --steps.superbias.skip=True --steps.refpix.skip=True '
               '--steps.persistence.skip=True --steps.jump.skip=True --steps.ramp_fit.suffix={}'
               ' --steps.ramp_fit.output_dir={} --steps.ramp_fit.save_results=True --save_results=False '
               '--steps.refpix.odd_even_rows=False'
-              .format(in_names[2], suffixes[2], cp_object.output_dir))
+              .format(pipeline_cfg_file, in_names[2], suffixes[2], cp_object.output_dir))
     truths = [truth1, truth2, truth3]
     assert truths == constructed_commands
 

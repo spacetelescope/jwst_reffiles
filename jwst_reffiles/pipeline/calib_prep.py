@@ -98,7 +98,7 @@ import numpy as np
 from jwst import datamodels
 
 from jwst_reffiles.pipeline.pipeline_steps import get_pipeline_steps
-from jwst_reffiles.utils.definitions import PIPE_STEPS, PIPE_KEYWORDS, INSTRUMENTS
+from jwst_reffiles.utils.definitions import CALDETECTOR1_CFG_FILES, PIPE_STEPS, PIPE_KEYWORDS, INSTRUMENTS
 
 
 class CalibPrep:
@@ -287,9 +287,6 @@ class CalibPrep:
         new_commands = list(self.inputs['strun_command'].data)
 
         for row in self.inputs:
-
-            print("Working on row: {}".format(row['index']))
-
             # Find all entries that have the same INPUT filename
             repeated_filename = self.inputs['real_input_file'] == row['real_input_file']
 
@@ -297,18 +294,9 @@ class CalibPrep:
             current_row_index = row['index']
             repeated_filename[current_row_index] = False
 
-            print(repeated_filename)
-            if current_row_index == 13:
-                print('REPEATED FILENAME: ', np.sum(repeated_filename.astype('int')))
-
-
-
-            
             # If the same starting file is present in more than one row:
             if np.sum(repeated_filename.astype('int')) > 0:
                 matching_rows = self.inputs[repeated_filename]
-
-                print('matching rows:', matching_rows)
 
                 # Strip all whitespace from the list of ssb steps. Use this as
                 # a comparison to see if there are repeats among those with matching
@@ -327,57 +315,31 @@ class CalibPrep:
                         additional_output = matching_row['output_name']
 
                         if (additional_output == outname):
-                            # (len(matching_row['repeat_of_index_number']) == 0) &
-                            # (current_row_index < row_index)):
                             # Same output filename means the two rows are exact copies
                             self.inputs[row_index]['repeat_of_index_number'].add(current_row_index)
-                            #new_commands[row_index] = matching_row['strun_command']
-
-                            #print("repeat: setting cmd for row: {}".format(row_index))
                         elif (additional_output != outname):
-                            print("sub-command: setting cmd for row: {}".format(row_index))
                             # Different output names means that to combine these rows we need
                             # to have two outputs. Identify which ssb step the intermediate
                             # output is from, and add it to the strun command
-                            print('before', self.inputs['index_contained_within'])
-                            print(row_index)
-
-                            print(self.inputs[row_index:row_index+5]['index_contained_within'])
                             self.inputs[row_index]['index_contained_within'].add(current_row_index)
-                            print(self.inputs[row_index:row_index+5]['index_contained_within'])
-
-                            print('after', self.inputs['index_contained_within'])
                             final_step = ssbsteps.split(',')[-1]
-                            #additional_out_str = (" --steps.{}.output_file = {}"
-                            #                      .format(self.pipe_step_dict[final_step], additional_output))
-                            additional_out_str = (" --steps.{}.output_file = {}"
+                            additional_out_str = (" --steps.{}.output_file={}"
                                                   .format(final_step, additional_output))
-                            #print('')
-                            #print('')
-                            #print('BEFORE')
-                            #print(row['strun_command'])
-                            #print('AFTER')
-                            #print(row['strun_command'] + additional_out_str)
-                            #new_command = row['strun_command'] + additional_out_str
                             new_command = copy.deepcopy(new_commands[current_row_index]) + additional_out_str
                             new_commands[current_row_index] = new_command
-                            #self.inputs[current_row_index]['strun_command'] = new_command
-                            #print('AFTER SETTING')
-                            #print(self.inputs[current_row_index]['strun_command'])
                         else:
-                            print('input names match but no repeat nor subcommand. or already flagged')
+                            pass
+                            #print('input names match but no repeat nor subcommand. or already flagged')
                     else:
-                        print('ssb steps is not in or matching other ssbsteps.')
+                        pass
+                        #print('ssb steps is not in or matching other ssbsteps.')
             else:
-                print("No repeat nor sub-command.")
+                pass
+                #print("No repeat nor sub-command.")
 
         # Now remove the old strun_command column and insert the new one
         self.inputs.remove_column('strun_command')
         new_command_column = Column(data=new_commands, name='strun_command')
-
-        print(self.inputs.colnames)
-        print("Before adding updated commands and dealing with repeats:")
-        print(self.inputs['real_input_file', 'steps_to_run', 'index_contained_within', 'repeat_of_index_number'])
 
         self.inputs.add_column(new_command_column)
 
@@ -387,9 +349,6 @@ class CalibPrep:
         # Check for subsets in the index_contained_within column, and keep only the entries
         # that contain all others
         self.activate_encompassing_entries()
-
-        print("after dealing with contained within:")
-        print(self.inputs['real_input_file', 'steps_to_run', 'index_contained_within', 'repeat_of_index_number'])
 
     def completed_steps(self, input_file):
         '''Identify and return the pipeline steps completed
@@ -407,18 +366,6 @@ class CalibPrep:
         completed = OrderedDict({})
         for key in self.pipe_step_list:
             completed[key] = False
-
-        #starttime = time.time()
-        #data = datamodels.open(file)
-        #datamodels_time = time.time() - starttime
-        #print("datamodels_time: {}".format(datamodels_time))
-        #status = data.meta.cal_step._instance  # returns dict of completed steps
-        #finsteps = list(status.keys())
-        #for key in self.pipe_step_dict:
-        #    if self.pipe_step_dict[key] in finsteps:
-        #        done[key] = True
-        #    else:
-        #        done[key] = False
         header = fits.getheader(input_file)
         for key in header.keys():
             if key in PIPE_KEYWORDS.keys():
@@ -426,6 +373,24 @@ class CalibPrep:
                 if value == 'COMPLETE':
                     completed[PIPE_KEYWORDS[key]] = True
         return completed
+
+    def copy_config_to_output_dir(self, filename, testing=False):
+        """Check to see if the given pipeline configuration file exists
+        in the output directory. If not, make a copy from the files in
+        the repo
+
+        Parameters
+        ----------
+        filename : str
+            Name of the cfg file to check for (e.g. calwebb_detector1.cfg)
+        """
+        full_filename = os.path.join(self.output_dir, filename)
+        if not os.path.isfile(full_filename):
+            print('INFO: {} file does not exist in {}. Creating.'.format(filename,
+                                                                         self.output_dir))
+            cfg_reference = os.path.join(os.path.dirname(__file__), 'config_files/{}'.format(filename))
+            if not testing:
+                subprocess.call(['cp', cfg_reference, full_filename])
 
     def create_output(self, base, req):
         '''Create the output name of the pipeline-processed
@@ -681,10 +646,8 @@ class CalibPrep:
 
             # Determine the completed calibration steps
             # for each file
-            # print("Files to check for completed steps: {}".format(files))
             current_state = {}
             for f in files:
-                print('file to go into completed_steps is {}'.format(f))
                 state = self.completed_steps(f)
                 current_state[f] = state
 
@@ -747,19 +710,6 @@ class CalibPrep:
 
         if self.verbose:
             print("Input table updated.")
-            print(self.proc_table)
-            #output_table_file = os.path.join(self.output_dir, 'ssb_commands.txt')
-            #print('output_table_file', output_table_file)
-            #ascii.write(self.proc_table, output_table_file, overwrite=True)
-            #ascii.write(self.inputs['index',  'repeat_of_index_number', 'index_contained_within', 'steps_to_run', 'real_input_file', 'strun_command'], "test_repeats.txt", overwrite=True)
-
-        # Table containing only the command ID and the strun command
-        #c_tab = Table()
-        #c_tab.add_column(self.inputs['cmdID'])
-        #c_tab.add_column(self.inputs['strun_command'])
-
-        #if self.verbose:
-        #    ascii.write(c_tab, 'test_strun_commands.txt', overwrite=True)
 
         # Done
         # calling function can now use self.proc_table and
@@ -844,13 +794,14 @@ class CalibPrep:
                        "be. Need a new input file.".format(infile, key)))
         return torun
 
-    def strun_command(self, input, steps_to_run, outfile_name, overrides=[], instrument='nircam'):
+    def strun_command(self, input_files, steps_to_run, outfile_name, overrides=[], instrument='nircam',
+                      testing=False):
         '''Create the necessary strun command to run the
         appropriate JWST calibration pipeline steps
 
         Parameters
         ----------
-        input : astropy.table.Column
+        input_files : astropy.table.Column
             astropy table column object listing input fits filenames
 
         steps_to_run : astropy.table.Column
@@ -859,6 +810,12 @@ class CalibPrep:
 
         outfile_name : astropy.table.Column
             astropy table column object listing pipeline ouput fits file name
+
+        instrument : str
+            Name of instrument. Used to collect the appropriate pipeline steps
+
+        testing : bool
+            Passed to copy_config_to_output_dir. Used for pytests.
 
         Returns
         -------
@@ -884,18 +841,15 @@ class CalibPrep:
         # Determine appropriate reference file overrides
         # something
 
-        # Assume the calwebb_detector1.cfg config file is in self.output_directory. If not,
-        # copy it there from the repo.
-        cfg_file = os.path.join(self.output_dir, 'calwebb_detector1.cfg')
-        if not os.path.isfile(cfg_file):
-            print('INFO: calwebb_detector1.cfg file does not exist in {}. Creating.'
-                  .format(self.output_dir))
-            cfg_reference = os.path.join(os.path.dirname(__file__), 'calwebb_detector1.cfg')
-            subprocess.call(['cp', cfg_reference, cfg_file])
+        # Assume the pipeline config files are in self.output_directory. If not,
+        # copy from the repo.
+        for cfile in CALDETECTOR1_CFG_FILES:
+            self.copy_config_to_output_dir(cfile, testing=testing)
+        pipeline_cfg_file = os.path.join(self.output_dir, 'calwebb_detector1.cfg')
 
         # Create the strun command
-        initial = 'strun {} '.format(cfg_file)
-        for infile, steps, outfile in zip(input, steps_to_run, outfile_name):
+        initial = 'strun {} '.format(pipeline_cfg_file)
+        for infile, steps, outfile in zip(input_files, steps_to_run, outfile_name):
             with_file = initial + infile
 
             if steps == 'None':
