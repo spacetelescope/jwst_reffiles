@@ -53,6 +53,7 @@ class cmdsclass(astrotableclass):
             filename = self.filename_with_suffix(self.t[file_col][i],addsuffix=addsuffix)
             if os.path.isfile(filename):
                 file_exists[i]=True
+
         self.t[file_exists_col]=file_exists
         return(0)
 
