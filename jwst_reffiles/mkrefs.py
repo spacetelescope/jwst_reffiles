@@ -53,18 +53,6 @@ class cmdsclass(astrotableclass):
             filename = self.filename_with_suffix(self.t[file_col][i],addsuffix=addsuffix)
             if os.path.isfile(filename):
                 file_exists[i]=True
-
-        #for i in range(len(self.t)):
-        #    if addsuffix == None:
-        #        if os.path.isfile(self.t[file_col][i]):
-        #            file_exists[i]=True
-        #    else:
-        #        filename = self.t[file_col][i]
-        #        if re.search('\.$',filename)==None: filename+='.'
-        #        filename += addsuffix
-        #        if os.path.isfile(filename):
-        #            file_exists[i]=True
-
         self.t[file_exists_col]=file_exists
         return(0)
 
@@ -149,20 +137,6 @@ class cmdsclass(astrotableclass):
             rmfile(outfile)
             rmfile(logfilename)
             # Don't clean up errlogfilename, we want to keep track of old errors...
-
-        return(0)
-
-    def DELMEclean_old_output_files(self, execute_cmds_col, outputfile_col, addsuffix=None,
-                               batchmode=False, logFlag=False, errorlogFlag=True):
-        """ cleaning up old output files """
-
-        for i in range(len(self.t)):
-            if self.t[execute_cmds_col][i]:
-                outfile = self.t[outputfile_col][i]
-                (logfilename,errlogfilename) = self.getlogfilenames(outfile)
-                rmfile(outfile)
-                rmfile(logfilename)
-                # Don't clean up errlogfilename, we want to keep track of old errors...
 
         return(0)
 
@@ -347,6 +321,7 @@ class mkrefsclass(astrotableclass):
         # this gets the default optional paramters (verbose, debug, cfg file etc) from the mkref_template class
         self.mkref_template.default_optional_arguments(parser)
         # Loop through all allowed reflabels, and add the extra options
+
         self.mkrefpackages = {}
         for reflabel, refdir in zip(self.allowed_reflabels, self.reflabel_directories):
             dir_end = refdir.split('/')[-1]
@@ -364,16 +339,6 @@ class mkrefsclass(astrotableclass):
 
     def loadcfgfiles(self, *pargs, **kwargs):
         return(self.mkref_template.loadcfgfiles(*pargs, **kwargs))
-
-    def DELMEloadcfgfiles(self, maincfgfile, extracfgfiles=None, params=None, params4all=None,
-                     params4sections=None, requireParamExists=True):
-        if self.cfg is None:
-            self.cfg = yamlcfgclass()
-        if self.cfg.loadcfgfiles(maincfgfile, extracfgfiles=extracfgfiles,
-                                 params=params, params4all=params4all, params4sections=params4sections,
-                                 requireParamExists=requireParamExists, verbose=self.verbose):
-            raise RuntimeError("Something went wrong when loading config files!")
-        return(0)
 
     def getbasedir(self, outrootdir=None, outsubdir=None, runlabel=None):
         """ basedir based on options and cfg file: outrootdir[/outsubdir][/runID]"""
@@ -923,40 +888,6 @@ class mkrefsclass(astrotableclass):
             raise RuntimeError("ERROR: imtypes=%s not yet implemented!" % imtypes)
         return(imagesets, imagelabels)
 
-    def DELMEpick_strun_cmds_to_execute(self, force_redo_strun=False, maxNstrun = None, execute_strun_col='execute_strun'):
-        """ pick the strun commands to be executed! execute if
-        primary_strun=True, and both
-        file_exists,already_in_batch=False.  if force_redo_strun, then
-        execute even if file_exists, and throw error message if
-        already_in_batch """
-        execute_strun = np.full((len(self.ssbcmdtable.t)),False)
-        Nstrun=0
-        for i in range(len(self.ssbcmdtable.t)):
-            exeflag=self.ssbcmdtable.t['primary_strun'][i]
-
-            # Don't redo it if file already exists and if it is not force_redo_strun
-            if (not force_redo_strun) and self.ssbcmdtable.t['file_already_exists'][i]:
-                exeflag=False
-
-            if self.ssbcmdtable.t['already_in_batch'][i]:
-                exeflag=False
-                # force_redo_strun? Cannot do that, otherwise all hell would break loose with overwriting files etc
-                if force_redo_strun:
-                    raise RuntimeError("Cannot use --force_redo_strun when strun command %s of index %d is still running in batch mode!" % (self.ssbcmdtable.t['strun_command'][i],i))
-
-            if maxNstrun!=None and Nstrun>=maxNstrun:
-                if self.verbose>=3:
-                    print('Skipping executing strun command for index %d, since maxNstrun=%d' % (i,maxNstrun))
-                exeflag=False
-
-            if exeflag:
-                Nstrun+=1
-
-            execute_strun[i]=exeflag
-
-        self.ssbcmdtable.t[execute_strun_col]=execute_strun
-        return(0)
-
     def check_if_primary_strun(self, primary_strun_col='primary_strun'):
         """ check which entries are primary strun commands. """
         primary_strun = np.full((len(self.ssbcmdtable.t)),True)
@@ -1155,87 +1086,6 @@ class mkrefsclass(astrotableclass):
 
         return(0)
 
-    def DELMErun_ssb_cmds(self, batchmode=False, ssblogFlag=False, ssberrorlogFlag=True):
-        if self.onlyshow:
-            if self.verbose: print('\n*** ONLYSHOW: skipping running the strun commands!\n')
-            return(0)
-
-        # cleaning up old output files:
-        for i in range(len(self.ssbcmdtable.t)):
-            if self.ssbcmdtable.t['execute_strun'][i]:
-                outfile = self.ssbcmdtable.t['output_name'][i]
-                (logfilename,errlogfilename) = self.getlogfilenames(outfile)
-                rmfile(outfile)
-                rmfile(logfilename)
-                # Don't clean up errlogfilename, we want to keep track of old errors...
-
-        indeces2run = np.where(self.ssbcmdtable.t['execute_strun'])
-
-        if batchmode:
-            print("### run strun commands in batch mode: NOT YET IMPLEMENTED!!!")
-
-            # submit the batch here, return errorflag in case there is an issue submitting the batch
-            errorflag = 0
-            strun_list = self.ssbcmdtable.t['strun_command'][indeces2run]
-
-            # This is the list to be submitted to the batch
-            print(strun_list)
-
-            # mark the entries that are submitted to the batch
-            if not errorflag:
-                self.ssbcmdtable.t['execute_strun'][indeces2run]='batch'
-
-        else:
-            t4strun = self.ssbcmdtable.t[indeces2run]
-            print(t4strun['index','execute_strun','output_name'])
-
-            if self.debug:
-                for i in range(len(t4strun)):
-                    outfile = t4strun['output_name'][i]
-                    self.ssbcmdtable.t['strun_executed'][indeces2run[0][i]]='serial'
-                    os.system("touch %s" % outfile)
-
-                #self.check_if_files_exists(self.ssbcmdtable.t, file_col='output_name', file_exists_col='file_exists')
-                self.ssbcmdtable.check_if_files_exists(file_col='output_name', file_exists_col='file_exists')
-                print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_already_exists','already_in_batch','execute_strun','strun_executed','file_exists'])
-                return(0)
-
-
-            for i in range(len(t4strun)):
-                strun_cmd = t4strun['strun_command'][i]
-                outfile = t4strun['output_name'][i]
-
-                # decide if logfiles, depending on config filea
-                (logfilename,errlogfilename) = self.getlogfilenames(outfile)
-                if not self.cfg.params['output']['ssblogFlag']: logfilename=None
-                if not self.cfg.params['output']['ssberrorlogFlag']: errlogfilename=None
-
-                print('### Executing strun command for index %d: %s' % (indeces2run[0][i],strun_cmd))
-                (errorflag) = executecommand(strun_cmd, '', cmdlog=logfilename, errorlog=errlogfilename)
-
-                # extra error checking
-                if not os.path.isfile(outfile):
-                    print('ERROR: file {} did not get created with strun command!'.format(outfile))
-                    errorflag|=2
-
-                # fill ssbtable with results.
-                if errorflag:
-                    self.ssbcmdtable.t['strun_executed'][indeces2run[0][i]]='ERROR{}_serial'.format(errorflag)
-                else:
-                    self.ssbcmdtable.t['strun_executed'][indeces2run[0][i]]='serial'
-
-            #self.check_if_files_exists(self.ssbcmdtable.t, file_col='output_name', file_exists_col='file_exists')
-            self.ssbcmdtable.check_if_files_exists(file_col='output_name', file_exists_col='file_exists')
-
-        if self.verbose>1:
-            print(self.ssbcmdtable.t['index','real_input_file','repeat_of_index_number', 'index_contained_within','primary_strun','file_already_exists','already_in_batch','execute_strun','strun_executed','file_exists'])
-
-        return(0)
-
-    def submitbatch(self):
-        print("### submitbatch: NOT YET IMPLEMENTED!!!")
-        sys.exit(0)
-
     def mk_ref_cmds(self, force_redo_refcmds=False, maxNrefcmds=None):
 
         self.refcmdtable.t['refcmd'] = None
@@ -1395,6 +1245,11 @@ class mkrefsclass(astrotableclass):
     def overview(self):
         print("### overview: NOT YET IMPLEMENTED!!!")
         sys.exit(0)
+
+    def submitbatch(self):
+        print("### submitbatch: NOT YET IMPLEMENTED!!!")
+        sys.exit(0)
+
 
 
 if __name__ == '__main__':
