@@ -224,7 +224,8 @@ class cmdsclass(astrotableclass):
         if self.debug:
             print('********* DEBUG!!!! ******\nJust touching the output files!!!')
             for i in indeces2run:
-                outfile = self.filename_with_suffix(self.t[outputfile_col][i],addsuffix=addsuffix)
+                # outfile = self.filename_with_suffix(self.t[outputfile_col][i],addsuffix=addsuffix)
+                outfile = self.t[outputfile_col][i]
                 os.system("touch %s" % outfile)
                 self.t[cmds_executed_col][i]='serial'
             return(0)
@@ -233,7 +234,8 @@ class cmdsclass(astrotableclass):
             cmd = self.t[cmds_col][i]
 
             # decide if logfiles, depending on config filea
-            outfile = self.filename_with_suffix(self.t[outputfile_col][i],addsuffix=addsuffix)
+            #outfile = self.filename_with_suffix(self.t[outputfile_col][i],addsuffix=addsuffix)
+            outfile = self.t[outputfile_col][i]
             (logfilename,errlogfilename) = self.getlogfilenames(outfile, logFlag=logFlag, errorlogFlag=errorlogFlag)
 
             print('### Executing command for index %d: %s' % (i,cmd))
@@ -291,9 +293,11 @@ class mkrefsclass(astrotableclass):
 
         # self.allowed_reflabels = ['example_bpm', 'bpm', 'rdnoise_nircam', 'gain_armin']
         mkref_file_list = glob.glob('{}/*/mkref_*.py'.format(os.path.dirname(__file__)))
-        mkref_file_list = [os.path.basename(entry) for entry in mkref_file_list]
-        self.allowed_reflabels = [entry.replace('mkref_', '').replace('.py', '') for entry in mkref_file_list]
-        reflabel_directories = [os.path.dirname(entry) for entry in mkref_file_list]
+        mkref_file_basenames = [os.path.basename(entry) for entry in mkref_file_list]
+        self.allowed_reflabels = [entry.replace('mkref_', '').replace('.py', '') for entry in mkref_file_basenames]
+        self.reflabel_directories = [os.path.dirname(entry) for entry in mkref_file_list]
+        print(self.allowed_reflabels)
+        print(self.reflabel_directories)
 
     def define_options(self, parser=None, usage=None, conflict_handler='resolve'):
         if parser is None:
@@ -344,15 +348,16 @@ class mkrefsclass(astrotableclass):
         # this gets the default optional paramters (verbose, debug, cfg file etc) from the mkref_template class
         self.mkref_template.default_optional_arguments(parser)
         # Loop through all allowed reflabels, and add the extra options
-        for reflabel, refdir in zip(self.allowed_reflabels, reflabel_directories):
-            #mkrefpackage = __import__("mkref_%s" % reflabel)
-            mkrefpackage = __import__("{}.{}".format(refdir, reflabel), globals(), locals(), [mkrefclass], -1)
+        for reflabel, refdir in zip(self.allowed_reflabels, self.reflabel_directories):
+            dir_end = refdir.split('/')[-1]
+            mkref_label_name = 'mkref_{}'.format(reflabel)
+            mkrefpackage = __import__("jwst_reffiles.{}.{}".format(dir_end, mkref_label_name), globals(), locals(), ['mkrefclass'], 0)
             mkref = mkrefpackage.mkrefclass()
             if reflabel != mkref.reflabel:
-                raise RuntimeError('reflabel={} in script {} is inconsistent with mkref script name {}!'.format(mkref.reflabel,"mkref_%s" % reflabel,"mkref_%s" % reflabel))
+                raise RuntimeError('reflabel={} in script {} is inconsistent with mkref script name {}!'
+                                   .format(mkref.reflabel, mkref_label_name, mkref_label_name))
             # get the reflabel specific options
             mkref.extra_optional_arguments(parser)
-
         return(parser)
 
     def loadcfgfiles(self, *pargs, **kwargs):
@@ -1077,11 +1082,9 @@ class mkrefsclass(astrotableclass):
 
         mmm.output_dir = self.ssbdir
         mmm.prepare()
-        print('Table column names:')
-        print(mmm.proc_table.colnames)
 
         #print('BACK IN MKREFS:')
-        print(mmm.proc_table['index', 'cmdID', 'reflabel', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
+        # print(mmm.proc_table['index', 'cmdID', 'reflabel', 'steps_to_run', 'repeat_of_index_number', 'index_contained_within'])
         #print(mmm.proc_table['strun_command'][-1])
 
         self.ssbcmdtable.verbose = self.verbose

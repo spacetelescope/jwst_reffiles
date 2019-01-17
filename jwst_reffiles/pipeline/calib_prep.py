@@ -98,7 +98,7 @@ import numpy as np
 from jwst import datamodels
 
 from jwst_reffiles.pipeline.pipeline_steps import get_pipeline_steps
-from jwst_reffiles.utils.definitions import PIPE_STEPS, PIPE_KEYWORDS, INSTRUMENTS
+from jwst_reffiles.utils.definitions import CALDETECTOR1_CFG_FILES, PIPE_STEPS, PIPE_KEYWORDS, INSTRUMENTS
 
 
 class CalibPrep:
@@ -386,7 +386,9 @@ class CalibPrep:
             print('INFO: {} file does not exist in {}. Creating.'.format(filename,
                                                                          self.output_dir))
             cfg_reference = os.path.join(os.path.dirname(__file__), 'config_files/{}'.format(filename))
-            subprocess.call(['cp', cfg_reference, filename])
+            print(cfg_reference)
+            print(full_filename)
+            subprocess.call(['cp', cfg_reference, full_filename])
 
     def create_output(self, base, req):
         '''Create the output name of the pipeline-processed
@@ -790,13 +792,13 @@ class CalibPrep:
                        "be. Need a new input file.".format(infile, key)))
         return torun
 
-    def strun_command(self, input, steps_to_run, outfile_name, overrides=[], instrument='nircam'):
+    def strun_command(self, input_files, steps_to_run, outfile_name, overrides=[], instrument='nircam'):
         '''Create the necessary strun command to run the
         appropriate JWST calibration pipeline steps
 
         Parameters
         ----------
-        input : astropy.table.Column
+        input_files : astropy.table.Column
             astropy table column object listing input fits filenames
 
         steps_to_run : astropy.table.Column
@@ -832,16 +834,13 @@ class CalibPrep:
 
         # Assume the pipeline config files are in self.output_directory. If not,
         # copy from the repo.
-        cfg_file_list = copy.deepcopy(PIPE_STEPS)[0: -1] + ['calwebb_detector1']
-        cfg_fiile_list = [entry+'.cfg' for entry in cfg_file_list]
-        for cfile in cfg_file_list:
-            cfg_file = os.path.join(cfile)
-            self.copy_config_to_output_dir(cfg_file)
+        for cfile in CALDETECTOR1_CFG_FILES:
+            self.copy_config_to_output_dir(cfile)
         pipeline_cfg_file = os.path.join(self.output_dir, 'calwebb_detector1.cfg')
 
         # Create the strun command
         initial = 'strun {} '.format(pipeline_cfg_file)
-        for infile, steps, outfile in zip(input, steps_to_run, outfile_name):
+        for infile, steps, outfile in zip(input_files, steps_to_run, outfile_name):
             with_file = initial + infile
 
             if steps == 'None':

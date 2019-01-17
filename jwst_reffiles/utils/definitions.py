@@ -19,3 +19,9 @@ PIPE_KEYWORDS = {'S_GRPSCL': 'group_scale', 'S_DQINIT': 'dq_init', 'S_SATURA': '
 
 # List of available instruments
 INSTRUMENTS = ['nircam', 'niriss', 'nirspec', 'miri', 'fgs']
+
+# List of pipeline configuration files used by calwebb_detector1 pipeline
+CALDETECTOR1_CFG_FILES = ['group_scale.cfg', 'dq_init.cfg', 'saturation.cfg', 'ipc.cfg', 'firstframe.cfg',
+                          'lastframe.cfg', 'superbias.cfg', 'refpix.cfg', 'linearity.cfg', 'persistence.cfg',
+                          'rscd.cfg', 'dark_current.cfg', 'jump.cfg', 'ramp_fit.cfg', 'gain_scale.cfg',
+                          'calwebb_detector1.cfg']
