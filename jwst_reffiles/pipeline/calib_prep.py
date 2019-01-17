@@ -328,11 +328,14 @@ class CalibPrep:
                             new_command = copy.deepcopy(new_commands[current_row_index]) + additional_out_str
                             new_commands[current_row_index] = new_command
                         else:
-                            print('input names match but no repeat nor subcommand. or already flagged')
+                            pass
+                            #print('input names match but no repeat nor subcommand. or already flagged')
                     else:
-                        print('ssb steps is not in or matching other ssbsteps.')
+                        pass
+                        #print('ssb steps is not in or matching other ssbsteps.')
             else:
-                print("No repeat nor sub-command.")
+                pass
+                #print("No repeat nor sub-command.")
 
         # Now remove the old strun_command column and insert the new one
         self.inputs.remove_column('strun_command')
@@ -371,7 +374,7 @@ class CalibPrep:
                     completed[PIPE_KEYWORDS[key]] = True
         return completed
 
-    def copy_config_to_output_dir(self, filename):
+    def copy_config_to_output_dir(self, filename, testing=False):
         """Check to see if the given pipeline configuration file exists
         in the output directory. If not, make a copy from the files in
         the repo
@@ -386,9 +389,8 @@ class CalibPrep:
             print('INFO: {} file does not exist in {}. Creating.'.format(filename,
                                                                          self.output_dir))
             cfg_reference = os.path.join(os.path.dirname(__file__), 'config_files/{}'.format(filename))
-            print(cfg_reference)
-            print(full_filename)
-            subprocess.call(['cp', cfg_reference, full_filename])
+            if not testing:
+                subprocess.call(['cp', cfg_reference, full_filename])
 
     def create_output(self, base, req):
         '''Create the output name of the pipeline-processed
@@ -792,7 +794,8 @@ class CalibPrep:
                        "be. Need a new input file.".format(infile, key)))
         return torun
 
-    def strun_command(self, input_files, steps_to_run, outfile_name, overrides=[], instrument='nircam'):
+    def strun_command(self, input_files, steps_to_run, outfile_name, overrides=[], instrument='nircam',
+                      testing=False):
         '''Create the necessary strun command to run the
         appropriate JWST calibration pipeline steps
 
@@ -807,6 +810,12 @@ class CalibPrep:
 
         outfile_name : astropy.table.Column
             astropy table column object listing pipeline ouput fits file name
+
+        instrument : str
+            Name of instrument. Used to collect the appropriate pipeline steps
+
+        testing : bool
+            Passed to copy_config_to_output_dir. Used for pytests.
 
         Returns
         -------
@@ -835,7 +844,7 @@ class CalibPrep:
         # Assume the pipeline config files are in self.output_directory. If not,
         # copy from the repo.
         for cfile in CALDETECTOR1_CFG_FILES:
-            self.copy_config_to_output_dir(cfile)
+            self.copy_config_to_output_dir(cfile, testing=testing)
         pipeline_cfg_file = os.path.join(self.output_dir, 'calwebb_detector1.cfg')
 
         # Create the strun command
