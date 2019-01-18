@@ -348,11 +348,14 @@ class mkrefsclass(astrotableclass):
         # this gets the default optional paramters (verbose, debug, cfg file etc) from the mkref_template class
         self.mkref_template.default_optional_arguments(parser)
         # Loop through all allowed reflabels, and add the extra options
+        self.mkrefpackages = {}
         for reflabel, refdir in zip(self.allowed_reflabels, self.reflabel_directories):
             dir_end = refdir.split('/')[-1]
             mkref_label_name = 'mkref_{}'.format(reflabel)
-            mkrefpackage = __import__("jwst_reffiles.{}.{}".format(dir_end, mkref_label_name), globals(), locals(), ['mkrefclass'], 0)
-            mkref = mkrefpackage.mkrefclass()
+            self.mkrefpackages[mkref_label_name] = __import__("jwst_reffiles.{}.{}".
+                                                              format(dir_end, mkref_label_name),
+                                                              globals(), locals(), ['mkrefclass'], 0)
+            mkref = self.mkrefpackages[mkref_label_name].mkrefclass()
             if reflabel != mkref.reflabel:
                 raise RuntimeError('reflabel={} in script {} is inconsistent with mkref script name {}!'
                                    .format(mkref.reflabel, mkref_label_name, mkref_label_name))
@@ -1271,8 +1274,7 @@ class mkrefsclass(astrotableclass):
 
             # now get the options specific to the mkref_X.py command
             parser4mkref = argparse.ArgumentParser(conflict_handler='resolve')
-            mkrefpackage = __import__("mkref_%s" % reflabel)
-            mkref_reflabel = mkrefpackage.mkrefclass()
+            mkref_reflabel = self.mkrefpackages["mkref_{}".format(reflabel)].mkrefclass()
             mkref_reflabel.default_optional_arguments(parser4mkref)
             mkref_reflabel.extra_optional_arguments(parser4mkref)
             # parse_known_args goes through all the arguments and
