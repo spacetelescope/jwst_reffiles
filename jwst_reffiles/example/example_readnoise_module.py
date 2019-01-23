@@ -24,7 +24,7 @@ from jwst.datamodels import ReadnoiseModel
 
 
 class MyReadnoise():
-    def __init__(self, dark, verbose=True, boxsize=64, sigma_threshold=3):
+    def __init__(self, dark, verbose=True, boxsize=64, sigma_threshold=3, output_directory='./'):
         """
         Parameters
         ----------
@@ -34,10 +34,17 @@ class MyReadnoise():
         verbose : bool
             Print extra info while running
         """
+        # Set up class variables
         self.dark = dark
         self.boxsize = int(boxsize)
         self.verbose = True
         self.sigma_threshold = sigma_threshold
+        self.output_directory = output_directory
+
+        need to add a 'define_options' function for argument parsing
+
+        # Run
+        self.compute()
 
     def box_grid(self):
         """Create a list of x,y coordinates to create a grid
@@ -47,9 +54,14 @@ class MyReadnoise():
             raise ValueError(("Warning: boxsize must be a factor of the detector width"))
 
         num_boxes = int(2048 / self.boxsize)
-        # xs, ys = np.mgrid[0:num_boxes+1, 0:num_boxes+1] * self.boxsize
         xs = np.arange(0, 2049, self.boxsize)
         ys = np.arange(0, 2049, self.boxsize)
+
+        # Exclude reference pixels
+        xs[xs == 0] = 5
+        ys[ys == 0] = 5
+        xs[xs == 2048] = 2043
+        ys[ys == 2048] = 2043
         return xs, ys
 
     def calculate_stdev(self, array, x, y, clipthresh):
@@ -121,7 +133,7 @@ class MyReadnoise():
 
         # Save the readnoise frame in the format of a readnoise reference file
         outfile = 'test_readnoise_file.fits'
-        self.save(readnoise_frame, output_dir=out_dir)
+        self.save(readnoise_frame)
 
     def make_cds(self, ramp):
         """Given an integration (or exposure with multiple
@@ -149,7 +161,7 @@ class MyReadnoise():
                 cds_ramp = np.concatenate(cds_ramp, integ_cds)
         return cds_ramp
 
-    def save(self, data, output_dir):
+    def save(self, data):
         """Save the readnoise frame using JWST datamodel"""
         ron = ReadnoiseModel()
         ron.data = data
@@ -168,4 +180,4 @@ class MyReadnoise():
         ron.meta.useafter = '2115-10-01T00:00:00'
         ron.meta.author = 'NOBODY'
         output_name = '{}_{}_readnoise_example_file.fits'.format(self.instrument, self.detector)
-        ron.save(os.path.join(output_dir, output_name))
+        ron.save(os.path.join(self.output_directory, output_name))

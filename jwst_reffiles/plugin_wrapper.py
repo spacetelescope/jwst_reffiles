@@ -15,18 +15,18 @@ from astropy.io import ascii
 import astropy.io.fits as fits
 import numpy as np
 
-from jwst_reffiles.utils.tools import astrotableclass,yamlcfgclass
+from jwst_reffiles.utils.tools import astrotableclass, yamlcfgclass
 
 
 class mkrefclass_template:
     def __init__(self):
         self.cfg = yamlcfgclass()
 
-        self.reflabel=None
-        self.reftype=None
+        self.reflabel = None
+        self.reftype = None
 
-        self.args=None
-        self.parser=None
+        self.args = None
+        self.parser = None
 
         self.inputimages = None
 
@@ -34,10 +34,9 @@ class mkrefclass_template:
 # The following functions (until the next section) should only be modified
 # in exceptional circumstances in the child classes of mkref_X.py
 ################################################################################
-    
-        
+
     def positional_arguments(self, parser):
-        """ 
+        """
         The filename of the output reference file is the first argument.
         The filename of the input image list is the second argument
         """
@@ -57,7 +56,7 @@ class mkrefclass_template:
         else:
             cfgfile = None
         parser.add_argument('-c', '--cfgfile', default=cfgfile, help='main config file. (default=%(default)s)')
-        parser.add_argument('-e', '--extracfgfile', action='append', default=None, 
+        parser.add_argument('-e', '--extracfgfile', action='append', default=None,
                             help=('additional config file. These cfg files do not need to have all '
                                   'parameters. They overwrite the parameters in the main cfg file.'))
         parser.add_argument('-p', '--params', action='append', default=None, nargs=2,
@@ -84,8 +83,8 @@ class mkrefclass_template:
 
         return(parser)
 
-    def initialize(self,argument_list=None):
-        
+    def initialize(self, argument_list=None):
+
         # first, parse the arguments
         self.parser = self.define_args()
         self.args = self.parser.parse_args()
@@ -101,19 +100,19 @@ class mkrefclass_template:
         # load the input images
         self.inputimages = ascii.read(self.args.imageslist_filename, delimiter='\s')
 
-    def wrap_it_up(self,reffilename=None):
+    def wrap_it_up(self, reffilename=None):
         #todo, add testing
         # (1) load the reference file into the approprite data model
-        # (2) run it through ssb and see if it breaks 
+        # (2) run it through ssb and see if it breaks
 
         if self.cfg.params[self.reflabel]['test4datamodel']:
             print('To be implemented: test for data models!!')
 
         if self.cfg.params[self.reflabel]['test4ssb']:
-            print('To be implemented: run it through ssb!!') 
-        
+            print('To be implemented: run it through ssb!!')
+
         return(0)
-        
+
     def make_reference_file(self):
 
         self.initialize()
@@ -123,17 +122,3 @@ class mkrefclass_template:
         self.wrap_it_up()
 
         print('{} successfully finished!'.format(self.reflabel))
-        
-################################################################################
-# The functions below must be modified in the child classes of mkref_X.py
-################################################################################
-
-    def extra_optional_arguments(self, parser):
-        """ add here the extra options for a given reference file maker """
-        print("PLACEHOLDER for extraoptions")
-        return(0)
-
-    def callalgorithm(self):
-        """ overwrite this with the real call to the algorithm """
-        print("PLACEHOLDER for calling algorithm")
-        return(0)
