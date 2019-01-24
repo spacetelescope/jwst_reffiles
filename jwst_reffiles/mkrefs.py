@@ -1247,34 +1247,25 @@ class mkrefsclass(astrotableclass):
         # loop through refcomds table, and create the individual commands
         for i in range(len(self.refcmdtable.t)):
             reflabel = self.refcmdtable.t['reflabel'][i]
-            print('### cmd ID %d: building cmd for %s' % (self.refcmdtable.t['cmdID'][i],reflabel))
-
-            print('do we need mkref_file_list (from way above) here, so that we call the modules')
-            print('with the complete path? The way the command is now it seems like it should only')
-            print('work if all mkref_*py are in the current working directory')
-
-
-            #refcmd = 'python mkref_{}.py {}.fits'.format(reflabel,self.refcmdtable.t['outbasename'][i])
+            print('### cmd ID %d: building cmd for %s' % (self.refcmdtable.t['cmdID'][i], reflabel))
 
             module_name = 'mkref_{}.py'.format(reflabel)
             module_and_path = [entry for entry in self.mkref_file_list if module_name in entry][0]
-            refcmd = 'python {} {}.fits'.format(module_and_path, self.refcmdtable.t['outbasename'][i])
+            refcmd = '{} {}.fits'.format(module_and_path, self.refcmdtable.t['outbasename'][i])
 
             # (1) get the input images from self.ssbcmdtable
             # (2) parse through the options
 
             # these are the input images for this reference file command
-            indeces2run, = np.where(self.ssbcmdtable.t['cmdID']==self.refcmdtable.t['cmdID'][i])
+            indeces2run, = np.where(self.ssbcmdtable.t['cmdID'] == self.refcmdtable.t['cmdID'][i])
             # print the images and some error checking
-            if self.verbose>2 or (len(t_inputimages)!=self.refcmdtable.t['Nim'][i]):
+            if self.verbose > 2 or (len(t_inputimages) != self.refcmdtable.t['Nim'][i]):
                 print('Images found for this ref command:')
-                print(self.ssbcmdtable.t['index','cmdID','reflabel','imlabel','imtype','imindex','imID','fitsfile'][indeces2run])
+                print(self.ssbcmdtable.t['index', 'cmdID', 'reflabel', 'imlabel', 'imtype', 'imindex', 'imID', 'fitsfile'][indeces2run])
 
                 # some error checking: this should never be true
                 if (len(indeces2run)!=self.refcmdtable.t['Nim'][i]):
-                    raise RuntimeError("Expected {} images, but {} found!".format(self.refcmdtable.t['Nim'][i],len(indeces2run)))
-
-            #t_inputimages = self.ssbcmdtable.t[indeces2run]
+                    raise RuntimeError("Expected {} images, but {} found!".format(self.refcmdtable.t['Nim'][i], len(indeces2run)))
 
             inputlist_filename = '{}.imlist.txt'.format(self.refcmdtable.t['outbasename'][i])
             self.ssbcmdtable.write(inputlist_filename, indeces=indeces2run, verbose=self.verbose, clobber=True, exclude_names=self.ssbtable_excludecols4saving)

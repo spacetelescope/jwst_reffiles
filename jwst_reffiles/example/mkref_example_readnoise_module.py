@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 '''
-Example lug-in script for the user-generated readnoise creation module:
+Example plug-in script for the user-generated readnoise creation module:
 example_readnoise_module.py. This class is based on that in the
-template file: plugin_template.py
+template file: jwst_reffiles/templates/plugin_template.py
 '''
 
 import argparse
