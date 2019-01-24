@@ -1,7 +1,11 @@
 #!/usr/bin/env python
 '''
-create reference files for JWST instruments
-A. Rest
+This class contains the basic infrastructure needed when plugging in a
+reference file-generating module. This class and the functions within
+it should not have to be changed by the user when wrapping a user-
+written module. All functions which need to be modified will be in the
+mkref_your_new_module_name.py file, which should be based on
+plugin_template.py.
 '''
 
 import argparse
@@ -36,19 +40,27 @@ class mkrefclass_template:
 ################################################################################
 
     def positional_arguments(self, parser):
-        """
+        """Add input and output filenames to the parser.
         The filename of the output reference file is the first argument.
         The filename of the input image list is the second argument
+
+        Parameters
+        ----------
+        parser : argparse.parser
         """
         parser.add_argument("outputreffilename", help=("The filename of the output reference file"))
         parser.add_argument("imageslist_filename", help=("The filename of the input image list"))
         return(0)
 
     def default_optional_arguments(self, parser):
+        """Optional arguments common to all plugged in modules
 
+        Parameters
+        ----------
+        parser : argparse.parser
+        """
         parser.add_argument('--verbose', '-v', action='count')
         parser.add_argument('-d', '--debug', help="debug", action='count')
-
 
         # options for config file
         if 'JWST_MKREFS_CONFIGFILE' in os.environ and os.environ['JWST_MKREFS_CONFIGFILE'] != '':
@@ -72,6 +84,22 @@ class mkrefclass_template:
         return(0)
 
     def define_args(self, parser=None, usage=None, conflict_handler='resolve'):
+        """Create argparser and populate with arguments
+
+        Parameters
+        ----------
+        parser : argparse.parser
+
+        usage : str
+            Usage string for command line
+
+        conflict_handler : str
+            Method of resolving conflicting argument names. Input to argparse
+
+        Returns
+        -------
+        parser : argparse.parser
+        """
         if parser is None:
             parser = argparse.ArgumentParser(usage=usage, conflict_handler=conflict_handler)
 
@@ -91,17 +119,18 @@ class mkrefclass_template:
         ile.
         """
         key_list = set(list(self.cfg.params[self.reflabel].keys()) + list(self.args.__dict__.keys()))
-        parameters = {}
+        self.parameters = {}
         for key in key_list:
             if key in self.cfg.params[self.reflabel]:
-                parameters[key] = self.cfg.params[self.reflabel][key]
+                self.parameters[key] = self.cfg.params[self.reflabel][key]
             if key in self.args.__dict__:
                 if self.args.__dict__[key] is not None:
-                    parameters[key] = self.args.__dict__[key]
-        return parameters
+                    self.parameters[key] = self.args.__dict__[key]
 
     def initialize(self, argument_list=None):
-
+        """Read in and define all arguments from the command line as well
+        as the config file
+        """
         # first, parse the arguments
         self.parser = self.define_args()
         self.args = self.parser.parse_args()
@@ -133,6 +162,8 @@ class mkrefclass_template:
     def make_reference_file(self):
 
         self.initialize()
+
+        self.determine_parameters()
 
         self.callalgorithm()
 

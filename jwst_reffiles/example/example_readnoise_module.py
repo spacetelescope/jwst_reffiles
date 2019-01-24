@@ -122,7 +122,7 @@ class MyReadnoise():
             Directory in which to save output file
         """
         # Read in dark current ramps
-        print('Working on file: {}'.format(self.dark))
+        #print('Working on file: {}'.format(self.dark))
         with fits.open(self.dark) as hdu:
             dark_ramp = hdu[1].data
             self.instrument = hdu[0].header['INSTRUME']

@@ -122,7 +122,7 @@ class cmdsclass(astrotableclass):
         return(0)
 
     def getlogfilenames(self, filename, logFlag=False, errorlogFlag=False):
-        (basename,suffix) = os.path.splitext(filename)
+        (basename, suffix) = os.path.splitext(filename)
 
         if errorlogFlag:
             errorlog = '{}.err.txt'.format(basename)
@@ -136,7 +136,7 @@ class cmdsclass(astrotableclass):
 
         if suffix != '.fits':
             print('WARNING: It seems like the filename {} is not a fits file.'.format(filename))
-        return(outlog,errorlog)
+        return(outlog, errorlog)
 
     def clean_old_output_files(self, indeces2run, outputfile_col='output_name', addsuffix=None):
         """ cleaning up old output files """
