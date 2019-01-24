@@ -71,7 +71,7 @@ class mkrefclass_template:
 
         return(0)
 
-    def define_args(self,  parser=None, usage=None, conflict_handler='resolve'):
+    def define_args(self, parser=None, usage=None, conflict_handler='resolve'):
         if parser is None:
             parser = argparse.ArgumentParser(usage=usage, conflict_handler=conflict_handler)
 
@@ -82,6 +82,23 @@ class mkrefclass_template:
         self.extra_optional_arguments(parser)
 
         return(parser)
+
+    def determine_parameters(self):
+        """Loop over the parameters that are present in both the config file
+        and the extra_optional_arguments function above. If the parameter
+        is set in extra_optional_arguments, then use that value in the call
+        to the reference file generator. If not, use the value in the config
+        ile.
+        """
+        key_list = set(list(self.cfg.params[self.reflabel].keys()) + list(self.args.__dict__.keys()))
+        parameters = {}
+        for key in key_list:
+            if key in self.cfg.params[self.reflabel]:
+                parameters[key] = self.cfg.params[self.reflabel][key]
+            if key in self.args.__dict__:
+                if self.args.__dict__[key] is not None:
+                    parameters[key] = self.args.__dict__[key]
+        return parameters
 
     def initialize(self, argument_list=None):
 
@@ -105,11 +122,11 @@ class mkrefclass_template:
         # (1) load the reference file into the approprite data model
         # (2) run it through ssb and see if it breaks
 
-        if self.cfg.params[self.reflabel]['test4datamodel']:
-            print('To be implemented: test for data models!!')
+        #if self.cfg.params[self.reflabel]['test4datamodel']:
+        #    print('To be implemented: test for data models!!')
 
-        if self.cfg.params[self.reflabel]['test4ssb']:
-            print('To be implemented: run it through ssb!!')
+        #if self.cfg.params[self.reflabel]['test4ssb']:
+        #    print('To be implemented: run it through ssb!!')
 
         return(0)
 

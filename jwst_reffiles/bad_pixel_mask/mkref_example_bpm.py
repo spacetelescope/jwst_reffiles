@@ -6,7 +6,7 @@ A. Rest
 
 import argparse,os,re,sys,types
 
-from mkref_template import mkrefclass_template
+from plugin_wrapper import mkrefclass_template
 
 # import your script!
 from jwst_reffiles.example.myexamplescript import example_mkbpmclass
@@ -37,7 +37,7 @@ class mkrefclass(mkrefclass_template):
             print('image {} has the type {} and taken at MJD={}'.format(self.inputimages['output_name'][i],
                                                                         self.inputimages['imtype'][i],
                                                                         self.inputimages['MJD'][i]))
-            
+
         print('*** The config file is also loaded. This is how you can access it. There can be a section for each reflabel.')
         print('*** section {}, parameter {}: {}'.format(self.reflabel,'random_option',self.cfg.params[self.reflabel]['random_option']))
 
@@ -46,7 +46,7 @@ class mkrefclass(mkrefclass_template):
         mymask = myscript.mkbpm(self.inputimages['output_name'][0],self.inputimages['output_name'][1],
                                 self.inputimages['output_name'][0],self.inputimages['output_name'][1],
                                 whateveroption1=True,whateveroption2=self.cfg.params[self.reflabel]['random_option'])
-        
+
         print('*** Now save it to the output reference filename {}'.format(self.args.outputreffilename))
         mymask.save(self.args.outputreffilename)
 

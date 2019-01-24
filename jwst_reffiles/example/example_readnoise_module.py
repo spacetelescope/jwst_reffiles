@@ -24,7 +24,7 @@ from jwst.datamodels import ReadnoiseModel
 
 
 class MyReadnoise():
-    def __init__(self, dark, verbose=True, boxsize=64, sigma_threshold=3, output_directory='./'):
+    def __init__(self, dark, boxsize=64, sigma_threshold=3, output_name='./'):
         """
         Parameters
         ----------
@@ -33,15 +33,21 @@ class MyReadnoise():
 
         verbose : bool
             Print extra info while running
+
+
+        NOTE: if you have 'verbose' as a parameter, it appears to collide
+        with the verbose parameter in mkrefs. Armin uses integers for mkref's
+        verbose, and I was using a True/False string, and mkrefs crashed bec
+        it was trying to comapre a string to an integer. We need to be careful
+        of collisions like this...
+
         """
         # Set up class variables
         self.dark = dark
         self.boxsize = int(boxsize)
-        self.verbose = True
+        #self.verbose = True
         self.sigma_threshold = sigma_threshold
-        self.output_directory = output_directory
-
-        need to add a 'define_options' function for argument parsing
+        self.output_name = output_name
 
         # Run
         self.compute()
@@ -96,17 +102,18 @@ class MyReadnoise():
 
         # Loop over boxes and calculate stdev
         for i in range(len(x)-1):
-            xstart = x[i]
-            ystart = y[i]
-            xend = x[i+1]
-            yend = y[i+1]
-            cube = array[:, ystart:yend, xstart:xend]
-            clipped, thresh_low, thresh_high = sigmaclip(cube, low=clipthresh, high=clipthresh)
-            dev = np.std(clipped)
-            readnoise[ystart:yend, xstart:xend] = dev
+            for j in range(len(y)-1):
+                xstart = x[i]
+                ystart = y[j]
+                xend = x[i+1]
+                yend = y[j+1]
+                cube = array[:, ystart:yend, xstart:xend]
+                clipped, thresh_low, thresh_high = sigmaclip(cube, low=clipthresh, high=clipthresh)
+                dev = np.std(clipped)
+                readnoise[ystart:yend, xstart:xend] = dev
         return readnoise
 
-    def compute(self, out_dir='./'):
+    def compute(self):
         """Main function
 
         Parameters
@@ -115,6 +122,7 @@ class MyReadnoise():
             Directory in which to save output file
         """
         # Read in dark current ramps
+        print('Working on file: {}'.format(self.dark))
         with fits.open(self.dark) as hdu:
             dark_ramp = hdu[1].data
             self.instrument = hdu[0].header['INSTRUME']
@@ -132,7 +140,6 @@ class MyReadnoise():
         readnoise_frame = self.calculate_stdev(cds, xs, ys, self.sigma_threshold)
 
         # Save the readnoise frame in the format of a readnoise reference file
-        outfile = 'test_readnoise_file.fits'
         self.save(readnoise_frame)
 
     def make_cds(self, ramp):
@@ -179,5 +186,4 @@ class MyReadnoise():
         ron.meta.pedigree = 'GROUND'
         ron.meta.useafter = '2115-10-01T00:00:00'
         ron.meta.author = 'NOBODY'
-        output_name = '{}_{}_readnoise_example_file.fits'.format(self.instrument, self.detector)
-        ron.save(os.path.join(self.output_directory, output_name))
+        ron.save(self.output_name)

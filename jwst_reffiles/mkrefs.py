@@ -296,8 +296,7 @@ class mkrefsclass(astrotableclass):
         mkref_file_basenames = [os.path.basename(entry) for entry in mkref_file_list]
         self.allowed_reflabels = [entry.replace('mkref_', '').replace('.py', '') for entry in mkref_file_basenames]
         self.reflabel_directories = [os.path.dirname(entry) for entry in mkref_file_list]
-        print(self.allowed_reflabels)
-        print(self.reflabel_directories)
+        self.mkref_file_list = copy.deepcopy(mkref_file_list)
 
     def define_options(self, parser=None, usage=None, conflict_handler='resolve'):
         if parser is None:
@@ -1239,18 +1238,27 @@ class mkrefsclass(astrotableclass):
 
     def mk_ref_cmds(self, force_redo_refcmds=False, maxNrefcmds=None):
 
-        self.refcmdtable.t['refcmd']=None
-        if self.verbose>1:
-            print('refcmd table colnames:',self.refcmdtable.t.colnames)
-            if self.verbose>3:
+        self.refcmdtable.t['refcmd'] = None
+        if self.verbose > 1:
+            print('refcmd table colnames:', self.refcmdtable.t.colnames)
+            if self.verbose > 3:
                 print(self.refcmdtable.t)
 
-        #loop through refcomds table, and create the individual commands
+        # loop through refcomds table, and create the individual commands
         for i in range(len(self.refcmdtable.t)):
             reflabel = self.refcmdtable.t['reflabel'][i]
             print('### cmd ID %d: building cmd for %s' % (self.refcmdtable.t['cmdID'][i],reflabel))
 
-            refcmd = 'mkref_{}.py {}.fits'.format(reflabel,self.refcmdtable.t['outbasename'][i])
+            print('do we need mkref_file_list (from way above) here, so that we call the modules')
+            print('with the complete path? The way the command is now it seems like it should only')
+            print('work if all mkref_*py are in the current working directory')
+
+
+            #refcmd = 'python mkref_{}.py {}.fits'.format(reflabel,self.refcmdtable.t['outbasename'][i])
+
+            module_name = 'mkref_{}.py'.format(reflabel)
+            module_and_path = [entry for entry in self.mkref_file_list if module_name in entry][0]
+            refcmd = 'python {} {}.fits'.format(module_and_path, self.refcmdtable.t['outbasename'][i])
 
             # (1) get the input images from self.ssbcmdtable
             # (2) parse through the options

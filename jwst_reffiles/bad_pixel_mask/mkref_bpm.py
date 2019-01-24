@@ -6,7 +6,7 @@ A. Rest
 
 import argparse,os,re,sys,types
 
-from mkref_template import mkrefclass_template
+from plugin_wrapper import mkrefclass_template
 
 from jwst_reffiles.utils.tools import astrotableclass,yamlcfgclass
 
