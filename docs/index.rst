@@ -11,6 +11,8 @@ JWST_REFFILES: Reference File Generator Tool
    :caption: Contents:
 
    install.rst
+   plug_in_user_module.rst
+   configuration_files.rst
    quickstart.ipynb
    api.rst
 

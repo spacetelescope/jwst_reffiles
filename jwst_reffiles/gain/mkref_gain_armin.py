@@ -6,7 +6,7 @@ A. Rest
 
 import argparse,os,re,sys,types
 
-from mkref_template import mkrefclass_template
+from plugin_wrapper import mkrefclass_template
 
 from jwst_reffiles.utils.tools import astrotableclass,yamlcfgclass
 
@@ -15,7 +15,7 @@ class mkrefclass(mkrefclass_template):
         mkrefclass_template.__init__(self,*args, **kwargs)
         self.reflabel='gain_armin'
         self.reftype='gain'
-                
+
     def extra_optional_arguments(self, parser):
         parser.add_argument('-d', '--dummy_gain_option1', default=None, nargs=2,
                             help='testoption1 gainarmin')
@@ -27,7 +27,7 @@ class mkrefclass(mkrefclass_template):
         return(0)
         #import myscript from bla
         #myscript.myroutine(args.D1,args.F1,newgain=args.dummy_gain_option1)
-    
+
 if __name__ == '__main__':
     mkref = mkrefclass()
     parser = mkref.allargs()
