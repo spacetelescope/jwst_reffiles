@@ -1,3 +1,5 @@
+.. _plugin:
+
 How to Plug In A User-Generated Module
 ======================================
 
