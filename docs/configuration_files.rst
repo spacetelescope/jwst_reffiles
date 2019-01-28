@@ -138,7 +138,7 @@ The name of the instrument whose reference files are being created. Must be one 
 Reference Labels
 ----------------
 
-The reference labels are simply the names of the reference file creation packages to be run.
+The list of allowed reference labels. These are simply the names of the reference file creation packages that can be run. In the near future, this list will be generated automatically by searching for the wrapper scripts around plugged-in modules. At that time, reflabels will be removed from the config file.
 
 .. _reftypes:
 
