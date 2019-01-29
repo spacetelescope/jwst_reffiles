@@ -145,35 +145,35 @@ The list of allowed reference labels. These are simply the names of the referenc
 Reference Types
 ---------------
 
-List of the reference file types that may be created. At a minimum, this list must contain the reference file types corresponding to all of the entries in the reflabels_ list.
+List of the allowed reference file types that can be created. At a minimum, this list must contain the reference file types corresponding to all of the entries in the reflabels_ list.
 
 .. _default_reflabels:
 
 Default Reference Labels
 ------------------------
 
-In this section, the user can define which of the reference file creation packages (reflabels_) is the default for each reference type.
+(NOT YET IMPLEMENTED) In this section, the user can define which of the reference file creation packages (reflabels_) is the default for each reference type. This is a convenience feature for the user. If you define `my_nircam_gain_script` as the default package to use for gain files, then you can call `mkrefs.py` from the command line and simply request `gain` rather than `my_nircam_gain_script`.
 
 .. _dark_pattern:
 
 Dark Pattern
 ------------
 
-List of strings that will be used to identify dark current files within the list of input files. mkrefs will look for these strings in the filenames.
+List of strings that will be used to identify dark current files within the list of input files. mkrefs will look for these strings in the filenames. Note that the values shown in the example configuration file above are designed around ground testing files. JWST data obtained in flight will not have unique features in the filenames that identify them as darks, flats, etc. Future improvements to *jwst_reffiles* will address this.
 
 .. _flat_pattern:
 
 Flat Pattern
 ------------
 
-List of strings that will be used to identify  flat field files within the list of input files. mkrefs will look for these strings in the filenames.
+List of strings that will be used to identify flat field files within the list of input files. *jwst_reffiles* will look for these strings in the filenames. Note that the values shown in the example configuration file above are designed around ground testing files. JWST data obtained in flight will not have unique features in the filenames that identify them as darks, flats, etc. Future improvements to *jwst_reffiles* will address this.
 
 .. _basenamepattern:
 
 Basename Pattern
 ----------------
 
-String to use when looking for input files.
+String to use when looking for input files. It may be that there are different versions (e.g. outputs from different points within the pipeline) of a file specified by the user in the input directory. If the basename pattern is set, *jwst_reffiles* will look only for the files matching that pattern. In the example above, we limit inputs to uncalibrated files.
 
 .. _dateobs_fitskey:
 
@@ -187,28 +187,28 @@ The header keyword in the input files that contains the date of the observation.
 Time-Obs Fits Header Keyword
 ----------------------------
 
-The header keyword in the input files that contains the time of the observation. Time are needed to enforce rules when pairing darks and flats. For JWST, set this to **TIME-END**.
+The header keyword in the input files that contains the time of the observation. Times are needed to enforce rules when pairing darks and flats. For JWST, set this to **TIME-END**.
 
 .. _mjdobs_fitskey:
 
 Obervation MJD Fits Header Keyword
 ----------------------------------
 
-The header keyword in the input files that contains the time of the observation in MJD.
+The header keyword in the input files that contains the time of the observation in MJD. If specified, the value associated with this keyword is used to determinte the modified julian date (MJD) of the observation.
 
 .. _requiredfitskeys:
 
 Required Fits File Header Keywords
 ----------------------------------
 
-List of header keywords which must be present in the input files.
+List of header keywords which must be present in the input files. Values from these keywords will be copied into the master table created by *jwst_reffiles*. If any input files do not contain all of these keywords, an error will be raised.
 
 .. _optionalfitskeys:
 
 Optional FitsFile Header Keywords
 ---------------------------------
 
-List of optional header keywords in the input files. Used for
+List of optional header keywords in the input files. Values from these keywords will be copied into the master table created by *jwst_reffiles*. If any of the keywords are missing in any of the input files, they are simply not copied to the master table, and *jwst_reffiles* proceeds without raising an error.
 
 .. _DD:
 
@@ -242,9 +242,10 @@ The maximum time allowed, in days, between input observations when creating pair
 Reference File Output Basename
 ------------------------------
 
-Format of the output names for individual reference files. Output names will be automatically generated by *jwst_reffiles* to ensure accurate bookkeeping. The overall format of the reference file output names follows the convention:
+Format of the output names for individual reference files. Output names will be automatically generated by *jwst_reffiles* to ensure accurate bookkeeping. The overall format of the reference file output names follows the convention shown below. **cmdID** is an ID assigned by *jwst_reffiles* for a particular run of the package. This helps to ensure unique file and directory names for the outputs.
 
 outrootdir_[/outsubdir_][/runID_]/reflabel/reflabel[_outsubdir_][_runID_][.addsuffix_].cmdID.reftype_.fits
+
 
 .. _outrootdir:
 
@@ -272,7 +273,7 @@ An integer that will be used to create a unique subdirectory for *jwst_reffiles*
 Number of Digits in the Run ID
 ------------------------------
 
-The number of digits in the run ID. Leadind zeros are added as necessary. The default is 3.
+The total number of digits in the run ID. Leading zeros are added as necessary. The default is 3.
 
 .. _addsuffix:
 
@@ -293,7 +294,7 @@ Directory where JWST calibration pipeline output files, which are often created 
 Skip RunID for SSB Directory
 ----------------------------
 
-Boolean. If True, *jwst_reffiles* will not search for pipeline output files in the output directory for the current Run ID.
+Boolean. If True, the output directory (ssbdir_) for the pipeline output files will follow the convention outrootdir_[/outsubdir_]/ssb/.
 
 .. _ssblogFlag:
 
@@ -335,7 +336,7 @@ The batch system to use when running in batch mode. Default is Condor.
 Reference Files for SSB
 -----------------------
 
-In this section, list the types of reference files to use in the calls to the calibration pipeline. Options are **CRDS**, **SELF**, or a file pattern. If **CRDS** is used, then the appropriate reference files will be selected from the Calibration Reference Data System (`CRDS <https://jwst-pipeline.readthedocs.io/en/stable/jwst/introduction.html#crds>`_). This system contains only officially delivered reference files.
+NOT YET IMPLEMENTED. In this section, list the types of reference files to use in the calls to the calibration pipeline. Options are **CRDS**, **SELF**, or a file pattern. If **CRDS** is used, then the appropriate reference files will be selected from the Calibration Reference Data System (`CRDS <https://jwst-pipeline.readthedocs.io/en/stable/jwst/introduction.html#crds>`_). This system contains only officially delivered reference files.
 
 If **SELF** is used, then calls to the calibration pipeline will use reference files generated from the current run of *jwst_reffiles*. Note that in this case, running *jwst_reffiles* becomes an iterative process. For example, run once to produce a superbias reference file. Then run again to use this superbias reference file to calibrate inputs when creating dark current reference files.
 
@@ -346,7 +347,7 @@ Finally, you can enter a file pattern (e.g. /my/files/reffiles/gain/*gain.fits),
 Validation
 ----------
 
-Can be either **CRDS** or a filename.
+NOT YET IMPLEMENTED. Can be either **CRDS** or a filename. When comparing an output reference file to a previous version, this controls where the comparison file comes from. If set to **CRDS**, the most recent matching file in CRDS is used for comparison. If set to a filename, that file is used.
 
 .. _example_readnoise_module:
 

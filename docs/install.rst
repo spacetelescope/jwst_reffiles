@@ -16,6 +16,7 @@ To download and install *jwst_reffiles*, clone from `GitHub <https://github.com/
 1. git clone https://github.com/spacetelescope/jwst_reffiles.git
 2. cd jwst_reffiles
 3. python setup.py install
+4. It may also helpful to add the location of your copy of *jwst_reffiles* to your PYTHONPATH
 
 
 Calling JWST_REFFILES

@@ -3,7 +3,7 @@
 Identification and Orgnization of Input Files
 =============================================
 
-The primary function performed by **jwst_reffiles** is to perform the organization and bookkeeping of input files to be used in the creation of reference files. The package is designed such that users can provide lists of input files (e.g. dark current files, flat field files), along with information on which types files should be used to create a given type of reference file, as well as some simple rules on which input files can be used in combination with others. **jwst_reffiles** then performs several tasks to prepare these input files for use in creating reference files.
+The primary function performed by **jwst_reffiles** is to perform the organization and bookkeeping of input files to be used in the creation of reference files. The package is designed such that users can provide lists of input files (e.g. dark current files, flat field files), along with information on which types of files should be used to create a given type of reference file, as well as some simple rules on which input files can be used in combination with others. **jwst_reffiles** then performs several tasks to prepare these input files for use in creating reference files.
 
 .. _group_inputs:
 
