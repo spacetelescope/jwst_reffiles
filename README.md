@@ -16,6 +16,13 @@ Then, install the package:
 cd jwst_reffiles
 pip install .
 ```
+or
+
+```python setup.py install```
+
+## Documentation
+
+Documentation is still in the early stages of development, but is available on [ReadTheDocs](https://jwst-reffiles.readthedocs.io/en/latest/)
 
 ## Dependencies
 
