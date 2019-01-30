@@ -2,4 +2,4 @@ numpy>=1.13
 sphinx>=1.4
 ipykernel
 nbsphinx
-git+https://github.com/spacetelescope/jwst.git@mstable
+git+https://github.com/spacetelescope/jwst.git@stable
