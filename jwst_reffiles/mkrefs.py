@@ -16,6 +16,7 @@ import scipy
 from jwst_reffiles.plugin_wrapper import mkrefclass_template
 from jwst_reffiles.pipeline.calib_prep import CalibPrep
 from jwst_reffiles.pipeline import pipeline_steps
+from jwst_reffiles.utils.logging_functions import configure_logging, log_info, log_fail
 from jwst_reffiles.utils.tools import astrotableclass, yamlcfgclass
 from jwst_reffiles.utils.tools import makepath, executecommand, append2file, rmfile
 
@@ -31,12 +32,15 @@ from jwst_reffiles.utils.tools import makepath, executecommand, append2file, rmf
 
 class cmdsclass(astrotableclass):
     def __init__(self, cmdtype, *args, verbose=0, debug=False, **kwargs):
+        logging.info("Creating cmdsclass instance with cmdtype {}".format(cmdtype))
         astrotableclass.__init__(self, *args, **kwargs)
         self.verbose=verbose
         self.debug=debug
         self.cmdtype=cmdtype
         if not (cmdtype in ['ssb','ref','refmaster']):
-            raise RuntimeError("cmd type {} not defined yet!".format(cmdtype))
+            error_string = "cmd type {} not defined yet!".format(cmdtype)
+            logging.error(error_string)
+            raise RuntimeError(error_string)
 
     def filename_with_suffix(self, filename, addsuffix=None):
         if addsuffix != None:
@@ -82,7 +86,10 @@ class cmdsclass(astrotableclass):
         else:
             # just some error checking...
             if len(self.t) != len(execute_cmds):
-                raise RuntimeError("Length of initial execute_commands array is not the same than the length of the cmd table ({}!={})".format(len(self.t),len(execute_cmds)))
+                error_string = ("Length of initial execute_commands array is not the same than the length of "
+                                "the cmd table ({}!={})").format(len(self.t), len(execute_cmds))
+                logging.error(error_string)
+                raise RuntimeError(error_string)
 
         Nexe=0
         for i in range(len(self.t)):
@@ -96,11 +103,17 @@ class cmdsclass(astrotableclass):
                 exeflag=False
                 # force_redo? Cannot do that, otherwise all hell would break loose with overwriting files etc
                 if force_redo:
-                    raise RuntimeError("Cannot use --force_redo when command %s of index %d is still running in batch mode!" % (self.t['strun_command'][i],i))
+                    error_string = ("Cannot use --force_redo when command {} of index {} is still running in "
+                                    "batch mode!").format(self.t['strun_command'][i], i)
+                    logging.error(error_string)
+                    raise RuntimeError(error_string)
 
             if maxNexe!=None and Nexe>=maxNexe:
+                skip_string = 'Skipping executing command for index {}, since maxNexe={}'.format(i, maxNexe)
+                logging.info(skip_string)
                 if self.verbose>=3:
-                    print('Skipping executing command for index %d, since maxNexe=%d' % (i,maxNexe))
+                    print(skip_string)
+
                 exeflag=False
 
             if exeflag: Nexe+=1
@@ -488,10 +501,10 @@ class mkrefsclass(astrotableclass):
         only keep fits file that match basenamepattern
         '''
         if self.verbose > 1:
-            print("#### Trimming images...")
+            logging.info("#### Trimming images...")
         # print imagelist
         if imagelist is None or len(imagelist) == 0:
-            print('Nothing to do, no images!!!')
+            logging.info('Nothing to do, no images!!!')
             return(imagelist)
 
         if basenamepattern is not None:
@@ -501,7 +514,7 @@ class mkrefsclass(astrotableclass):
             for i in range(len(imagelist)):
                 m = basenamepattern_compiled.search(imagelist[i])
                 if m is None:
-                    print('SKIPPING', imagelist[i])
+                    logging.info('SKIPPING {} in trim_imagelist'.format(imagelist[i]))
                 else:
                     #if len(m.groups())==0:
                     #    raise RuntimeError,"%s is matching %s, but does not return basename" % (basenamepattern_compiled.pattern,imagelist[i])
@@ -510,7 +523,7 @@ class mkrefsclass(astrotableclass):
                     newimagelist.append(imagelist[i])
             if len(imagelist) != len(newimagelist):
                 if self.verbose > 1:
-                    print('skipping {} out of {} images, {} left'.format(len(imagelist)-len(newimagelist),
+                    logging.info('skipping {} out of {} images, {} left'.format(len(imagelist)-len(newimagelist),
                                                                          len(imagelist), len(newimagelist)))
             imagelist = newimagelist
 
@@ -524,7 +537,8 @@ class mkrefsclass(astrotableclass):
                 reflabellist.append(s)
             else:
                 if not os.path.isfile(s):
-                    raise RuntimeError("ERROR: file %s does not exist, thus not a viable input file" % s)
+                    logging.error("ERROR: file {} does not exist, thus not a viable input file".format(s))
+                    raise RuntimeError("ERROR: file {} does not exist, thus not a viable input file".format(s))
                 imagelist.append(os.path.abspath(s))
 
         imagelist = self.trim_imagelist(imagelist, basenamepattern)
@@ -544,12 +558,14 @@ class mkrefsclass(astrotableclass):
             elif flatpattern.search(shortfilename):
                 self.imtable.t['imtype'][i] = 'flat'
             else:
+                logging.warning("ERROR: image type of image {} is unknown!".format(shortfilename))
                 raise RuntimeError('ERROR: image type of image %s is unknown!' % shortfilename)
 
     def getimageinfo(self, imagelist, dateobsfitskey=None, timeobsfitskey=None, mjdobsfitskey=None):
 
         if self.verbose > 1:
             print("Getting image info")
+        logging.info("Getting image info")
 
         # self.imtable['fitsfile'].format('%s')
         self.imtable.t['fitsfile'] = imagelist
@@ -559,6 +575,7 @@ class mkrefsclass(astrotableclass):
 
         if self.verbose > 1:
             print("Table created")
+        logging.info("Table imtable created")
 
         requiredfitskeys = self.cfg.params['inputfiles']['requiredfitskeys']
         if requiredfitskeys is None:
@@ -611,6 +628,12 @@ class mkrefsclass(astrotableclass):
             if self.verbose > 1:
                 print(self.imtable.t)
 
+        logging.info('#################\n### {} images found!'.format(len(self.imtable.t)))
+        logging.info('### {} darks, {} flats'.format((len(np.where(self.imtable.t['imtype'] == 'dark')[0]),
+                                                     len(np.where(self.imtable.t['imtype'] == 'flat')[0]))))
+        logging.info('### {} detectors:'.format((len(self.detectors)), ", ".join(self.detectors)))
+        logging.info(self.imtable.t)
+
     def check_inputfiles(self):
         print('basedir:', self.basedir)
         print('basename:', self.basename)
@@ -628,6 +651,7 @@ class mkrefsclass(astrotableclass):
         #        print('*** only showing: directory %s would be created here!' % self.basedir)
 
         imtbl_filename = '%s.im.txt' % self.basename
+        logging.info('Image table filename: {}'.format(imtbl_filename))
 
         # check: does the saved inputim file has the same input images
         # than the current list? If yes, then all is good, if not
@@ -637,26 +661,33 @@ class mkrefsclass(astrotableclass):
             imtable_before.load(imtbl_filename)
 
             if (len(self.imtable.t['fitsfile']) != len(imtable_before.t['fitsfile'])):
-                raise RuntimeError(('length %d of new list of input images is different than the one from '
-                                    'the saved table (%d), cannot proceed! either get a new runID with -n, '
-                                    'or remove the files in %s' % (len(self.imtable.t['fitsfile']),
-                                                                   len(imtable_before.t['fitsfile']),
-                                                                   self.basedir)))
+                warning_string = ('Length {} of new list of input images is different than the one from '
+                                  'the saved table ({}), cannot proceed! either get a new runID with -n, '
+                                  'or remove the files in {}'.format((len(self.imtable.t['fitsfile']),
+                                                                     len(imtable_before.t['fitsfile']),
+                                                                     self.basedir)))
+                logging.error(warning_string)
+                raise RuntimeError(warning_string)
 
             for i in range(len(self.imtable.t['fitsfile'])):
                 if self.imtable.t['fitsfile'][i] != imtable_before.t['fitsfile'][i]:
-                    raise RuntimeError(('input file %s in new list is different than previous input '
-                                        'file %s' % (self.imtable.t['fitsfile'][i],
-                                                     imtable_before.t['fitsfile'][i])))
+                    warning_string = ('Input file {} in new list is different than previous input '
+                                      'file {}'.format((self.imtable.t['fitsfile'][i],
+                                                       imtable_before.t['fitsfile'][i])))
+                    logging.error(warning_string)
+                    raise RuntimeError(warning_string)
 
             if self.verbose:
-                print('new input list matches previous input list! Continuing...')
+                print('New input list matches previous input list! Continuing...')
+            logging.info('New input list matches previous input list! Continuing...')
 
         self.imtable.write(imtbl_filename, verbose=True, clobber=True)
 
         # just some paranoia...
         if not os.path.isfile(imtbl_filename):
-            raise RuntimeError('Could not write %s! permission issues?' % (imtbl_filename))
+            error_string = 'Could not write {}! permission issues?'.format(imtbl_filename)
+            logging.error(error_string)
+            raise RuntimeError(error_string)
 
         return(0)
 
@@ -906,6 +937,7 @@ class mkrefsclass(astrotableclass):
 
         if self.verbose:
             print('\n##################################\n### Constructing commands\n##################################')
+        logging.info('####### Constructing commands #######')
 
         self.ssbcmdtable.verbose=self.verbose
         self.ssbcmdtable.debug=self.debug
@@ -914,8 +946,10 @@ class mkrefsclass(astrotableclass):
         for reflabel in self.reflabellist:
             step_name = self.cfg.params[reflabel]['ssbsteps'].strip()
             if step_name[-1] == '-':
+                logging.info('Expanding step name {} for {}'.format(step_name, self.cfg.params['instrument']))
                 self.cfg.params[reflabel]['ssbsteps'] = pipeline_steps.step_minus(step_name, self.cfg.params['instrument'])
             elif step_name[-1] == '+':
+                logging.info('Expanding step name {} for {}'.format(step_name, self.cfg.params['instrument']))
                 self.cfg.params[reflabel]['ssbsteps'] = pipeline_steps.step_plus(step_name, self.cfg.params['instrument'])
 
         # this is just to get the correct dtype for the reflabel  columns
