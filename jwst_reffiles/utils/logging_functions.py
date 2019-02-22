@@ -66,8 +66,7 @@ import traceback
 
 from functools import wraps
 
-from jwql.permissions.permissions import set_permissions
-from jwql.utils.utils import get_config
+from jwst_reffiles.utils.permissions import set_permissions
 
 LOG_FILE_LOC = ''
 

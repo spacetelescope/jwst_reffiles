@@ -104,8 +104,8 @@ from jwst_reffiles.utils.logging_functions import configure_logging, log_info, l
 
 
 class CalibPrep:
-    def __init__(self):
-        self.logger = logging.getLogger('jwst_reffiles.pipeline.caib_prep.CalibPrep')
+    def __init__(self, instrument):
+        self.logger = logging.getLogger(__name__)
         self.logger.info('Creating an instance of CalibPrep')
         self.__version__ = 0.1
         self.verbose = True
