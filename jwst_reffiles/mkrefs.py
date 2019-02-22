@@ -36,7 +36,7 @@ from jwst_reffiles.utils.tools import makepath, executecommand, append2file, rmf
 class cmdsclass(astrotableclass):
     def __init__(self, cmdtype, *args, verbose=0, debug=False, **kwargs):
         #self.loginfo.append(('info', "Creating cmdsclass instance with cmdtype {}".format(cmdtype)))
-        self.logger = logging.getLogger('mkrefs.cmdsclass')
+        self.logger = logging.getLogger('jwst_reffiles.mkrefs.cmdsclass')
         self.logger.warning("This is a cmdclass test")
         astrotableclass.__init__(self, *args, **kwargs)
         self.verbose=verbose
@@ -300,9 +300,8 @@ class mkrefsclass(astrotableclass):
         self.mkref_file_list = copy.deepcopy(mkref_file_list)
         self.loginfo = []
 
-        self.logger = logging.getLogger('mkrefs.mkrefclass')
+        self.logger = logging.getLogger('jwst_reffiles.mkrefs.mkrefclass')
         self.logger.warning("This is a mkrefs class test")
-
 
     def define_options(self, parser=None, usage=None, conflict_handler='resolve'):
         if parser is None:
@@ -1324,14 +1323,18 @@ if __name__ == '__main__':
     # Set up logging
     #configure_logging("jwst_reffiles", path=mkrefs.basename)
 
-
+    main_log_file = configure_logging("mkrefs", path=mkrefs.basedir)
+    print("LOG FILE: {}".format(main_log_file))
+    """
     ########If this works, put into its own funtionc######
     # Create the Logger
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
 
     # Create the Handler for logging data to a file
-    logger_handler = RotatingFileHandler('log.log')  # , maxBytes=1024, backupCount=5)
+    logfilename = os.path.join(mkrefs.basedir, 'mkrefs_run.log')
+    print('Log file to be created: {}'.format(logfilename))
+    logger_handler = RotatingFileHandler(logfilename)  # , maxBytes=1024, backupCount=5)
     logger_handler.setLevel(logging.INFO)
 
     # Create the Handler for logging data to console.
@@ -1349,7 +1352,7 @@ if __name__ == '__main__':
     # Add the Handler to the Logger
     root_logger.addHandler(logger_handler)
     root_logger.addHandler(console_handler)
-
+    """
 
 
 

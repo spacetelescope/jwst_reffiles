@@ -155,6 +155,12 @@ def has_permissions(pathname, mode=DEFAULT_MODE, group=DEFAULT_GROUP):
     elif os.path.isdir(pathname):
         mode = mode | stat.S_IFDIR
 
+    print('%%%%%%%%%%%%%%%%%%%%')
+    print(mode)
+    print(group)
+    print(file_statinfo)
+    print(groupinfo)
+
     if (file_statinfo.st_mode != mode) or (groupinfo.gr_name != group):
         return False
 

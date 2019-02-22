@@ -57,6 +57,8 @@ import datetime
 import getpass
 import importlib
 import logging
+from logging import StreamHandler
+from logging.handlers import RotatingFileHandler
 import os
 import pwd
 import socket
@@ -88,11 +90,39 @@ def configure_logging(module, path='./'):
     LOG_FILE_LOC = log_file
 
     # Create the log file and set the permissions
-    logging.basicConfig(filename=log_file,
-                        format='%(asctime)s %(levelname)s: %(message)s',
-                        datefmt='%m/%d/%Y %H:%M:%S %p',
-                        level=logging.INFO)
-    set_permissions(log_file)
+    #logging.basicConfig(filename=log_file,
+    #                    format='%(asctime)s %(levelname)s: %(message)s',
+    #                    datefmt='%m/%d/%Y %H:%M:%S %p',
+    #                    level=logging.INFO)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # Create the Handler for logging data to a file
+    #logfilename = os.path.join(mkrefs.basedir, 'mkrefs_run.log')
+    #print('Log file to be created: {}'.format(logfilename))
+    logger_handler = RotatingFileHandler(log_file)  # , maxBytes=1024, backupCount=5)
+    logger_handler.setLevel(logging.INFO)
+
+    # Create the Handler for logging data to console.
+    console_handler = StreamHandler()
+    console_handler.setLevel(logging.INFO)
+
+    # Create a Formatter for formatting the log messages
+    logger_formatter = logging.Formatter('%(name)s - %(asctime)s - %(levelname)s - %(message)s',
+                                         datefmt='%m/%d/%Y %H:%M:%S %p')
+
+    # Add the Formatter to the Handler
+    logger_handler.setFormatter(logger_formatter)
+    console_handler.setFormatter(logger_formatter)
+
+    # Add the Handler to the Logger
+    root_logger.addHandler(logger_handler)
+    root_logger.addHandler(console_handler)
+
+    # Currently need to be on ST network for this to work??
+    # set_permissions(log_file, verbose=True)
+    return log_file
 
 
 def make_log_file(module, path='./'):
