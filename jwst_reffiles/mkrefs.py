@@ -34,18 +34,38 @@ from jwst_reffiles.utils.tools import makepath, executecommand, append2file, rmf
 
 
 class cmdsclass(astrotableclass):
-    def __init__(self, cmdtype, *args, verbose=0, debug=False, **kwargs):
+    def __init__(self, cmdtype, *args, verbose=0, debug=False, manual_log=None, **kwargs):
         #self.loginfo.append(('info', "Creating cmdsclass instance with cmdtype {}".format(cmdtype)))
-        self.logger = logging.getLogger('jwst_reffiles.mkrefs.cmdsclass')
-        self.logger.warning("This is a cmdclass test")
+        if manual_log is not None:
+            self.manual_log = manual_log
+            self.manual_log.append(('info', 'Instantiating cmdsclass with manual log'))
+        else:
+            self.manual_log = None
+            self.logger = logging.getLogger('jwst_reffiles.mkrefs.cmdsclass')
+            self.logger.warning("This is a cmdclass test using the logger")
         astrotableclass.__init__(self, *args, **kwargs)
         self.verbose=verbose
         self.debug=debug
         self.cmdtype=cmdtype
         if not (cmdtype in ['ssb','ref','refmaster']):
             error_string = "cmd type {} not defined yet!".format(cmdtype)
-            self.loginfo.append(('error', error_string))
+            self.create_log_entry('error', error_string)
             raise RuntimeError(error_string)
+
+    def create_log_entry(self, level, message, traceback=False):
+        """Create a log entry for an instance of the class, dependong on
+        whether the logger has been defined yet or not"""
+        if self.manual_log is not None:
+            self.manual_log.append((level, message))
+        else:
+            if level == 'debug':
+                self.logger.debug(message)
+            elif level == 'info':
+                self.logger.info(message)
+            elif level == 'warning':
+                self.logger.warning(message)
+            elif level == 'error':
+                self.logger.error(message, exc_info=traceback)
 
     def filename_with_suffix(self, filename, addsuffix=None):
         if addsuffix != None:
@@ -74,7 +94,8 @@ class cmdsclass(astrotableclass):
         already_in_batch = np.full((len(self.t)),False)
         for i in range(len(self.t)):
             # ADD CHECK HERE!!!
-            self.logger.info('Check for {}'.format(self.t[cmd_col][i]))
+            #self.logger.info('Check for {}'.format(self.t[cmd_col][i]))
+            self.create_log_entry('info', 'Check for {}'.format(self.t[cmd_col][i]))
             #already_in_batch[i]=True if in batch
         self.t[already_in_batch_col]=already_in_batch
         return(0)
@@ -93,7 +114,8 @@ class cmdsclass(astrotableclass):
             if len(self.t) != len(execute_cmds):
                 error_string = ("Length of initial execute_commands array is not the same than the length of "
                                 "the cmd table ({}!={})").format(len(self.t), len(execute_cmds))
-                self.logger.error(error_string)
+                self.create_log_entry('error', error_string, traceback=True)
+                #self.logger.error(error_string)
                 raise RuntimeError(error_string)
 
         Nexe = 0
@@ -102,11 +124,15 @@ class cmdsclass(astrotableclass):
             # Don't redo it if file already exists and if it is not force_redo
             if (not force_redo) and self.t['file_already_exists'][i]:
                 try:
-                    self.logger.info(('File already exists and force redo is not set: {}')
-                                     .format(self.t['output_name'].data[i]))
+                    self.create_log_entry('info', ('File already exists and force redo is not set: {}')
+                                          .format(self.t['output_name'].data[i]))
+                    #self.logger.info(('File already exists and force redo is not set: {}')
+                    #                 .format(self.t['output_name'].data[i]))
                 except KeyError:
-                    self.logger.info(('File already exists and force redo is not set: {}')
-                                     .format(self.t['outbasename'].data[i]))
+                    self.create_log_entry('info', ('File already exists and force redo is not set: {}')
+                                          .format(self.t['outbasename'].data[i]))
+                    #self.logger.info(('File already exists and force redo is not set: {}')
+                    #                 .format(self.t['outbasename'].data[i]))
                 exeflag = False
 
             if self.t['already_in_batch'][i]:
@@ -115,12 +141,14 @@ class cmdsclass(astrotableclass):
                 if force_redo:
                     error_string = ("Cannot use --force_redo when command {} of index {} is still running in "
                                     "batch mode!").format(self.t['strun_command'][i], i)
-                    self.logger.error(error_string, exc_info=True)
+                    self.create_log_entry('error', error_string, traceback=True)
+                    #self.logger.error(error_string, exc_info=True)
                     raise RuntimeError(error_string)
 
             if maxNexe is not None and Nexe >= maxNexe:
                 skip_string = 'Skipping executing command for index {}, since maxNexe={}'.format(i, maxNexe)
-                self.logger.info(skip_string)
+                self.create_log_entry('info', skip_string)
+                #self.logger.info(skip_string)
                 exeflag = False
 
             if exeflag:
@@ -145,7 +173,8 @@ class cmdsclass(astrotableclass):
             outlog = None
 
         if suffix != '.fits':
-            self.logger.error('WARNING: It seems like the filename {} is not a fits file.'.format(filename))
+            self.create_log_entry('error', 'WARNING: It seems like the filename {} is not a fits file.'.format(filename))
+            #self.logger.error('WARNING: It seems like the filename {} is not a fits file.'.format(filename))
 
         return(outlog, errorlog)
 
@@ -186,9 +215,11 @@ class cmdsclass(astrotableclass):
                 raise RuntimeError('ERROR: could not save batch file {}'.format(batchfilename))
 
         # Save the cmds into the batch file
-        self.logger.info('Saving cmds to {} for batch'.format(batchfilename))
+        self.create_log_entry('info', 'Saving cmds to {} for batch'.format(batchfilename))
+        #self.logger.info('Saving cmds to {} for batch'.format(batchfilename))
         strun_list = [l+'\n' for l in strun_list]
         if open(batchfilename,'w').writelines(strun_list):
+            self.create_log_entry('error', 'ERROR: could not save batch file {}'.format(batchfilename))
             raise RuntimeError('ERROR: could not save batch file {}'.format(batchfilename))
 
         # this are just a dummy call to get an errorflag and random batchID. this will be replaces with the real batch call
@@ -201,8 +232,10 @@ class cmdsclass(astrotableclass):
         (errorflag, batchID) = self.dummy_batch(batchfilename)
 
         # append the batch ID into the batch ID file. This allows later on to test if batch jobs are still running!
-        self.logger.info('Appending batch ID to {}'.format(batchIDfilename))
+        self.create_log_entry('info', 'Appending batch ID to {}'.format(batchIDfilename))
+        #self.logger.info('Appending batch ID to {}'.format(batchIDfilename))
         if open(batchIDfilename, 'a').writelines(['{}\n'.format(batchID)]):
+            self.create_log_entry('error', 'ERROR: could not save batch ID file {}'.format(batchIDfilename))
             raise RuntimeError('ERROR: could not save batch ID file {}'.format(batchIDfilename))
 
         # mark the entries that are submitted to the batch
@@ -218,7 +251,8 @@ class cmdsclass(astrotableclass):
                         outputfile_col='output_name', addsuffix='fits'):
 
         if self.debug:
-            self.logger.debug('********* DEBUG!!!! ******\nJust touching the output files!!!')
+            self.create_log_entry('debug', '********* DEBUG!!!! ******\nJust touching the output files!!!')
+            #self.logger.debug('********* DEBUG!!!! ******\nJust touching the output files!!!')
             for i in indeces2run:
                 # outfile = self.filename_with_suffix(self.t[outputfile_col][i],addsuffix=addsuffix)
                 outfile = self.t[outputfile_col][i]
@@ -234,30 +268,38 @@ class cmdsclass(astrotableclass):
             outfile = self.t[outputfile_col][i]
             (logfilename, errlogfilename) = self.getlogfilenames(outfile, logFlag=logFlag, errorlogFlag=errorlogFlag)
 
-            self.logger.info("Logfile to create for {} will be {}".format(outfile, logfilename))
-            self.logger.info("Error log to create for {} will be {}".format(outfile, errlogfilename))
-            self.logger.info('### Executing command for index {}: {}'.format(i, cmd))
+            self.create_log_entry('info', "Logfile to create for {} will be {}".format(outfile, logfilename))
+            self.create_log_entry('info', "Error log to create for {} will be {}".format(outfile, errlogfilename))
+            self.create_log_entry('info', '### Executing command for index {}: {}'.format(i, cmd))
+            #self.logger.info("Logfile to create for {} will be {}".format(outfile, logfilename))
+            #self.logger.info("Error log to create for {} will be {}".format(outfile, errlogfilename))
+            #self.logger.info('### Executing command for index {}: {}'.format(i, cmd))
 
             (errorflag) = executecommand(cmd, '', cmdlog=logfilename, errorlog=errlogfilename)
 
             # extra error checking
             if not os.path.isfile(outfile):
-                self.logger.warning('ERROR: file {} did not get created with strun command!'.format(outfile))
+                self.create_log_entry('warning', 'ERROR: file {} did not get created with strun command!'.format(outfile))
+                #self.logger.warning('ERROR: file {} did not get created with strun command!'.format(outfile))
                 errorflag |= 2
 
             # fill table with results.
             if errorflag:
                 self.t[cmds_executed_col][i]='ERROR{}_serial'.format(errorflag)
-                self.logger.warning("Error Flag: {}. There was an error running this command.".format(errorflag))
+                self.create_log_entry('warning', "Error Flag: {}. There was an error running this command.".format(errorflag))
+                #self.logger.warning("Error Flag: {}. There was an error running this command.".format(errorflag))
             else:
-                self.logger.info("Error Flag: 0. Command completed successfully.")
+                self.create_log_entry('info', "Error Flag: 0. Command completed successfully.")
+                #self.logger.info("Error Flag: 0. Command completed successfully.")
                 self.t[cmds_executed_col][i]='serial'
 
         return(0)
 
+
 class mkrefsclass(astrotableclass):
-    def __init__(self):
+    def __init__(self, logfile=False):
         astrotableclass.__init__(self)
+        self.loginfo = []
 
         # config file
         self.cfg = yamlcfgclass()
@@ -288,9 +330,12 @@ class mkrefsclass(astrotableclass):
         self.FFtable = astrotableclass()
         self.DDFFtable = astrotableclass()
 
-        self.ssbcmdtable = cmdsclass('ssb')
-        self.refcmdtable = cmdsclass('ref')
-        self.refmastercmdtable = cmdsclass('refmaster')
+        self.ssbcmdtable = cmdsclass('ssb', manual_log=self.loginfo)
+        self.loginfo.extend(self.ssbcmdtable.manual_log)
+        self.refcmdtable = cmdsclass('ref', manual_log=self.loginfo)
+        self.loginfo.extend(self.refcmdtable.manual_log)
+        self.refmastercmdtable = cmdsclass('refmaster', manual_log=self.loginfo)
+        self.loginfo.extend(self.refmastercmdtable.manual_log)
 
         # self.allowed_reflabels = ['example_bpm', 'bpm', 'rdnoise_nircam', 'gain_armin']
         mkref_file_list = glob.glob('{}/*/mkref_*.py'.format(os.path.dirname(__file__)))
@@ -298,10 +343,13 @@ class mkrefsclass(astrotableclass):
         self.allowed_reflabels = [entry.replace('mkref_', '').replace('.py', '') for entry in mkref_file_basenames]
         self.reflabel_directories = [os.path.dirname(entry) for entry in mkref_file_list]
         self.mkref_file_list = copy.deepcopy(mkref_file_list)
-        self.loginfo = []
 
-        self.logger = logging.getLogger('jwst_reffiles.mkrefs.mkrefclass')
-        self.logger.warning("This is a mkrefs class test")
+        self.loginfo.append(('info', 'Allowed reflabels are {}'.format(self.allowed_reflabels)))
+        self.loginfo.append(('info', 'Reflabel directories are {}'.format(self.reflabel_directories)))
+
+        #self.logger = logging.getLogger('jwst_reffiles.mkrefs.mkrefclass')
+        #self.logger.warning("This is a mkrefs class test")
+        self.loginfo.append(("info", "This is a mkrefs class test"))
 
     def define_options(self, parser=None, usage=None, conflict_handler='resolve'):
         if parser is None:
@@ -503,12 +551,12 @@ class mkrefsclass(astrotableclass):
             state_ssbdir = makepath(self.ssbdir)
 
         self.loginfo.append(('info', '#### Directories:'))
-        self.loginfo.append(('basedir:', self.basedir))
-        self.loginfo.append(('basename:', self.basename))
-        self.loginfo.append(('ssbdir:', self.ssbdir))
-        self.loginfo.append(('outsubdir:', self.outsubdir))
-        self.loginfo.append(('runID:', self.runID))
-        self.loginfo.append(('runlabel:', self.runlabel))
+        self.loginfo.append(('info', 'basedir: {}'.format(self.basedir)))
+        self.loginfo.append(('info', 'basename: {}'.format(self.basename)))
+        self.loginfo.append(('info', 'ssbdir: {}'.format(self.ssbdir)))
+        self.loginfo.append(('info', 'outsubdir: {}'.format(self.outsubdir)))
+        self.loginfo.append(('info', 'runID: {}'.format(self.runID)))
+        self.loginfo.append(('info', 'runlabel: {}'.format(self.runlabel)))
 
         return(0)
 
@@ -520,8 +568,7 @@ class mkrefsclass(astrotableclass):
         '''
         only keep fits file that match basenamepattern
         '''
-        if self.verbose > 1:
-            self.logger.info("#### Trimming images...")
+        self.logger.info("#### Trimming images...")
         # print imagelist
         if imagelist is None or len(imagelist) == 0:
             self.logger.info('Nothing to do, no images!!!')
@@ -1325,6 +1372,7 @@ if __name__ == '__main__':
 
     main_log_file = configure_logging("mkrefs", path=mkrefs.basedir)
     print("LOG FILE: {}".format(main_log_file))
+    mkrefs.logger = logging.getLogger('jwst_reffiles.mkrefs.mkrefsclass')
     """
     ########If this works, put into its own funtionc######
     # Create the Logger
@@ -1354,25 +1402,20 @@ if __name__ == '__main__':
     root_logger.addHandler(console_handler)
     """
 
-
-
-
-
-
-
     # Add the earlier logged information to the logger
-    #for line in mkrefs.loginfo:
-    #    level = line[0]
-    #    if level == 'warning':
-    #        logging.warning(line[1])
-    #    elif level == 'error':
-    #        logging.error(line[1])
-    #    elif level == 'info':
-    #        logging.info(line[1])
-    #    elif level == 'debug':
-    #        logging.debug(line[1])
-    #    else:
-    #        raise ValueError('Unrecognized logging level: {}'.format(level))
+    for line in mkrefs.loginfo:
+        print('LINE', line)
+        level = line[0]
+        if level == 'warning':
+            mkrefs.logger.warning(line[1])
+        elif level == 'error':
+            mkrefs.logger.error(line[1])
+        elif level == 'info':
+            mkrefs.logger.info(line[1])
+        elif level == 'debug':
+            mkrefs.logger.debug(line[1])
+        else:
+            raise ValueError('Unrecognized logging level: {}'.format(level))
 
     # get the inputfile list and reflabel list. For input files, get into!
     mkrefs.organize_inputfiles(args.reflabels_and_imagelist)
