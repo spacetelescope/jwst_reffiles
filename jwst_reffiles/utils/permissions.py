@@ -20,7 +20,7 @@ Use
 
     ::
 
-        from nircam_calib.tools import permissions
+        from jwst_reffiles.utils import permissions
         permissions.set_permissions(pathname)
 
     Required arguments:
@@ -81,7 +81,7 @@ import pwd
 import stat
 
 # owner and group names to use
-DEFAULT_GROUP = 'STSCI/science'
+DEFAULT_GROUP = 'staff'
 
 # set the default mode for DEFAULT_OWNER
 DEFAULT_MODE = stat.S_IREAD | stat.S_IWRITE | stat.S_IRGRP | stat.S_IWGRP  # '?rw-rw----'
@@ -125,7 +125,7 @@ def get_owner_string(pathname):
     return owner_name
 
 
-def has_permissions(pathname, mode=DEFAULT_MODE, group=DEFAULT_GROUP):
+def has_permissions(pathname, mode=DEFAULT_MODE, group=DEFAULT_GROUP, verbose=False):
     """Return boolean indicating whether ``pathname`` has the specified
     owner, permission, and group scheme.
 
@@ -140,6 +140,8 @@ def has_permissions(pathname, mode=DEFAULT_MODE, group=DEFAULT_GROUP):
         with ``os.stat`` output
     group : str
         String representation of the group
+    verbose : bool
+        Boolean indicating whether verbose output is requested
 
     Returns
     -------
@@ -155,11 +157,12 @@ def has_permissions(pathname, mode=DEFAULT_MODE, group=DEFAULT_GROUP):
     elif os.path.isdir(pathname):
         mode = mode | stat.S_IFDIR
 
-    print('%%%%%%%%%%%%%%%%%%%%')
-    print(mode)
-    print(group)
-    print(file_statinfo)
-    print(groupinfo)
+    if verbose:
+        print('%%%%%%%%%%%%%%%%%%%%')
+        print(mode)
+        print(group)
+        print(file_statinfo)
+        print(groupinfo)
 
     if (file_statinfo.st_mode != mode) or (groupinfo.gr_name != group):
         return False

@@ -19,7 +19,7 @@ import scipy
 from jwst_reffiles.plugin_wrapper import mkrefclass_template
 from jwst_reffiles.pipeline.calib_prep import CalibPrep
 from jwst_reffiles.pipeline import pipeline_steps
-from jwst_reffiles.utils.logging_functions import configure_logging, log_info, log_fail
+from jwst_reffiles.utils.logging_functions import configure_logging, log_info, log_fail, make_log_file
 from jwst_reffiles.utils.tools import astrotableclass, yamlcfgclass
 from jwst_reffiles.utils.tools import makepath, executecommand, append2file, rmfile
 
@@ -393,6 +393,8 @@ class mkrefsclass(astrotableclass):
                             action="store_true", default=False)
         parser.add_argument('--maxNref', type=int, default=None,
                             help='limit the number of reference file commands to be run')
+        parser.add_argument('--logFileLevel', help="Minimum message level to add to log file", default="info")
+        parser.add_argument('--logScreenLevel', help="Minimum message level to display to screen", default="info")
 
         ###
         ### get the options from the individual mkref_X.py commands!
@@ -668,6 +670,8 @@ class mkrefsclass(astrotableclass):
         #self.flats = self.imtable.t[np.where(self.imtable.t['imtype']=='flat')]
         return(0)
 
+    @log_fail
+    @log_info
     def organize_inputfiles(self, reflabels_and_imagelist):
         # parse teh command line arguments for reflabels and images
         (reflabellist, imagelist) = self.parse_reflabels_images(reflabels_and_imagelist,
@@ -942,7 +946,7 @@ class mkrefsclass(astrotableclass):
     def get_inputimage_sets(self, reflabel, detector, DD_max_Delta_MJD=None, FF_max_Delta_MJD=None,
                             DDFF_max_Delta_MJD=None):
         imtypes = self.cfg.params[reflabel]['imtypes']
-        print("imtypes is {}".format(imtypes))
+        self.logger.debug("imtypes is {}".format(imtypes))
         imagesets = []
         if imtypes == 'D':
             imagesets, imagelabels = self.getDlist(detector)
@@ -969,6 +973,8 @@ class mkrefsclass(astrotableclass):
         self.ssbcmdtable.t[primary_strun_col]=primary_strun
         return(0)
 
+    @log_fail
+    @log_info
     def mk_ssb_cmds(self, force_redo_strun=False, maxNstrun=None):
         '''
         Construct the reflabel commands, get the input files
@@ -1128,6 +1134,8 @@ class mkrefsclass(astrotableclass):
 
         return(0)
 
+    @log_fail
+    @log_info
     def run_ssb_cmds(self, batchmode=False, ssblogFlag=False, ssberrorlogFlag=True):
 
         if self.onlyshow:
@@ -1162,6 +1170,8 @@ class mkrefsclass(astrotableclass):
 
         return(0)
 
+    @log_fail
+    @log_info
     def mk_ref_cmds(self, force_redo_refcmds=False, maxNrefcmds=None):
 
         self.refcmdtable.t['refcmd'] = None
@@ -1277,6 +1287,8 @@ class mkrefsclass(astrotableclass):
                                         'file_already_exists', 'already_in_batch',
                                         'execute_refcmd', 'refcmd_executed'])
 
+    @log_fail
+    @log_info
     def run_ref_cmds(self, batchmode=False, reflogFlag=False, referrorlogFlag=True):
 
         if self.onlyshow:
@@ -1316,18 +1328,23 @@ class mkrefsclass(astrotableclass):
 
         return(0)
 
+    @log_fail
+    @log_info
     def combinerefs(self):
         print("### combinerefs: NOT YET IMPLEMENTED!!!")
         sys.exit(0)
 
+    @log_fail
+    @log_info
     def overview(self):
         print("### overview: NOT YET IMPLEMENTED!!!")
         sys.exit(0)
 
+    @log_fail
+    @log_info
     def submitbatch(self):
         print("### submitbatch: NOT YET IMPLEMENTED!!!")
         sys.exit(0)
-
 
 
 if __name__ == '__main__':
@@ -1368,44 +1385,17 @@ if __name__ == '__main__':
                     ssbdir=args.ssbdir, skip_runID_ssbdir=args.skip_runID_ssbdir)
 
     # Set up logging
-    #configure_logging("jwst_reffiles", path=mkrefs.basename)
-
-    main_log_file = configure_logging("mkrefs", path=mkrefs.basedir)
+    main_log_file = configure_logging("mkrefs", path=mkrefs.basedir, log_file_level=args.logFileLevel.lower(),
+                                      log_screen_level=args.logScreenLevel.lower())
     print("LOG FILE: {}".format(main_log_file))
     mkrefs.logger = logging.getLogger('jwst_reffiles.mkrefs.mkrefsclass')
-    """
-    ########If this works, put into its own funtionc######
-    # Create the Logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-
-    # Create the Handler for logging data to a file
-    logfilename = os.path.join(mkrefs.basedir, 'mkrefs_run.log')
-    print('Log file to be created: {}'.format(logfilename))
-    logger_handler = RotatingFileHandler(logfilename)  # , maxBytes=1024, backupCount=5)
-    logger_handler.setLevel(logging.INFO)
-
-    # Create the Handler for logging data to console.
-    console_handler = StreamHandler()
-    console_handler.setLevel(logging.INFO)
-
-    # Create a Formatter for formatting the log messages
-    logger_formatter = logging.Formatter('%(name)s - %(asctime)s - %(levelname)s - %(message)s',
-                                         datefmt='%m/%d/%Y %H:%M:%S %p')
-
-    # Add the Formatter to the Handler
-    logger_handler.setFormatter(logger_formatter)
-    console_handler.setFormatter(logger_formatter)
-
-    # Add the Handler to the Logger
-    root_logger.addHandler(logger_handler)
-    root_logger.addHandler(console_handler)
-    """
+    mkrefs.logger.info('Log file configured.')
 
     # Add the earlier logged information to the logger
     for line in mkrefs.loginfo:
-        print('LINE', line)
         level = line[0]
+        if level == 'critical':
+            mkrefs.logger.critical(line[1])
         if level == 'warning':
             mkrefs.logger.warning(line[1])
         elif level == 'error':
@@ -1442,4 +1432,3 @@ if __name__ == '__main__':
     mkrefs.combinerefs()
 
     mkrefs.overview()
-
