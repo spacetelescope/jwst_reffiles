@@ -479,7 +479,7 @@ class mkrefsclass(astrotableclass):
         """ find all subdirs witn run\d+ within the passed basedir, and extract the highest runID"""
         files = glob.glob('%s/run*' % basedir)
         if len(files) == 0:
-            self.logger.info('In get_highest_runID: No runIDs yet!')
+            self.loginfo.append(('info', 'In get_highest_runID: No runIDs yet!'))
             return(None)
         runIDs = []
         runIDpattern = re.compile('run(\d+)$')
