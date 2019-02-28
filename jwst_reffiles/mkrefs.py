@@ -42,7 +42,6 @@ class cmdsclass(astrotableclass):
         else:
             self.manual_log = None
             self.logger = logging.getLogger('jwst_reffiles.mkrefs.cmdsclass')
-            self.logger.warning("This is a cmdclass test using the logger")
         astrotableclass.__init__(self, *args, **kwargs)
         self.verbose=verbose
         self.debug=debug
@@ -173,7 +172,7 @@ class cmdsclass(astrotableclass):
             outlog = None
 
         if suffix != '.fits':
-            self.create_log_entry('error', 'WARNING: It seems like the filename {} is not a fits file.'.format(filename))
+            self.create_log_entry('warning', 'It seems like the filename {} is not a fits file.'.format(filename))
             #self.logger.error('WARNING: It seems like the filename {} is not a fits file.'.format(filename))
 
         return(outlog, errorlog)
@@ -185,7 +184,7 @@ class cmdsclass(astrotableclass):
 
         for outfile in outputfiles:
             outfile = self.filename_with_suffix(outfile,addsuffix=addsuffix)
-            (logfilename,errlogfilename) = self.getlogfilenames(outfile, logFlag=True, errorlogFlag=True)
+            (logfilename, errlogfilename) = self.getlogfilenames(outfile, logFlag=True, errorlogFlag=True)
             rmfile(outfile)
             rmfile(logfilename)
             # Don't clean up errlogfilename, we want to keep track of old errors...
@@ -195,7 +194,7 @@ class cmdsclass(astrotableclass):
         """ dummy call to batch mode to return reasonable values """
         print("### run commands in batch mode: NOT YET IMPLEMENTED!!!")
         # this are just dummy return values until batch mode is implemented
-        (errorflag, batchID)=(1,random.randint(1, 100000))
+        (errorflag, batchID) = (1, random.randint(1, 100000))
 
         return(errorflag, batchID)
 
@@ -218,7 +217,7 @@ class cmdsclass(astrotableclass):
         self.create_log_entry('info', 'Saving cmds to {} for batch'.format(batchfilename))
         #self.logger.info('Saving cmds to {} for batch'.format(batchfilename))
         strun_list = [l+'\n' for l in strun_list]
-        if open(batchfilename,'w').writelines(strun_list):
+        if open(batchfilename, 'w').writelines(strun_list):
             self.create_log_entry('error', 'ERROR: could not save batch file {}'.format(batchfilename))
             raise RuntimeError('ERROR: could not save batch file {}'.format(batchfilename))
 
@@ -279,14 +278,15 @@ class cmdsclass(astrotableclass):
 
             # extra error checking
             if not os.path.isfile(outfile):
-                self.create_log_entry('warning', 'ERROR: file {} did not get created with strun command!'.format(outfile))
+                self.create_log_entry('warning', 'File {} did not get created with strun command!'.format(outfile))
                 #self.logger.warning('ERROR: file {} did not get created with strun command!'.format(outfile))
                 errorflag |= 2
 
             # fill table with results.
             if errorflag:
                 self.t[cmds_executed_col][i]='ERROR{}_serial'.format(errorflag)
-                self.create_log_entry('warning', "Error Flag: {}. There was an error running this command.".format(errorflag))
+                self.create_log_entry('warning', ("In run_cms_serial, Error Flag: {}. There was an error "
+                                                  "running this command.".format(errorflag)))
                 #self.logger.warning("Error Flag: {}. There was an error running this command.".format(errorflag))
             else:
                 self.create_log_entry('info', "Error Flag: 0. Command completed successfully.")
@@ -346,10 +346,6 @@ class mkrefsclass(astrotableclass):
 
         self.loginfo.append(('info', 'Allowed reflabels are {}'.format(self.allowed_reflabels)))
         self.loginfo.append(('info', 'Reflabel directories are {}'.format(self.reflabel_directories)))
-
-        #self.logger = logging.getLogger('jwst_reffiles.mkrefs.mkrefclass')
-        #self.logger.warning("This is a mkrefs class test")
-        self.loginfo.append(("info", "This is a mkrefs class test"))
 
     def define_options(self, parser=None, usage=None, conflict_handler='resolve'):
         if parser is None:
