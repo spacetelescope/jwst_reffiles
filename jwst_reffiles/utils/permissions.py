@@ -195,7 +195,7 @@ def set_permissions(pathname, mode=DEFAULT_MODE, group=DEFAULT_GROUP, verbose=Fa
     if not has_permissions(pathname):
         os.chmod(pathname, mode)
         # change group
-        os.chown(pathname, -1, grp.getgrnam(group).gr_gid)
+        # os.chown(pathname, -1, grp.getgrnam(group).gr_gid)
 
     if verbose:
         print('After:')
