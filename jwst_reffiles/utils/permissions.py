@@ -83,8 +83,8 @@ import stat
 # owner and group names to use
 DEFAULT_GROUP = 'staff'
 
-# set the default mode for DEFAULT_OWNER - '?rw-rw-rw-'
-DEFAULT_MODE = stat.S_IREAD | stat.S_IWRITE | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH
+# set the default mode for DEFAULT_OWNER - '?rw-r-----'
+DEFAULT_MODE = stat.S_IREAD | stat.S_IWRITE | stat.S_IRGRP
 
 
 def get_group_string(pathname):
