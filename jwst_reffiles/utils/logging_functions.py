@@ -1,17 +1,15 @@
 
 """ Logging functions for the mkrefs
 
-This module provides decorators to log the execution of modules.  Log
-files are written to the ``logs/`` directory in the ``jwql`` central
-storage area, named by module name and timestamp, e.g.
-``monitor_filesystem/monitor_filesystem_2018-06-20-15:22:51.log``
-
+This module configures the logger for the jwst_reffiles package.
+It also provides decorators to log the execution of modules. This code is
+based on the JWQL package logging configuration code.
 
 Authors
 -------
 
     - Bryan Hilbert 2018
-    - Catherine Martlin 2018
+    - Catherine Martlin 2018 (JWQL version)
     - Alex Viana, 2013 (WFC3 QL Version)
 
 Use
@@ -39,13 +37,6 @@ Use
 
             my_main_function()
 
-Dependencies
-------------
-
-    The user must have a configuration file named ``config.json``
-    placed in the ``utils`` directory.
-
-
 References
 ----------
     This code is adopted and updated from python routine
@@ -57,8 +48,10 @@ import datetime
 import getpass
 import importlib
 import logging
+from logging import StreamHandler
+import logging.config
+from logging.handlers import RotatingFileHandler
 import os
-import pwd
 import socket
 import sys
 import time
@@ -66,34 +59,63 @@ import traceback
 
 from functools import wraps
 
-from jwql.permissions.permissions import set_permissions
-from jwql.utils.utils import get_config
-
-LOG_FILE_LOC = ''
+from jwst_reffiles.utils.permissions import set_permissions
 
 
-def configure_logging(module, path='./'):
+def configure_logging(module, path='./', log_file_level='info', log_screen_level="info"):
     """Configure the log file with a standard logging format.
 
     Parameters
     ----------
     module : str
         The name of the module being logged.
+
     path : str
         Where to write the log if user-supplied path; default to working dir.
+
+    log_file_level : str
+        Minimum message level to route to the output log file.
+        Allowed values: "debug", "info", "warning", "ciritical"
+
+    log_screen_level : str
+        Minimum message level to route to the screen.
+        Allowed values: "debug", "info", "warning", "ciritical"
+
+    Returns
+    -------
+    log_file : str
+        Name and path of the output log file
     """
 
     # Determine log file location
     log_file = make_log_file(module, path=path)
-    global LOG_FILE_LOC
-    LOG_FILE_LOC = log_file
 
-    # Create the log file and set the permissions
-    logging.basicConfig(filename=log_file,
-                        format='%(asctime)s %(levelname)s: %(message)s',
-                        datefmt='%m/%d/%Y %H:%M:%S %p',
-                        level=logging.INFO)
-    set_permissions(log_file)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # Create the Handler for logging data to a file
+    logger_handler = RotatingFileHandler(log_file)
+    logger_handler.setLevel(log_file_level.upper())
+
+    # Create the Handler for logging data to console.
+    console_handler = StreamHandler()
+    console_handler.setLevel(log_screen_level.upper())
+
+    # Create a Formatter for formatting the log messages
+    logger_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                                         datefmt='%m/%d/%Y %H:%M:%S %p')
+
+    # Add the Formatter to the Handler
+    logger_handler.setFormatter(logger_formatter)
+    console_handler.setFormatter(logger_formatter)
+
+    # Add the Handler to the Logger
+    root_logger.addHandler(logger_handler)
+    root_logger.addHandler(console_handler)
+
+    # Currently need to be on ST network for this to work??
+    set_permissions(log_file, verbose=False)
+    return log_file
 
 
 def make_log_file(module, path='./'):
@@ -118,7 +140,6 @@ def make_log_file(module, path='./'):
 
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M')
     filename = '{0}_{1}.log'.format(module, timestamp)
-    #user = pwd.getpwuid(os.getuid()).pw_name
     log_file = os.path.join(path, filename)
 
     return log_file
