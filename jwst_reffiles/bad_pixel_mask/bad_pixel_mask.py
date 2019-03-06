@@ -300,10 +300,6 @@ def create_dqdef():
             bitnumber = 0
         newrow = (bitnumber, bitvalue, bitname, '')
         definitions.append(newrow)
-
-    print('definitions')
-    for line in definitions:
-        print(line)
     return definitions
 
 
@@ -789,13 +785,6 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
     # Create dq_def data
     dq_def = create_dqdef()
     model.dq_def = dq_def
-
-    print('side by side')
-    for line in dq_def:
-        print(line)
-    print(model.dq_def)
-
-
     model.meta.reftype = 'MASK'
     model.meta.subarray.name = 'FULL'
     model.meta.subarray.xstart = 1
