@@ -451,7 +451,7 @@ def dead_pixels_sigma_rate(rate_image, mean_rate, stdev_rate, sigma=5.):
 def dead_pixels_absolute_rate(rate_image, max_dead_signal=0.05):
     """Create a map of dead pixels given a normalized rate image. In this
     case pixels are flagged as dead if their normalized signal rate is
-    less than ``sigma`` standard deviations below the mean
+    less than ``max_dead_signal``.
 
     Parameters
     ----------
@@ -526,12 +526,14 @@ def find_open_and_low_qe_pixels(rate_image, max_dead_signal=0.05, max_low_qe=0.5
 
     Returns
     -------
-    open_pix_map : numpy.ndarray
-        2D map showing OPEN (1) and ADJ_OPEN (2) pixels. Good pixels have a
-        value of 0.
-
     low_qe_map : numpy.ndarray
         2D map showing LOW QE pixels. Good pixels have a value of 0.
+
+    open_pix_map : numpy.ndarray
+        2D map showing OPEN pixels. Good pixels have a value of 0.
+
+    adj_pix_map : numpy.ndarray
+        2D map showing ADJ_OPEN pixels. Good pixels have a value of 0.
     """
     low_qe_map = np.zeros(rate_image.shape)
     open_pix_map = np.zeros(rate_image.shape)
@@ -543,7 +545,8 @@ def find_open_and_low_qe_pixels(rate_image, max_dead_signal=0.05, max_low_qe=0.5
         adj_pix = rate_image[adj_pix_y, adj_pix_x]
         adj_check = adj_pix > max_adj_open
         if all(adj_check):
-            adj_pix_map[y-1:y+2, x-1:x+2] = 2
+            adj_pix_map[y-1:y+2, x-1:x+2] = 1
+            adj_pix_map[y, x] = 0
             open_pix_map[y, x] = 1
         else:
             low_qe_map[y, x] = 1
