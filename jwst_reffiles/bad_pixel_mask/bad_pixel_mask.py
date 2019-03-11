@@ -11,7 +11,7 @@ Author
      This module can be imported and used as such:
      ::
          from jwst_reffiles.bad_pixel_mask import bad_pixel_mask
-         bad_pixel_mask.something(arguments)
+         bad_pixel_mask.find_bad_pix(arguments)
 
          or
 
@@ -158,18 +158,6 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     quality_check : bool
         If True, the pipeline is run using the output reference file to be
         sure the pipeline doens't crash
-
-    Returns
-    -------
-    dead_map : numpy.ndarray
-        Map of dead pixel locations. 1 = dead, 0 = not dead
-
-    lowqe_map : numpy.ndarray
-        Map of low QE pixel locations. 1 = low QE, 0 = not low QE
-
-    open_map : numpy.ndarray
-        Map of open and adjacent to open pixel locations. 1 = open,
-        2 = adjacent to open, 0 = good.
     """
     crds_input_checks(author, description, pedigree, useafter)
 
