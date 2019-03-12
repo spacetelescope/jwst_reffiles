@@ -16,6 +16,7 @@ JWST_REFFILES: Reference File Generator Tool
    final_reference_file_creation.rst
    plug_in_user_module.rst
    configuration_files.rst
+   official_algorithms.rst
    quickstart.ipynb
    api.rst
 
