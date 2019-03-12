@@ -174,6 +174,18 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     # Normalize
     normalized = mean_img / smoothed_image
 
+
+    # Save mean file for testing
+    mean_file = os.path.join(os.path.split(output_file)[0], 'mean_smoothed_normalized_images.fits')
+    h0 = fits.PrimaryHDU(mean_img)
+    h1 = fits.ImageHDU(stdev_img)
+    h2 = fits.ImageHDU(smoothed_image)
+    h3 = fits.ImageHDU(normalized)
+    hdulist = fits.HDUList([h0, h1, h2, h3])
+    hdulist.writeto(mean_file, overwrite=True)
+
+
+
     # Sigma-clipped mean and stdev
     norm_mean, norm_dev = image_stats(normalized, sigma=sigma_threshold)
 
@@ -185,8 +197,19 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
             dead_map = dead_pixels_sigma_rate(normalized, norm_mean, norm_dev, sigma=dead_sigma_threshold)
         elif dead_search_type == 'absolute_rate':
             dead_map = dead_pixels_absolute_rate(normalized, max_dead_signal=max_dead_norm_signal)
+
+        # Save dead map for testing
+        deadfile = os.path.join(os.path.split(output_file)[0], 'dead_map_{}.fits'.format(dead_search_type))
+        h0 = fits.PrimaryHDU(dead_map)
+        hlist = fits.HDUList([h0])
+        hlist.writeto(deadfile, overwrite=True)
+
+
+
+
     else:
         dead_map = np.zeros((ydim, xdim))
+
 
     # Find low qe and open pixels
     if low_qe_and_open_search:
@@ -199,6 +222,19 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         open_map = np.zeros((ydim, xdim))
         adjacent_to_open_map = np.zeros((ydim, xdim))
 
+
+
+    # Save low QE map for testing
+    qefile = os.path.join(os.path.split(output_file)[0], 'low_qe_open_adjopen_maps.fits')
+    h0 = fits.PrimaryHDU(lowqe_map)
+    h1 = fits.ImageHDU(open_map)
+    h2 = fits.ImageHDU(adjacent_to_open_map)
+    hlist = fits.HDUList([h0, h1, h2])
+    hlist.writeto(qefile, overwrite=True)
+
+
+
+
     # Flag MIRI's bad columns
     if instrument == 'MIRI':
         miri_bad_col_map = miri_bad_columns(dead_map.shape)
@@ -208,9 +244,20 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     # Create a map showing locations of reference pixels
     reference_pix = reference_pixel_map(dead_map.shape)
 
+
+    # Save reference pixels map for testing
+    reffile = os.path.join(os.path.split(output_file)[0], 'refpix_map.fits')
+    h0 = fits.PrimaryHDU(reference_pix)
+    hlist = fits.HDUList([h0])
+    hlist.writeto(reffile, overwrite=True)
+
+
+
+
+
     # Wrap up all of the individual bad pixel maps into a dictionary
     stack_of_maps = {'DEAD': dead_map, 'LOW_QE': lowqe_map, 'OPEN': open_map,
-                     'ADJ_OPEN': adjacent_to_open_map, 'REFERENCE_PIXEL': reference_pix}  # '???': bad_col_map,
+                     'ADJ_OPEN': adjacent_to_open_map}  # , 'REFERENCE_PIXEL': reference_pix}  # '???': bad_col_map,
 
     # Check that all flag types to be specified DO_NOT_USE are recognized
     # types.
@@ -254,18 +301,30 @@ def combine_individual_maps(bad_maps, do_not_use_flags):
 
     # Convert each type of bad pixel input to have the proper value,
     # and add to the final map
-    final_map = np.zeros((bad_maps['DEAD'].shape))
+    do_not_use_map = np.zeros((bad_maps['DEAD'].shape))
+    use_map = np.zeros((bad_maps['DEAD'].shape))
+    for pix_type in do_not_use_flags:
+        if pix_type in dq_defs.keys():
+            if pix_type in bad_maps.keys():
+                ind_map = bad_maps[pix_type]
+                flagged = ind_map != 0
+                value = dq_defs[pix_type]
+                do_not_use_map[flagged] += value
+        else:
+            raise ValueError('Unrecognized bad pixel type in do_not_use_list: {}'.format(pix_type))
+    do_not_use_map[do_not_use_map != 0] += dq_defs['DO_NOT_USE']
+
     for pix_type in bad_maps:
         if pix_type in dq_defs.keys():
-            map = bad_maps[pix_type]
-            flagged = map != 0
-            value = dq_defs[pix_type]
-            if pix_type in do_not_use_flags:
-                value += dq_defs['DO_NOT_USE']
-            final_map[flagged] += value
+            if pix_type not in do_not_use_flags:
+                ind_map = bad_maps[pix_type]
+                flagged = ind_map != 0
+                value = dq_defs[pix_type]
+                use_map[flagged] += value
         else:
             raise ValueError('Unrecognized bad pixel type: {}'.format(pix_type))
 
+    final_map = do_not_use_map + use_map
     return final_map
 
 
@@ -433,7 +492,7 @@ def dead_pixels_sigma_rate(rate_image, mean_rate, stdev_rate, sigma=5.):
         2D map showing DEAD pixels. Good pixels have a value of 0.
     """
     dead_pix_map = (rate_image < (mean_rate - sigma * stdev_rate)).astype(np.int)
-    return dead_pix_map
+    return dead_pix_map.astype(np.int)
 
 
 def dead_pixels_absolute_rate(rate_image, max_dead_signal=0.05):
@@ -455,7 +514,7 @@ def dead_pixels_absolute_rate(rate_image, max_dead_signal=0.05):
         2D map showing DEAD pixels. Good pixels have a value of 0.
     """
     dead_pix_map = (rate_image < max_dead_signal).astype(np.int)
-    return dead_pix_map
+    return dead_pix_map.astype(np.int)
 
 
 def dead_pixels_zero_signal(groups, dead_zero_signal_fraction=0.9):
@@ -483,7 +542,7 @@ def dead_pixels_zero_signal(groups, dead_zero_signal_fraction=0.9):
     total_zeros = np.sum(zero_signal, axis=0)
     total_fraction = total_zeros / num_groups
     dead_pix_map = (total_fraction >= dead_zero_signal_fraction).astype(np.int)
-    return dead_pix_map
+    return dead_pix_map.astype(np.int)
 
 
 def find_open_and_low_qe_pixels(rate_image, max_dead_signal=0.05, max_low_qe=0.5, max_adj_open=1.05):
@@ -523,15 +582,15 @@ def find_open_and_low_qe_pixels(rate_image, max_dead_signal=0.05, max_low_qe=0.5
     adj_pix_map : numpy.ndarray
         2D map showing ADJ_OPEN pixels. Good pixels have a value of 0.
     """
-    low_qe_map = np.zeros(rate_image.shape)
-    open_pix_map = np.zeros(rate_image.shape)
-    adj_pix_map = np.zeros(rate_image.shape)
-    low_sig_x, low_sig_y = np.where((rate_image >= max_dead_signal) & (rate_image < max_low_qe))
+    low_qe_map = np.zeros(rate_image.shape).astype(np.int)
+    open_pix_map = np.zeros(rate_image.shape).astype(np.int)
+    adj_pix_map = np.zeros(rate_image.shape).astype(np.int)
+    low_sig_y, low_sig_x = np.where((rate_image >= max_dead_signal) & (rate_image < max_low_qe))
     for x, y in zip(low_sig_x, low_sig_y):
         adj_pix_x = np.array([x, x+1, x, x-1])
         adj_pix_y = np.array([y+1, y, y-1, y])
         adj_pix = rate_image[adj_pix_y, adj_pix_x]
-        adj_check = adj_pix > max_adj_open
+        adj_check = (adj_pix > max_adj_open)
         if all(adj_check):
             adj_pix_map[y-1:y+2, x-1:x+2] = 1
             adj_pix_map[y, x] = 0
@@ -734,9 +793,9 @@ def reference_pixel_map(dimensions):
     yd, xd = dimensions
     ref_map = np.zeros(dimensions).astype(np.int)
     ref_map[0:4, :] += 1
-    ref_map[:, 0:4] += 1
+    ref_map[4:yd-4, 0:4] += 1
     ref_map[yd-4:yd, :] += 1
-    ref_map[:, xd-4:xd] += 1
+    ref_map[4:yd-4, xd-4:xd] += 1
     return ref_map
 
 
@@ -771,7 +830,7 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
     # Initialize the MaskModel using the hdu_list, so the new keywords will
     # be populated
     model = MaskModel(hdu_list)
-    model.dq = np.uint8(bad_pix_map)
+    model.dq = bad_pix_map
 
     # Create dq_def data
     dq_def = create_dqdef()
@@ -851,8 +910,6 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
 
     if history_text is not None:
         model.history.append(util.create_history_entry(history_text))
-
-    print(model.dq_def)
 
     model.save(outfile, overwrite=True)
     print('Final bad pixel mask reference file save to: {}'.format(outfile))
