@@ -174,6 +174,18 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     # Normalize
     normalized = mean_img / smoothed_image
 
+
+    # Save mean file for testing
+    mean_file = os.path.join(os.path.split(output_file)[0], 'mean_smoothed_normalized_images.fits')
+    h0 = fits.PrimaryHDU(mean_img)
+    h1 = fits.ImageHDU(stdev_img)
+    h2 = fits.ImageHDU(smoothed_image)
+    h3 = fits.ImageHDU(normalized)
+    hdulist = fits.HDUList([h0, h1, h2, h3])
+    hdulist.writeto(mean_file, overwrite=True)
+
+
+
     # Sigma-clipped mean and stdev
     norm_mean, norm_dev = image_stats(normalized, sigma=sigma_threshold)
 
@@ -185,8 +197,19 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
             dead_map = dead_pixels_sigma_rate(normalized, norm_mean, norm_dev, sigma=dead_sigma_threshold)
         elif dead_search_type == 'absolute_rate':
             dead_map = dead_pixels_absolute_rate(normalized, max_dead_signal=max_dead_norm_signal)
+
+        # Save dead map for testing
+        deadfile = os.path.join(os.path.split(output_file)[0], 'dead_map_{}.fits'.format(dead_search_type))
+        h0 = fits.PrimaryHDU(dead_map)
+        hlist = fits.HDUList([h0])
+        hlist.writeto(deadfile, overwrite=True)
+
+
+
+
     else:
         dead_map = np.zeros((ydim, xdim))
+
 
     # Find low qe and open pixels
     if low_qe_and_open_search:
@@ -199,6 +222,19 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         open_map = np.zeros((ydim, xdim))
         adjacent_to_open_map = np.zeros((ydim, xdim))
 
+
+
+    # Save low QE map for testing
+    qefile = os.path.join(os.path.split(output_file)[0], 'low_qe_open_adjopen_maps.fits')
+    h0 = fits.PrimaryHDU(lowqe_map)
+    h1 = fits.ImageHDU(open_map)
+    h2 = fits.ImageHDU(adjacent_to_open_map)
+    hlist = fits.HDUList([h0, h1, h2])
+    hlist.writeto(qefile, overwrite=True)
+
+
+
+
     # Flag MIRI's bad columns
     if instrument == 'MIRI':
         miri_bad_col_map = miri_bad_columns(dead_map.shape)
@@ -207,6 +243,17 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
 
     # Create a map showing locations of reference pixels
     reference_pix = reference_pixel_map(dead_map.shape)
+
+
+    # Save low QE map for testing
+    reffile = os.path.join(os.path.split(output_file)[0], 'refpix_map.fits')
+    h0 = fits.PrimaryHDU(reference_pix)
+    hlist = fits.HDUList([h0])
+    hlist.writeto(reffile, overwrite=True)
+
+
+
+
 
     # Wrap up all of the individual bad pixel maps into a dictionary
     stack_of_maps = {'DEAD': dead_map, 'LOW_QE': lowqe_map, 'OPEN': open_map,
@@ -734,9 +781,9 @@ def reference_pixel_map(dimensions):
     yd, xd = dimensions
     ref_map = np.zeros(dimensions).astype(np.int)
     ref_map[0:4, :] += 1
-    ref_map[:, 0:4] += 1
+    ref_map[4:yd-4, 0:4] += 1
     ref_map[yd-4:yd, :] += 1
-    ref_map[:, xd-4:xd] += 1
+    ref_map[4:yd-4, xd-4:xd] += 1
     return ref_map
 
 
@@ -851,8 +898,6 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
 
     if history_text is not None:
         model.history.append(util.create_history_entry(history_text))
-
-    print(model.dq_def)
 
     model.save(outfile, overwrite=True)
     print('Final bad pixel mask reference file save to: {}'.format(outfile))
