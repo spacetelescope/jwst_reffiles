@@ -9,7 +9,7 @@ Using this definition, the *bad_pixel_mask.py* module has been written and added
 
 If you encounter any problems or have any questions about the code or its use, feel free to open an issue on the `jwst_reffiles github page <https://github.com/spacetelescope/jwst_reffiles/issues>`_.
 
-When running *bad_pixel_mask.py* as a stand-alone package, the input files must be count rate (slope) images. In the future, when running via *mkrefs.py*, raw or partially-processed pipeline outputs will be allowed as inputs.
+When running *bad_pixel_mask.py* as a standalone package, the input files must be count rate (slope) images. In the future, when running via *mkrefs.py*, raw or partially-processed pipeline outputs will be allowed as inputs.
 
 To use the bad pixel mask generator function as a standalone package, use the code shown below. Keywords in the call are linked to detailed descriptions below the code snippet. Note that all of the keywords in the call below have defaults defined in the code (and in fact the call below is using all default values), so you do not have to specify any keywords where you wish to use the default.
 
