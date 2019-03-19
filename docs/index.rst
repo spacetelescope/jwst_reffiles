@@ -17,6 +17,7 @@ JWST_REFFILES: Reference File Generator Tool
    plug_in_user_module.rst
    configuration_files.rst
    official_algorithms.rst
+   official_bad_pixel_mask.rst
    quickstart.ipynb
    api.rst
 
