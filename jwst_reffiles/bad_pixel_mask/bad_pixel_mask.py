@@ -99,7 +99,7 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         ``zero_signal``: Using a stack of integrations, one group is extracted
                          from each, and a pixel is flagged as dead if it's
                          signal is zero in at least
-                         (``min_zero_signal_fraction`` * 100) percent of the
+                         (``dead_zero_signal_fraction`` * 100) percent of the
                          extracted groups.
 
     sigma_threshold : float
@@ -114,7 +114,7 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         Number of standard deviations below the mean at which a pixel is
         considered dead.
 
-    min_zero_signal_fraction : float
+    dead_zero_signal_fraction : float
         For the case where dead pixels are defined as having zero signal,
         this is the fration of input integrations in which a pixel must
         have zero signal for it to be flagged as dead. (i.e. 0.9 means
@@ -520,7 +520,7 @@ def dead_pixels_absolute_rate(rate_image, max_dead_signal=0.05):
 def dead_pixels_zero_signal(groups, dead_zero_signal_fraction=0.9):
     """Create a map of dead pixels given a set of individual groups
     from multiple integrations. In this case pixels are only flagged
-    as deas if they have zero signal in more than ``min_zero_signal_fraction``
+    as deas if they have zero signal in more than ``dead_zero_signal_fraction``
     of the input groups.
 
     Parameters
@@ -528,7 +528,7 @@ def dead_pixels_zero_signal(groups, dead_zero_signal_fraction=0.9):
     groups : numpy.ndarray
         3D stack of group images
 
-    min_zero_signal_fraction : float
+    dead_zero_signal_fraction : float
         Threshold for the fraction of groups in which a pixel can have
         zero signal and not be considered dead.
 
@@ -731,7 +731,7 @@ def read_files(filenames, dead_search_type):
         ``zero_signal``: Using a stack of integrations, one group is extracted
                          from each, and a pixel is flagged as dead if it's
                          signal is zero in at least
-                         (``min_zero_signal_fraction`` * 100) percent of the
+                         (``dead_zero_signal_fraction`` * 100) percent of the
                          extracted groups.
 
     Returns

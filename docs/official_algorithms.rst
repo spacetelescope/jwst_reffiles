@@ -7,4 +7,6 @@ The `JWST Calibration Reference File Generation Tools <https://outerspace.stsci.
 
 The current list of complete or in-progress officially-defined algorithms include:
 
+.. _bad_pixel_mask:
+
 :ref:`Bad Pixel Mask (used in DQ_Init pipeline step) <official_bad_pixel_mask>`
