@@ -187,7 +187,7 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     if normalization_method.lower() == 'smoothed':
         smoothed_image = smooth(mean_img, box_width=smoothing_box_width)
     elif normalization_method.lower() == 'mean':
-        img_mean, img_dev = image_stats(image, sigma=3.)
+        img_mean, img_dev = image_stats(mean_img, sigma=3.)
         smoothed_image = np.zeros(mean_img.shape) + img_mean
     elif normalization_method.lower() == 'none':
         smoothed_image = np.ones(mean_img.shape)
@@ -1077,7 +1077,7 @@ def smooth(data, box_width=15):
         A smoothed version of ``data``
     """
     smoothing_kernel = Box2DKernel(box_width)
-    smoothed = convolve(data, smoothing_kernel)
+    smoothed = convolve(data, smoothing_kernel, boundary='extend')
     return smoothed
 
 
