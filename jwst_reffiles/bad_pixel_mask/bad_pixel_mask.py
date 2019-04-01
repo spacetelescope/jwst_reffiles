@@ -1077,7 +1077,8 @@ def smooth(data, box_width=15):
         A smoothed version of ``data``
     """
     smoothing_kernel = Box2DKernel(box_width)
-    smoothed = convolve(data, smoothing_kernel, boundary='extend')
+    smoothed = convolve(data, smoothing_kernel, boundary='fill', fill_value=np.nanmedian(data),
+                        nan_treatment='interpolate')
     return smoothed
 
 
