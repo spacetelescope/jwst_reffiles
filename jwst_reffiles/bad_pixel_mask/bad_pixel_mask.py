@@ -69,10 +69,11 @@ from jwst.dq_init import DQInitStep
 
 
 def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dead_search_type='sigma_rate',
-                 sigma_threshold=3, smoothing_box_width=15, dead_sigma_threshold=5., dead_zero_signal_fraction=0.9,
-                 max_dead_norm_signal=0.05, max_low_qe_norm_signal=0.5, max_open_adj_norm_signal=1.05,
-                 do_not_use=[], output_file=None, author='jwst_reffiles', description='A bad pix mask',
-                 pedigree='GROUND', useafter='2019-04-01 00:00:00', history='', quality_check=True):
+                 sigma_threshold=3, normalization_method='smoothed', smoothing_box_width=15,
+                 dead_sigma_threshold=5., dead_zero_signal_fraction=0.9, max_dead_norm_signal=0.05,
+                 max_low_qe_norm_signal=0.5, max_open_adj_norm_signal=1.05, do_not_use=[], output_file=None,
+                 author='jwst_reffiles', description='A bad pix mask', pedigree='GROUND',
+                 useafter='2019-04-01 00:00:00', history='', quality_check=True):
     """MAIN SCRIPT: Given a set of input files, create dead, low QE, and
     open pixel maps
 
@@ -105,6 +106,16 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     sigma_threshold : float
         Number of standard deviations to use when sigma-clipping to
         calculate the mean slope image or the mean across the detector
+
+    normalization_method : str
+        Specify how the mean image is normalized prior to searching for
+        bad pixels. Options are:
+        'smoothed': Mean image will be smoothed using a
+                    ``smoothing_box_width`` x ``smoothing_box_width``
+                    box kernel. The mean image is then normalized by
+                    this smoothed image.
+        'none': No normalization is done. Mean slope image is used as is
+        'mean': Mean image is normalized by its sigma-clipped mean
 
     smoothing_box_width : float
         Width in pixels of the box kernel to use to compute the smoothed
@@ -168,19 +179,34 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     # Create mean and stdev images
     mean_img, stdev_img = mean_stdev_images(input_exposures, sigma=sigma_threshold)
 
+    # Exclude reference pixels
+    mean_img = science_pixels(mean_img)
+    stdev_img = science_pixels(stdev_img)
+
     # Create smoothed version of mean image
-    smoothed_image = smooth(mean_img, box_width=smoothing_box_width)
+    if normalization_method.lower() == 'smoothed':
+        smoothed_image = smooth(mean_img, box_width=smoothing_box_width)
+    elif normalization_method.lower() == 'mean':
+        img_mean, img_dev = image_stats(mean_img, sigma=3.)
+        smoothed_image = np.zeros(mean_img.shape) + img_mean
+    elif normalization_method.lower() == 'none':
+        smoothed_image = np.ones(mean_img.shape)
+    else:
+        raise ValueError('Unknown smoothing option: {}.'.format(normalization_method))
 
     # Normalize
     normalized = mean_img / smoothed_image
 
-
     # Save mean file for testing
     mean_file = os.path.join(os.path.split(output_file)[0], 'mean_smoothed_normalized_images.fits')
-    h0 = fits.PrimaryHDU(mean_img)
-    h1 = fits.ImageHDU(stdev_img)
-    h2 = fits.ImageHDU(smoothed_image)
-    h3 = fits.ImageHDU(normalized)
+    mean_img_wref = pad_with_refpix(mean_img)
+    dev_img_wref = pad_with_refpix(stdev_img)
+    smooth_wref = pad_with_refpix(smoothed_image)
+    norm_wref = pad_with_refpix(normalized)
+    h0 = fits.PrimaryHDU(mean_img_wref)
+    h1 = fits.ImageHDU(dev_img_wref)
+    h2 = fits.ImageHDU(smooth_wref)
+    h3 = fits.ImageHDU(norm_wref)
     hdulist = fits.HDUList([h0, h1, h2, h3])
     hdulist.writeto(mean_file, overwrite=True)
 
@@ -192,20 +218,19 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     # Find dead pixels
     if dead_search:
         if dead_search_type == 'zero_signal':
-            dead_map = dead_pixels_zero_signal(input_exposures, dead_zero_signal_fraction=dead_zero_signal_fraction)
+            dead_map = dead_pixels_zero_signal(science_pixels(input_exposures),
+                                               dead_zero_signal_fraction=dead_zero_signal_fraction)
         elif dead_search_type == 'sigma_rate':
             dead_map = dead_pixels_sigma_rate(normalized, norm_mean, norm_dev, sigma=dead_sigma_threshold)
         elif dead_search_type == 'absolute_rate':
             dead_map = dead_pixels_absolute_rate(normalized, max_dead_signal=max_dead_norm_signal)
+        dead_map = pad_with_refpix(dead_map)
 
         # Save dead map for testing
         deadfile = os.path.join(os.path.split(output_file)[0], 'dead_map_{}.fits'.format(dead_search_type))
         h0 = fits.PrimaryHDU(dead_map)
         hlist = fits.HDUList([h0])
         hlist.writeto(deadfile, overwrite=True)
-
-
-
 
     else:
         dead_map = np.zeros((ydim, xdim))
@@ -217,6 +242,9 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
                                                                                 max_dead_signal=max_dead_norm_signal,
                                                                                 max_low_qe=max_low_qe_norm_signal,
                                                                                 max_adj_open=max_open_adj_norm_signal)
+        lowqe_map = pad_with_refpix(lowqe_map)
+        open_map = pad_with_refpix(open_map)
+        adjacent_to_open_map = pad_with_refpix(adjacent_to_open_map)
     else:
         lowqe_map = np.zeros((ydim, xdim))
         open_map = np.zeros((ydim, xdim))
@@ -238,6 +266,9 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     # Flag MIRI's bad columns
     if instrument == 'MIRI':
         miri_bad_col_map = miri_bad_columns(dead_map.shape)
+        print(('NOTE: MIRI bad columns are currently flagged with the '
+               'placeholder value 64. The actual flag to use for these '
+               'pixels is TBD.'))
     else:
         miri_bad_col_map = np.zeros((ydim, xdim))
 
@@ -257,7 +288,9 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
 
     # Wrap up all of the individual bad pixel maps into a dictionary
     stack_of_maps = {'DEAD': dead_map, 'LOW_QE': lowqe_map, 'OPEN': open_map,
-                     'ADJ_OPEN': adjacent_to_open_map}  # , 'REFERENCE_PIXEL': reference_pix}  # '???': bad_col_map,
+                     'ADJ_OPEN': adjacent_to_open_map, 'REFERENCE_PIXEL': reference_pix,
+                     'RESERVED_3': miri_bad_col_map}
+
 
     # Check that all flag types to be specified DO_NOT_USE are recognized
     # types.
@@ -298,6 +331,11 @@ def combine_individual_maps(bad_maps, do_not_use_flags):
     """
     # The official bit definitions for bad pixel flavors
     dq_defs = dqflags.pixel
+
+    # Temporary fix to get around pipeline bug (which will be fixed in
+    # the next release)
+    dq_defs['REFERENCE_PIXEL'] = 128
+    dq_defs['RESERVED_4'] = 2147483648
 
     # Convert each type of bad pixel input to have the proper value,
     # and add to the final map
@@ -460,8 +498,12 @@ def extract_10th_group(data):
     """
     dims = data.shape
     if len(dims) == 4:
+        if dims[1] < 10:
+            raise ValueError('Input file has fewer than 10 groups.')
         group10 = data[:, 9, :, :]
     elif len(dims) == 3:
+        if dims[0] < 10:
+            raise ValueError('Input file has fewer than 10 groups.')
         group10 = np.expand_dims(data[9, :, :], axis=0)
     return group10
 
@@ -582,13 +624,15 @@ def find_open_and_low_qe_pixels(rate_image, max_dead_signal=0.05, max_low_qe=0.5
     adj_pix_map : numpy.ndarray
         2D map showing ADJ_OPEN pixels. Good pixels have a value of 0.
     """
-    low_qe_map = np.zeros(rate_image.shape).astype(np.int)
-    open_pix_map = np.zeros(rate_image.shape).astype(np.int)
-    adj_pix_map = np.zeros(rate_image.shape).astype(np.int)
+    ydim, xdim = rate_image.shape
+
+    low_qe_map = np.zeros((ydim, xdim)).astype(np.int)
+    open_pix_map = np.zeros((ydim, xdim)).astype(np.int)
+    adj_pix_map = np.zeros((ydim, xdim)).astype(np.int)
     low_sig_y, low_sig_x = np.where((rate_image >= max_dead_signal) & (rate_image < max_low_qe))
+
     for x, y in zip(low_sig_x, low_sig_y):
-        adj_pix_x = np.array([x, x+1, x, x-1])
-        adj_pix_y = np.array([y+1, y, y-1, y])
+        adj_pix_x, adj_pix_y = get_adjacent_pixels(x, y, xdim, ydim)
         adj_pix = rate_image[adj_pix_y, adj_pix_x]
         adj_check = (adj_pix > max_adj_open)
         if all(adj_check):
@@ -598,6 +642,65 @@ def find_open_and_low_qe_pixels(rate_image, max_dead_signal=0.05, max_low_qe=0.5
         else:
             low_qe_map[y, x] = 1
     return low_qe_map, open_pix_map, adj_pix_map
+
+
+def get_adjacent_pixels(x_val, y_val, x_dim, y_dim):
+    """Return coordinates of the pixels immediately adjacent to the input
+    pixel coordinate
+
+    Parameters
+    ----------
+    x_val : int
+        x coordinate of central pixel
+
+    y_val : int
+        y coordinate of central pixel
+
+    x_dim : int
+        Size of the array in the x dimension
+
+    y_dim : int
+        Size of the array in the y dimension
+
+    Returns
+    -------
+    adj_x : numpy.ndarray
+        x coordinates of adjacent pixel coordinates
+
+    adj_y : numpy.ndarray
+        y coordinates of adjacent pixel coordinates
+    """
+    if ((x_val > 0) and (x_val < (x_dim-1))):
+        if ((y_val > 0) and (y_val < y_dim-1)):
+            adj_x = np.array([x_val, x_val+1, x_val, x_val-1])
+            adj_y = np.array([y_val+1, y_val, y_val-1, y_val])
+        elif y_val == 0:
+            adj_x = np.array([x_val, x_val+1, x_val-1])
+            adj_y = np.array([y_val+1, y_val, y_val])
+        elif y_val == (y_dim-1):
+            adj_x = np.array([x_val+1, x_val, x_val-1])
+            adj_y = np.array([y_val, y_val-1, y_val])
+    elif x_val == 0:
+        if ((y_val > 0) and (y_val < y_dim-1)):
+            adj_x = np.array([x_val, x_val+1, x_val])
+            adj_y = np.array([y_val+1, y_val, y_val-1])
+        elif y_val == 0:
+            adj_x = np.array([x_val, x_val+1])
+            adj_y = np.array([y_val+1, y_val])
+        elif y_val == (y_dim-1):
+            adj_x = np.array([x_val+1, x_val])
+            adj_y = np.array([y_val, y_val-1])
+    elif x_val == (x_dim-1):
+        if ((y_val > 0) and (y_val < y_dim-1)):
+            adj_x = np.array([x_val, x_val, x_val-1])
+            adj_y = np.array([y_val+1, y_val-1, y_val])
+        elif y_val == 0:
+            adj_x = np.array([x_val, x_val-1])
+            adj_y = np.array([y_val+1, y_val])
+        elif y_val == (y_dim-1):
+            adj_x = np.array([x_val, x_val-1])
+            adj_y = np.array([y_val-1, y_val])
+    return adj_x, adj_y
 
 
 def get_fastaxis(filename):
@@ -693,6 +796,26 @@ def miri_bad_columns(dimensions):
     shorted_map = np.zeros(dimensions).astype(np.int)
     shorted_map[:, 385:387] = 1
     return shorted_map
+
+
+def pad_with_refpix(data):
+    """Pad the given image with an outer 4 rows and columns of (zeroed out)
+    reference pixels.
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        2D image
+
+    Returns
+    -------
+    padded : numpy.ndarray
+        2D image with 4 rows and columns of reference pixels added
+    """
+    ydim, xdim = data.shape
+    padded = np.zeros((ydim+8, xdim+8))
+    padded[4:-4, 4:-4] = data
+    return padded
 
 
 def pipeline_check(reference_filename, filename):
@@ -915,6 +1038,28 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
     print('Final bad pixel mask reference file save to: {}'.format(outfile))
 
 
+def science_pixels(data):
+    """Given a full frame image, strip off the reference pixels and return
+    only the science pixels. At the moment, assume 4 rows and columns of
+    reference pixels
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        2D image
+
+    Returns
+    -------
+    data : numpy.ndarray
+        2D image with outer 4 rows and columns removed
+    """
+    dims = data.shape
+    if len(dims) == 2:
+        return data[4:-4, 4:-4]
+    elif len(dims) == 3:
+        return data[:, 4:-4, 4:-4]
+
+
 def smooth(data, box_width=15):
     """Create a smoothed version of the 2D input data
 
@@ -932,7 +1077,8 @@ def smooth(data, box_width=15):
         A smoothed version of ``data``
     """
     smoothing_kernel = Box2DKernel(box_width)
-    smoothed = convolve(data, smoothing_kernel)
+    smoothed = convolve(data, smoothing_kernel, boundary='fill', fill_value=np.nanmedian(data),
+                        nan_treatment='interpolate')
     return smoothed
 
 
