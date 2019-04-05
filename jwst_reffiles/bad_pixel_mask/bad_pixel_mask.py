@@ -180,8 +180,8 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     mean_img, stdev_img = mean_stdev_images(input_exposures, sigma=sigma_threshold)
 
     # Exclude reference pixels
-    mean_img = science_pixels(mean_img)
-    stdev_img = science_pixels(stdev_img)
+    mean_img = science_pixels(mean_img, instrument)
+    stdev_img = science_pixels(stdev_img, instrument)
 
     # Create smoothed version of mean image
     if normalization_method.lower() == 'smoothed':
@@ -199,10 +199,10 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
 
     # Save mean file for testing
     mean_file = os.path.join(os.path.split(output_file)[0], 'mean_smoothed_normalized_images.fits')
-    mean_img_wref = pad_with_refpix(mean_img)
-    dev_img_wref = pad_with_refpix(stdev_img)
-    smooth_wref = pad_with_refpix(smoothed_image)
-    norm_wref = pad_with_refpix(normalized)
+    mean_img_wref = pad_with_refpix(mean_img, instrument)
+    dev_img_wref = pad_with_refpix(stdev_img, instrument)
+    smooth_wref = pad_with_refpix(smoothed_image, instrument)
+    norm_wref = pad_with_refpix(normalized, instrument)
     h0 = fits.PrimaryHDU(mean_img_wref)
     h1 = fits.ImageHDU(dev_img_wref)
     h2 = fits.ImageHDU(smooth_wref)
@@ -218,13 +218,13 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     # Find dead pixels
     if dead_search:
         if dead_search_type == 'zero_signal':
-            dead_map = dead_pixels_zero_signal(science_pixels(input_exposures),
+            dead_map = dead_pixels_zero_signal(science_pixels(input_exposures, instrument),
                                                dead_zero_signal_fraction=dead_zero_signal_fraction)
         elif dead_search_type == 'sigma_rate':
             dead_map = dead_pixels_sigma_rate(normalized, norm_mean, norm_dev, sigma=dead_sigma_threshold)
         elif dead_search_type == 'absolute_rate':
             dead_map = dead_pixels_absolute_rate(normalized, max_dead_signal=max_dead_norm_signal)
-        dead_map = pad_with_refpix(dead_map)
+        dead_map = pad_with_refpix(dead_map, instrument)
 
         # Save dead map for testing
         deadfile = os.path.join(os.path.split(output_file)[0], 'dead_map_{}.fits'.format(dead_search_type))
@@ -242,9 +242,9 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
                                                                                 max_dead_signal=max_dead_norm_signal,
                                                                                 max_low_qe=max_low_qe_norm_signal,
                                                                                 max_adj_open=max_open_adj_norm_signal)
-        lowqe_map = pad_with_refpix(lowqe_map)
-        open_map = pad_with_refpix(open_map)
-        adjacent_to_open_map = pad_with_refpix(adjacent_to_open_map)
+        lowqe_map = pad_with_refpix(lowqe_map, instrument)
+        open_map = pad_with_refpix(open_map, instrument)
+        adjacent_to_open_map = pad_with_refpix(adjacent_to_open_map, instrument)
     else:
         lowqe_map = np.zeros((ydim, xdim))
         open_map = np.zeros((ydim, xdim))
@@ -266,14 +266,11 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     # Flag MIRI's bad columns
     if instrument == 'MIRI':
         miri_bad_col_map = miri_bad_columns(dead_map.shape)
-        print(('NOTE: MIRI bad columns are currently flagged with the '
-               'placeholder value 64. The actual flag to use for these '
-               'pixels is TBD.'))
     else:
         miri_bad_col_map = np.zeros((ydim, xdim))
 
     # Create a map showing locations of reference pixels
-    reference_pix = reference_pixel_map(dead_map.shape)
+    reference_pix = reference_pixel_map(dead_map.shape, instrument)
 
 
     # Save reference pixels map for testing
@@ -289,7 +286,7 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     # Wrap up all of the individual bad pixel maps into a dictionary
     stack_of_maps = {'DEAD': dead_map, 'LOW_QE': lowqe_map, 'OPEN': open_map,
                      'ADJ_OPEN': adjacent_to_open_map, 'REFERENCE_PIXEL': reference_pix,
-                     'RESERVED_3': miri_bad_col_map}
+                     'UNRELIABLE_SLOPE': miri_bad_col_map}
 
 
     # Check that all flag types to be specified DO_NOT_USE are recognized
@@ -798,7 +795,7 @@ def miri_bad_columns(dimensions):
     return shorted_map
 
 
-def pad_with_refpix(data):
+def pad_with_refpix(data, instrument_name):
     """Pad the given image with an outer 4 rows and columns of (zeroed out)
     reference pixels.
 
@@ -807,14 +804,21 @@ def pad_with_refpix(data):
     data : numpy.ndarray
         2D image
 
+    instrument_name : str
+        Name of the JWST instrument associated with the data
+
     Returns
     -------
     padded : numpy.ndarray
         2D image with 4 rows and columns of reference pixels added
     """
     ydim, xdim = data.shape
-    padded = np.zeros((ydim+8, xdim+8))
-    padded[4:-4, 4:-4] = data
+    if instrument_name.lower() != 'miri':
+        padded = np.zeros((ydim+8, xdim+8))
+        padded[4:-4, 4:-4] = data
+    else:
+        padded = np.zeros((ydim, xdim+8))
+        padded[:, 4:-4] = data
     return padded
 
 
@@ -899,13 +903,16 @@ def read_files(filenames, dead_search_type):
     return integrations, comparison_instrument, comparison_detector
 
 
-def reference_pixel_map(dimensions):
+def reference_pixel_map(dimensions, instrument_name):
     """Create a map that flags all reference pixels as such
 
     Parameters
     ----------
     dimensions : tup
         (y, x) dimensions, in pixels, of the map to create
+
+    instrument_name : str
+        Name of JWST instrument associated with the data
 
     Returns
     -------
@@ -915,10 +922,14 @@ def reference_pixel_map(dimensions):
     """
     yd, xd = dimensions
     ref_map = np.zeros(dimensions).astype(np.int)
-    ref_map[0:4, :] += 1
-    ref_map[4:yd-4, 0:4] += 1
-    ref_map[yd-4:yd, :] += 1
-    ref_map[4:yd-4, xd-4:xd] += 1
+
+    ref_map[:, 0:4] = 1
+    ref_map[:, xd-4:xd] = 1
+
+    if instrument_name.lower() != 'miri':
+        ref_map[0:4, :] = 1
+        ref_map[yd-4:yd, :] = 1
+
     return ref_map
 
 
@@ -1038,7 +1049,7 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
     print('Final bad pixel mask reference file save to: {}'.format(outfile))
 
 
-def science_pixels(data):
+def science_pixels(data, instrument_name):
     """Given a full frame image, strip off the reference pixels and return
     only the science pixels. At the moment, assume 4 rows and columns of
     reference pixels
@@ -1048,6 +1059,9 @@ def science_pixels(data):
     data : numpy.ndarray
         2D image
 
+    instrument_name : str
+        Name of JWST instrument associated wit the data
+
     Returns
     -------
     data : numpy.ndarray
@@ -1055,9 +1069,15 @@ def science_pixels(data):
     """
     dims = data.shape
     if len(dims) == 2:
-        return data[4:-4, 4:-4]
+        if instrument_name.lower() != 'miri':
+            return data[4:-4, 4:-4]
+        else:
+            return data[:, 4:-4]
     elif len(dims) == 3:
-        return data[:, 4:-4, 4:-4]
+        if instrument_name.lower() != 'miri':
+            return data[:, 4:-4, 4:-4]
+        else:
+            return data[:, :, 4:-4]
 
 
 def smooth(data, box_width=15):
