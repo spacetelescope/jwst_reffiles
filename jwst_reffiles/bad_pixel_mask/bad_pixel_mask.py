@@ -218,7 +218,7 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     # Find dead pixels
     if dead_search:
         if dead_search_type == 'zero_signal':
-            dead_map = dead_pixels_zero_signal(science_pixels(input_exposures),
+            dead_map = dead_pixels_zero_signal(science_pixels(input_exposures, instrument),
                                                dead_zero_signal_fraction=dead_zero_signal_fraction)
         elif dead_search_type == 'sigma_rate':
             dead_map = dead_pixels_sigma_rate(normalized, norm_mean, norm_dev, sigma=dead_sigma_threshold)
