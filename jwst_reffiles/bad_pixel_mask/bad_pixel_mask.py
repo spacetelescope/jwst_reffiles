@@ -200,7 +200,7 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     # Save mean file for testing
     mean_file = os.path.join(os.path.split(output_file)[0], 'mean_smoothed_normalized_images.fits')
     mean_img_wref = pad_with_refpix(mean_img, instrument)
-    dev_img_wref = pad_with_refpix(stdev_img, isntrument)
+    dev_img_wref = pad_with_refpix(stdev_img, instrument)
     smooth_wref = pad_with_refpix(smoothed_image, instrument)
     norm_wref = pad_with_refpix(normalized, instrument)
     h0 = fits.PrimaryHDU(mean_img_wref)
