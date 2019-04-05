@@ -483,31 +483,6 @@ def create_dummy_hdu_list(sigma_threshold, smoothing_width, dead_sigma_threshold
     return hdu_list
 
 
-def extract_10th_group(data):
-    """Keep only the 10th group from each integration
-
-    Parameters
-    ----------
-    data : numpy.ndarray
-        3D or 4D array of data
-
-    Returns
-    -------
-    data : numpy.ndarray
-        3D array (10th group only)
-    """
-    dims = data.shape
-    if len(dims) == 4:
-        if dims[1] < 10:
-            raise ValueError('Input file has fewer than 10 groups.')
-        group10 = data[:, 9, :, :]
-    elif len(dims) == 3:
-        if dims[0] < 10:
-            raise ValueError('Input file has fewer than 10 groups.')
-        group10 = np.expand_dims(data[9, :, :], axis=0)
-    return group10
-
-
 def dead_pixels_sigma_rate(rate_image, mean_rate, stdev_rate, sigma=5.):
     """Create a map of dead pixels given a normalized rate image. In this
     case pixels are flagged as dead if their normalized signal rate is
@@ -585,6 +560,32 @@ def dead_pixels_zero_signal(groups, dead_zero_signal_fraction=0.9):
     total_fraction = total_zeros / num_groups
     dead_pix_map = (total_fraction >= dead_zero_signal_fraction).astype(np.int)
     return dead_pix_map.astype(np.int)
+
+
+def extract_10th_group(hdu_list):
+    """Keep only the 10th group from each integration
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        3D or 4D array of data
+
+    Returns
+    -------
+    data : numpy.ndarray
+        3D array (10th group only)
+    """
+    filename = hdu_list[0].header['FILENAME']
+    dims = hdu_list['SCI'].data.shape
+    if len(dims) == 4:
+        if dims[1] < 10:
+            raise ValueError('Input file {} has fewer than 10 groups.'.format(filename))
+        group10 = hdu_list['SCI'].data[:, 9, :, :]
+    elif len(dims) == 3:
+        if dims[0] < 10:
+            raise ValueError('Input file {} has fewer than 10 groups.'.format(filename))
+        group10 = np.expand_dims(hdu_list['SCI'].data[9, :, :], axis=0)
+    return group10
 
 
 def find_open_and_low_qe_pixels(rate_image, max_dead_signal=0.05, max_low_qe=0.5, max_adj_open=1.05):
@@ -864,19 +865,38 @@ def read_files(filenames, dead_search_type):
     """
     for i, filename in enumerate(filenames):
         with fits.open(filename) as hdu_list:
-            exposure = hdu_list['SCI'].data
+            # Get some basic metadata
             instrument = hdu_list[0].header['INSTRUME'].upper()
             detector = hdu_list[0].header['DETECTOR'].upper()
             aperture = hdu_list[0].header['SUBARRAY'].upper()
+            try:
+                rampfit = hdu_list[0].header['S_RAMP']
+            except KeyError:
+                rampfit = 'NOT RUN'
 
-        if dead_search_type == 'zero_signal':
-            exposure = extract_10th_group(exposure)
-        else:
-            # Make 3D if it's not already
-            dims = exposure.shape
-            ndims = len(dims)
-            if ndims == 2:
-                exposure = np.expand_dims(exposure, axis=0)
+            # For the sigma-based and absolute-signal-based dead pixel
+            # searches, the data must be slope images
+            if dead_search_type != 'zero_signal':
+                if rampfit != 'COMPLETE':
+                    raise ValueError(('File {} has not had the ramp-fitting pipeline step run. '
+                                      'The inputs for the "sigma-rate" and "absolute_rate" dead '
+                                      'pixel search must be slope images.')
+                                     .format(os.path.basename(filename)))
+                else:
+                    exposure = hdu_list['SCI'].data
+                    # Make 3D if it's not already
+                    dims = exposure.shape
+                    ndims = len(dims)
+                    if ndims == 2:
+                        exposure = np.expand_dims(exposure, axis=0)
+
+            else:
+                if rampfit == 'COMPLETE':
+                    raise ValueError(('File {} has had the ramp-fitting pipeline step run. '
+                                      'The inputs for the "zero_signal" dead pixel search '
+                                      'cannot be slope images.').format(os.path.basename(filename)))
+                else:
+                    exposure = extract_10th_group(hdu_list)
 
         # Create the comparison cases and output array if we are
         # working on the first file
