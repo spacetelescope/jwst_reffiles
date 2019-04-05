@@ -180,8 +180,8 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     mean_img, stdev_img = mean_stdev_images(input_exposures, sigma=sigma_threshold)
 
     # Exclude reference pixels
-    mean_img = science_pixels(mean_img)
-    stdev_img = science_pixels(stdev_img)
+    mean_img = science_pixels(mean_img, instrument)
+    stdev_img = science_pixels(stdev_img, instrument)
 
     # Create smoothed version of mean image
     if normalization_method.lower() == 'smoothed':
@@ -1049,7 +1049,7 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
     print('Final bad pixel mask reference file save to: {}'.format(outfile))
 
 
-def science_pixels(data):
+def science_pixels(data, instrument_name):
     """Given a full frame image, strip off the reference pixels and return
     only the science pixels. At the moment, assume 4 rows and columns of
     reference pixels
@@ -1059,6 +1059,9 @@ def science_pixels(data):
     data : numpy.ndarray
         2D image
 
+    instrument_name : str
+        Name of JWST instrument associated wit the data
+
     Returns
     -------
     data : numpy.ndarray
@@ -1066,9 +1069,15 @@ def science_pixels(data):
     """
     dims = data.shape
     if len(dims) == 2:
-        return data[4:-4, 4:-4]
+        if instrument_name.lower() != 'miri':
+            return data[4:-4, 4:-4]
+        else:
+            return data[:, 4:-4]
     elif len(dims) == 3:
-        return data[:, 4:-4, 4:-4]
+        if instrument_name.lower() != 'miri':
+            return data[:, 4:-4, 4:-4]
+        else:
+            return data[:, :, 4:-4]
 
 
 def smooth(data, box_width=15):
