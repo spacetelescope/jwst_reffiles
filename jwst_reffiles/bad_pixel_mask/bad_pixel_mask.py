@@ -64,7 +64,6 @@ import os
 from astropy.convolution import convolve, Box2DKernel
 from astropy.io import fits
 from astropy.stats import sigma_clip
-from astropy.table import Table
 from jwst.datamodels import dqflags, util, MaskModel, Level1bModel
 from jwst.dq_init import DQInitStep
 
