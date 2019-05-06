@@ -225,8 +225,6 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         elif dead_search_type == 'absolute_rate':
             if max_dead_norm_signal == None:
                 max_dead_norm_signal = get_max_dead_norm_signal_default(instrument=instrument, detector=detector)
-
-            print(max_dead_norm_signal)
             dead_map = dead_pixels_absolute_rate(normalized, max_dead_signal=max_dead_norm_signal)
         dead_map = pad_with_refpix(dead_map, instrument)
 
