@@ -223,8 +223,10 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         elif dead_search_type == 'sigma_rate':
             dead_map = dead_pixels_sigma_rate(normalized, norm_mean, norm_dev, sigma=dead_sigma_threshold)
         elif dead_search_type == 'absolute_rate':
-            if max_dead_norm_signal == None:
-                max_dead_norm_signal = get_max_dead_norm_signal_default(instrument=instrument, detector=detector)
+            if max_dead_norm_signal is None:
+                max_dead_norm_signal = get_max_dead_norm_signal_default(instrument=instrument, 
+                                                                        detector=detector,
+                                                                        normalization_method=normalization_method.lower())
             dead_map = dead_pixels_absolute_rate(normalized, max_dead_signal=max_dead_norm_signal)
         dead_map = pad_with_refpix(dead_map, instrument)
 
@@ -728,7 +730,7 @@ def get_fastaxis(filename):
     return fastaxis, slowaxis
 
 
-def get_max_dead_norm_signal_default(instrument, detector):
+def get_max_dead_norm_signal_default(instrument, detector, normalization_method):
     """
     Finds the default max_dead_norm_signal value to use for the 
     absolute_rate dead pixel search type.
@@ -741,12 +743,22 @@ def get_max_dead_norm_signal_default(instrument, detector):
     detector : str
         The name of the detector
 
+    normalization_method : str
+        Specify how the mean image is normalized prior to searching for
+        bad pixels. Options are:
+        'smoothed': Mean image will be smoothed using a
+                    ``smoothing_box_width`` x ``smoothing_box_width``
+                    box kernel. The mean image is then normalized by
+                    this smoothed image.
+        'none': No normalization is done. Mean slope image is used as is
+        'mean': Mean image is normalized by its sigma-clipped mean
+
     Returns
     -------
     default_value : float
         The default max_dead_norm_signal value
     """
-    if instrument == 'NIRCAM':
+    if (instrument == 'NIRCAM') & (normalization_method == 'none'):
         detectors = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCALONG', 
                      'NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCBLONG']
         defaults = [25.0, 25.0, 30.0, 30.0, 40.0, 
