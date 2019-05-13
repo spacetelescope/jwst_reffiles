@@ -816,26 +816,6 @@ def manual_flags(filename, map_shape, no_use):
     for row in tab:
         xvals = range_format(row['x'], map_shape[1])
         yvals = range_format(row['y'], map_shape[0])
-        #if isinstance(tab['x'][0], str):
-        #    xlimits = row['x'].split(':')
-        #    if xlimits[0] == '':
-        #        xlimits[0] = 0
-        #    if xlimits[1] == '':
-        #        xlimits[1] = map_shape[1]
-        #    xlimits = [np.int(val) for val in xlimits]
-        #    xvals = np.arange(xlimits[0], xlimits[1]+1)
-        #else:
-        #    xvals = np.int(row['x'])
-        #if isinstance(tab['y'][0], str):
-        #    ylimits = row['y'].split(':')
-        #    if ylimits[0] == '':
-        #        ylimits[0] = 0
-        #    if ylimits[1] == '':
-        #        ylimits[1] = map_shape[0]
-        #    ylimits = [np.int(val) for val in ylimits]
-        #    yvals = np.arange(ylimits[0], ylimits[1]+1)
-        #else:
-        #    yvals = np.int(row['y'])
 
         bad_type = row['flag'].upper()
         try:
@@ -851,13 +831,8 @@ def manual_flags(filename, map_shape, no_use):
             bit_value += 1
 
         # Apply the flag. Be careful not to flag as DO_NOT_USE twice.
-        print('xvals', xvals)
-        print('yvals', yvals)
-        print('bit_value', bit_value)
-        print('before: ', mask[yvals[0], xvals[0]])
         mask[yvals[0]:yvals[1], xvals[0]:xvals[1]] = np.bitwise_or(mask[yvals[0]:yvals[1], xvals[0]:xvals[1]],
                                                                    bit_value)
-        print('after: ', mask[yvals[0], xvals[0]])
     return mask
 
 
