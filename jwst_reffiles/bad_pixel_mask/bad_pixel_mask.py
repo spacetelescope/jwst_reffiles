@@ -242,6 +242,10 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
 
     # Find low qe and open pixels
     if low_qe_and_open_search:
+        if max_dead_norm_signal is None:
+            max_dead_norm_signal = get_max_dead_norm_signal_default(instrument=instrument, 
+                                                                    detector=detector,
+                                                                    normalization_method=normalization_method.lower())
         lowqe_map, open_map, adjacent_to_open_map = find_open_and_low_qe_pixels(normalized,
                                                                                 max_dead_signal=max_dead_norm_signal,
                                                                                 max_low_qe=max_low_qe_norm_signal,
