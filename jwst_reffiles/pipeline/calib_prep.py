@@ -594,8 +594,8 @@ class CalibPrep:
                                   "and overwrite_existing_files set to False."
                                   .format(filename)))
 
-    @log_fail
-    @log_info
+    #@log_fail
+    #@log_info
     def prepare(self):
         '''Main function'''
 
@@ -649,7 +649,11 @@ class CalibPrep:
             # Search the self.search_dir directories for partially
             # processed files.
             if not self.use_only_given:
-                files = self.file_search(true_base, search_generator)
+                # for now I replace this with glob. BRYAN: PLEASE CHECK THIS!
+                #files = self.file_search(true_base, search_generator)
+                tmpdummydir = '%s/%s*fits'% (self.search_dir,true_base)
+                print('Looking into tmpdummydir:',tmpdummydir)
+                files = glob(tmpdummydir)
             else:
                 files = [os.path.join(self.search_dir, file)]
 
