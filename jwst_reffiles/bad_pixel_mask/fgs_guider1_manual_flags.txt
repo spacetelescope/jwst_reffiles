@@ -1,0 +1,19 @@
+# This file contains a list of pixels to be added to the bad pixel mask. This
+# list can be used as a catch-all to be sure that known bad pixels which may
+# not be found using the bad pixel search algorithms are still flagged.
+#
+# Note that entries in the x and y columns can be single numbers, or a range
+# of pixels, following python's indexing notation (e.g. 10:20, which will flag
+# pixels 10 - 19 as bad). Also note that coordinates are assumed to be in a
+# 0-indexed coordinate system.
+#
+# Flag values must be strings that match those in the jwst calibration
+# pipeline's list of bad pixel types. Values are not case sensitive.
+#
+# This is a list of bad pixels for the NIRCam A1 detector
+#
+# x       y       flag
+1023    1023      dead
+0:2047    0       dead
+0      0:2047     low_qe
+400    400        wonky
