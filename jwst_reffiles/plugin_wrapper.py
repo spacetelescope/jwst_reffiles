@@ -111,22 +111,6 @@ class mkrefclass_template:
 
         return(parser)
 
-    def determine_parameters(self):
-        """Loop over the parameters that are present in both the config file
-        and the extra_optional_arguments function above. If the parameter
-        is set in extra_optional_arguments, then use that value in the call
-        to the reference file generator. If not, use the value in the config
-        ile.
-        """
-        key_list = set(list(self.cfg.params[self.reflabel].keys()) + list(self.args.__dict__.keys()))
-        self.parameters = {}
-        for key in key_list:
-            if key in self.cfg.params[self.reflabel]:
-                self.parameters[key] = self.cfg.params[self.reflabel][key]
-            if key in self.args.__dict__:
-                if self.args.__dict__[key] is not None:
-                    self.parameters[key] = self.args.__dict__[key]
-
     def initialize(self, argument_list=None):
         """Read in and define all arguments from the command line as well
         as the config file
@@ -144,7 +128,24 @@ class mkrefclass_template:
                               verbose=self.args.verbose)
 
         # load the input images
-        self.inputimages = ascii.read(self.args.imageslist_filename, delimiter='\s')
+        self.inputimagetable = ascii.read(self.args.imageslist_filename, delimiter='\s')
+        self.inputimages = self.inputimagetable['output_name']
+
+    def determine_parameters(self):
+        """Loop over the parameters that are present in both the config file
+        and the extra_optional_arguments function above. If the parameter
+        is set in extra_optional_arguments, then use that value in the call
+        to the reference file generator. If not, use the value in the config
+        ile.
+        """
+        key_list = set(list(self.cfg.params[self.reflabel].keys()) + list(self.args.__dict__.keys()))
+        self.parameters = {}
+        for key in key_list:
+            if key in self.cfg.params[self.reflabel]:
+                self.parameters[key] = self.cfg.params[self.reflabel][key]
+            if key in self.args.__dict__:
+                if self.args.__dict__[key] is not None:
+                    self.parameters[key] = self.args.__dict__[key]
 
     def wrap_it_up(self, reffilename=None):
         #todo, add testing
@@ -157,6 +158,10 @@ class mkrefclass_template:
         #if self.cfg.params[self.reflabel]['test4ssb']:
         #    print('To be implemented: run it through ssb!!')
 
+        return(0)
+
+    def callalgorithm(self, *args, **kwargs):
+        print('PLACEHOLDER: add the call to your algorithm here!')
         return(0)
 
     def make_reference_file(self):
