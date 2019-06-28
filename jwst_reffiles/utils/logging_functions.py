@@ -105,7 +105,6 @@ def configure_logging(module, path='./', log_file_level='info', log_screen_level
         console_handler.setLevel(log_screen_level.upper())
     else:
         print_to_screen = False
-        
 
     # Create a Formatter for formatting the log messages
     logger_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -178,7 +177,7 @@ def log_info(func):
         # For right now, skip this info, it clutters the output.
         print('HELLO wrapped')
     return wrapped
-    
+
     def wrapped_old(*a, **kw):
 
         # Log environment information
