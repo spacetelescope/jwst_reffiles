@@ -1,0 +1,23 @@
+# This file contains a list of pixels to be added to the bad pixel mask. This
+# list can be used as a catch-all to be sure that known bad pixels which may
+# not be found using the bad pixel search algorithms are still flagged.
+#
+# Note that entries in the x and y columns can be single numbers, or a range
+# of pixels (e.g. 350:352). When a range is given in this way, the values are
+# assumed to be INCLUSIVE, so 350:352 means that rows 350, 351 AND 352 will be
+# flagged. This is slightly different from python's convention of stopping
+# one short of the second index in a range. The code also supports python-like
+# behavior where the starting or ending value can be omitted, and the code
+# will then extend the range to 0 or the maximum index number, respectively.
+# e.g.  2030:   will flag all rows from 2030 to the end
+#       :10     will flag all rows from 0 to 10 (inclusive)
+#        :      will flag all rows
+#
+# Note that coordinates are assumed to be in a 0-indexed coordinate system.
+#
+# Flag values must be strings that match those in the jwst calibration
+# pipeline's list of bad pixel types. Values are not case sensitive.
+#
+# This is a list of bad pixels for the NIRISS NIS detector
+#
+ x       y       flag

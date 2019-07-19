@@ -335,18 +335,18 @@ class mkrefsclass(astrotableclass):
         self.ssbcmdtable = cmdsclass('ssb', manual_log=self.loginfo)
         self.refcmdtable = cmdsclass('ref', manual_log=self.loginfo)
         self.refmastercmdtable = cmdsclass('refmaster', manual_log=self.loginfo)
-        
+
         # self.allowed_reflabels = ['example_bpm', 'bpm', 'rdnoise_nircam', 'gain_armin']
         mkref_file_list = glob.glob('{}/*/mkref_*.py'.format(os.path.dirname(__file__)))
         mkref_file_basenames = [os.path.basename(entry) for entry in mkref_file_list]
         self.allowed_reflabels = [entry.replace('mkref_', '').replace('.py', '') for entry in mkref_file_basenames]
         self.reflabel_directories = [os.path.dirname(entry) for entry in mkref_file_list]
         self.mkref_file_list = copy.deepcopy(mkref_file_list)
-       
+
         print('Allowed reflabels are {}'.format(self.allowed_reflabels))
         #print('reflabel_directories:',self.reflabel_directories)
         #print('mkref_file_list:',self.mkref_file_list)
-        
+
         self.loginfo.append(('info', 'Allowed reflabels are {}'.format(self.allowed_reflabels)))
         self.loginfo.append(('info', 'Reflabel directories are {}'.format(self.reflabel_directories)))
 
@@ -468,9 +468,9 @@ class mkrefsclass(astrotableclass):
         basedir/ssb is used"""
 
         if skip_runID_ssbdir==None: skip_runID_ssbdir = self.cfg.params['output']['skip_runID_ssbdir']
-        
+
         print('CCCC',skip_runID_ssbdir)
-        
+
         if ssbdir is not None and ssbdir != '':
             return(ssbdir)
         elif self.cfg.params['output']['ssbdir'] is not None and self.cfg.params['output']['ssbdir'] != '':
@@ -708,10 +708,18 @@ class mkrefsclass(astrotableclass):
         self.logger.info('### {} darks, {} flats'.format(len(np.where(self.imtable.t['imtype'] == 'dark')[0]),
                                                      len(np.where(self.imtable.t['imtype'] == 'flat')[0])))
         self.logger.info('### {} detectors:'.format((len(self.detectors)), ", ".join(self.detectors)))
-        self.logger.info(self.imtable.t)
+        columns = ''
+        for col in self.imtable.t.colnames:
+            columns = columns + '  {}'.format(col)
+        self.logger.info(columns)
+        for row in self.imtable.t:
+            row_str = ''
+            for col in self.imtable.t.colnames:
+                row_str = row_str + '  {}'.format(row[col])
+            self.logger.info(row_str)
 
         return(0)
-        
+
     def check_inputfiles(self):
         self.logger.info('basedir: {}'.format(self.basedir))
         self.logger.info('basename: {}'.format(self.basename))
@@ -860,27 +868,31 @@ class mkrefsclass(astrotableclass):
         findex4detector = findex[np.where(np.logical_and(self.imtable.t['DETECTOR'][findex] == detector,
                                                          np.logical_not(self.imtable.t['skip'][findex])))]
         self.logger.info('{} Flats for detector {}'.format(len(findex4detector), detector))
-        self.logger.info(self.imtable.t[findex4detector])
+        for goodrow in self.imtable.t[findex4detector]:
+            row_str = ''
+            for col in self.imtable.t.colnames:
+                row_str = row_str + '  {}'.format(goodrow[col])
+            self.logger.info(row_str)
 
         if len(findex4detector)<1:
-            
+
             Fplus = astrotableclass()
             return(Fplus,())
-        
+
         cols = ['F%dindex' % i for i in range(1,len(findex4detector)+1)]
         cols.extend(['F%dimID' % i for i in range(1,len(findex4detector)+1)])
         dtypes = ['i4' for i in range(len(cols))]
         imagelabels = ['F%d' % i for i in range(1,len(findex4detector)+1)]
-        
+
         Fplus = astrotableclass(names=cols, dtype=dtypes)
         r =  Fplus.t.add_row({})
-        
+
         for i in range(1,len(findex4detector)+1):
             Fplus.t['F%dindex' % i][r]=findex4detector[i-1]
             Fplus.t['F%dimID' % i][r]=self.imtable.t['imID'][findex4detector[i-1]]
 
         return(Fplus,imagelabels)
-        
+
     def getFFlist(self, detector, max_Delta_MJD=None):
         '''
         returns list of Flat-Flat pair indeces, where the indices refer to the self.imtable table
@@ -1191,7 +1203,7 @@ class mkrefsclass(astrotableclass):
 
         if ssblogFlag==None: ssblogFlag = self.cfg.params['output']['ssblogFlag']
         if ssberrorlogFlag==None: ssberrorlogFlag = self.cfg.params['output']['ssberrorlogFlag']
-        
+
         # indeces of the commands that need to be run
         indeces2run, = np.where(self.ssbcmdtable.t['execute_strun'])
 
@@ -1432,7 +1444,7 @@ if __name__ == '__main__':
                             params4sections=args.pp,
                             verbose=args.verbose)
 
-    
+
     # set the basedir, basename, ssbdir, outsubdir, runID, runlabel
     mkrefs.set_dirs(outrootdir=args.outrootdir, outsubdir=args.outsubdir,
                     runID=args.runID, runIDNdigits=args.runIDNdigits, newrunID=args.newrunID,
@@ -1461,10 +1473,10 @@ if __name__ == '__main__':
         else:
             raise ValueError('Unrecognized logging level: {}'.format(level))
 
-        
+
     # get the inputfile list and reflabel list. For input files, get into!
     mkrefs.organize_inputfiles(args.reflabels_and_imagelist)
-    
+
     # check if current input files are consistent with previous ionput files of same output directory!
     mkrefs.check_inputfiles()
 
@@ -1473,7 +1485,7 @@ if __name__ == '__main__':
 
     # create the ssb commands. this also initializes the refcmds table
     mkrefs.mk_ssb_cmds(force_redo_strun=args.force_redo_strun, maxNstrun=args.maxNstrun)
-    
+
     # run the ssb commands
     mkrefs.run_ssb_cmds(batchmode=args.batchmode)
 

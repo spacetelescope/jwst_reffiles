@@ -62,7 +62,7 @@ import numpy as np
 import os
 
 from astropy.convolution import convolve, Box2DKernel
-from astropy.io import fits
+from astropy.io import fits, ascii
 from astropy.stats import sigma_clip
 from jwst.datamodels import dqflags, util, MaskModel, Level1bModel
 from jwst.dq_init import DQInitStep
@@ -70,10 +70,10 @@ from jwst.dq_init import DQInitStep
 
 def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dead_search_type='sigma_rate',
                  sigma_threshold=3, normalization_method='smoothed', smoothing_box_width=15,
-                 dead_sigma_threshold=5., dead_zero_signal_fraction=0.9, max_dead_norm_signal=0.05,
-                 max_low_qe_norm_signal=0.5, max_open_adj_norm_signal=1.05, do_not_use=[], output_file=None,
-                 author='jwst_reffiles', description='A bad pix mask', pedigree='GROUND',
-                 useafter='2019-04-01 00:00:00', history='', quality_check=True):
+                 dead_sigma_threshold=5., dead_zero_signal_fraction=0.9, max_dead_norm_signal=None,
+                 max_low_qe_norm_signal=0.5, max_open_adj_norm_signal=1.05, manual_flag_file='default',
+                 do_not_use=[], output_file=None, author='jwst_reffiles', description='A bad pix mask',
+                 pedigree='GROUND', useafter='2019-04-01 00:00:00', history='', quality_check=True):
     """MAIN SCRIPT: Given a set of input files, create dead, low QE, and
     open pixel maps
 
@@ -223,6 +223,10 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         elif dead_search_type == 'sigma_rate':
             dead_map = dead_pixels_sigma_rate(normalized, norm_mean, norm_dev, sigma=dead_sigma_threshold)
         elif dead_search_type == 'absolute_rate':
+            if max_dead_norm_signal is None:
+                max_dead_norm_signal = get_max_dead_norm_signal_default(instrument=instrument, 
+                                                                        detector=detector,
+                                                                        normalization_method=normalization_method.lower())
             dead_map = dead_pixels_absolute_rate(normalized, max_dead_signal=max_dead_norm_signal)
         dead_map = pad_with_refpix(dead_map, instrument)
 
@@ -238,6 +242,10 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
 
     # Find low qe and open pixels
     if low_qe_and_open_search:
+        if max_dead_norm_signal is None:
+            max_dead_norm_signal = get_max_dead_norm_signal_default(instrument=instrument, 
+                                                                    detector=detector,
+                                                                    normalization_method=normalization_method.lower())
         lowqe_map, open_map, adjacent_to_open_map = find_open_and_low_qe_pixels(normalized,
                                                                                 max_dead_signal=max_dead_norm_signal,
                                                                                 max_low_qe=max_low_qe_norm_signal,
@@ -264,14 +272,13 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
 
 
     # Flag MIRI's bad columns
-    if instrument == 'MIRI':
-        miri_bad_col_map = miri_bad_columns(dead_map.shape)
-    else:
-        miri_bad_col_map = np.zeros((ydim, xdim))
+    #if instrument == 'MIRI':
+    #    miri_bad_col_map = miri_bad_columns(dead_map.shape)
+    #else:
+    #    miri_bad_col_map = np.zeros((ydim, xdim))
 
     # Create a map showing locations of reference pixels
     reference_pix = reference_pixel_map(dead_map.shape, instrument)
-
 
     # Save reference pixels map for testing
     reffile = os.path.join(os.path.split(output_file)[0], 'refpix_map.fits')
@@ -285,9 +292,8 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
 
     # Wrap up all of the individual bad pixel maps into a dictionary
     stack_of_maps = {'DEAD': dead_map, 'LOW_QE': lowqe_map, 'OPEN': open_map,
-                     'ADJ_OPEN': adjacent_to_open_map, 'REFERENCE_PIXEL': reference_pix,
-                     'UNRELIABLE_SLOPE': miri_bad_col_map}
-
+                     'ADJ_OPEN': adjacent_to_open_map, 'REFERENCE_PIXEL': reference_pix}
+    #'UNRELIABLE_SLOPE': miri_bad_col_map}
 
     # Check that all flag types to be specified DO_NOT_USE are recognized
     # types.
@@ -295,6 +301,17 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
 
     # Combine the individual maps into a final bad pixel map
     final_map = combine_individual_maps(stack_of_maps, do_not_use)
+
+    # If requested, create a map containing all the manually added flags
+    # and add to the final map.
+    # If 'default' is input, use the appropriate file from the repo
+    if manual_flag_file == 'default':
+        manual_flag_file = determine_manual_file(instrument, detector)
+        print('Using default manual bad pixel file: {}'.format(manual_flag_file))
+
+    if manual_flag_file != '':
+        manual_flag_map = manual_flags(manual_flag_file, dead_map.shape, do_not_use)
+        final_map = np.bitwise_or(final_map, manual_flag_map)
 
     # Save the bad pixel map in DMS format
     if output_file is None:
@@ -336,8 +353,8 @@ def combine_individual_maps(bad_maps, do_not_use_flags):
 
     # Convert each type of bad pixel input to have the proper value,
     # and add to the final map
-    do_not_use_map = np.zeros((bad_maps['DEAD'].shape))
-    use_map = np.zeros((bad_maps['DEAD'].shape))
+    do_not_use_map = np.zeros((bad_maps['DEAD'].shape)).astype(np.int)
+    use_map = np.zeros((bad_maps['DEAD'].shape)).astype(np.int)
     for pix_type in do_not_use_flags:
         if pix_type in dq_defs.keys():
             if pix_type in bad_maps.keys():
@@ -383,6 +400,28 @@ def create_dqdef():
         newrow = (bitnumber, bitvalue, bitname, '')
         definitions.append(newrow)
     return definitions
+
+
+def determine_manual_file(inst_name, detector_name):
+    """Find the default manual bad pixel file for the given instrument
+    and detector
+
+    Parameters
+    ----------
+    inst_name : str
+        Name of JWST instrument
+
+    detector_name : str
+        Name of detector
+
+    Returns
+    -------
+    filename : str
+        Full path and filename of the bad pixel file
+    """
+    basename = '{}_{}_manual_flags.txt'.format(inst_name.lower(), detector_name.lower())
+    filename = os.path.join(os.path.split(__file__)[0], basename)
+    return filename
 
 
 def flag_type_check(flags):
@@ -726,6 +765,45 @@ def get_fastaxis(filename):
     return fastaxis, slowaxis
 
 
+def get_max_dead_norm_signal_default(instrument, detector, normalization_method):
+    """
+    Finds the default max_dead_norm_signal value to use for the 
+    absolute_rate dead pixel search type.
+
+    Parameters
+    ----------
+    instrument : str
+        The name of the instrument
+    
+    detector : str
+        The name of the detector
+
+    normalization_method : str
+        Specify how the mean image is normalized prior to searching for
+        bad pixels. Options are:
+        'smoothed': Mean image will be smoothed using a
+                    ``smoothing_box_width`` x ``smoothing_box_width``
+                    box kernel. The mean image is then normalized by
+                    this smoothed image.
+        'none': No normalization is done. Mean slope image is used as is
+        'mean': Mean image is normalized by its sigma-clipped mean
+
+    Returns
+    -------
+    default_value : float
+        The default max_dead_norm_signal value
+    """
+    if (instrument == 'NIRCAM') & (normalization_method == 'none'):
+        detectors = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCALONG', 
+                     'NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCBLONG']
+        defaults = [25.0, 25.0, 30.0, 30.0, 40.0, 
+                    25.0, 25.0, 25.0, 25.0, 50.0]
+        default_value = defaults[detectors==detector]
+    else:
+        default_value = 0.05
+
+    return default_value
+
 def image_stats(image, sigma=3.):
     """Calculate the sigma-clipped mean and standard deviation across the
     given image
@@ -750,6 +828,59 @@ def image_stats(image, sigma=3.):
     mean_val = np.nanmean(clipped_image)
     stdev_val = np.nanstd(clipped_image)
     return mean_val, stdev_val
+
+
+def manual_flags(filename, map_shape, no_use):
+    """Create a bad pixel mask from an input ascii file containing pixel
+    indicies and flag types
+
+    Parameters
+    ----------
+    filename : str
+        Name of ascii file containing flags
+
+    map_shape : tup
+        Shape of the bad pixel mask to create (y, x)
+
+    no_use : list
+        List of mnemonics to flag as DO_NOT_USE
+
+    Returns
+    -------
+    mask : numpy.ndarray
+        2D array of bad pixels, with bit values equal to the standard
+        JWST values
+    """
+    # Read in bad pixel file
+    tab = ascii.read(filename)
+
+    # Create empty mask
+    mask = np.zeros(map_shape).astype(np.int)
+
+    # Pixel index columns can have string or integer data.
+    # If we have strings, convert to integer, watching for
+    # entries conveying ranges
+    for row in tab:
+        xvals = range_format(row['x'], map_shape[1])
+        yvals = range_format(row['y'], map_shape[0])
+
+        bad_type = row['flag'].upper()
+        try:
+            bit_value = dqflags.pixel[bad_type]
+        except KeyError:
+            print('Unrecognized bad pixel type: {}. Ignoring and moving on.'
+                  .format(row['flag']))
+            continue
+
+        # If the type of bad pixel is on the Do Not Use list, then
+        # add the first bit to the value to use.
+        if bad_type in no_use:
+            bit_value += 1
+
+        # Apply the flag. Be careful not to flag as DO_NOT_USE twice.
+        mask[yvals[0]:yvals[1], xvals[0]:xvals[1]] = np.bitwise_or(mask[yvals[0]:yvals[1], xvals[0]:xvals[1]],
+                                                                   bit_value)
+    return mask
 
 
 def mean_stdev_images(data, sigma=3.):
@@ -923,6 +1054,23 @@ def read_files(filenames, dead_search_type):
     return integrations, comparison_instrument, comparison_detector
 
 
+def read_manual_flag_file(filename):
+    """Read in the text file containing the list of pixels to be flagged
+    manually.
+
+    Parameters
+    ----------
+    filename : str
+        Name of ascii file to be read in
+
+    Returns
+    -------
+    bad_table : astropy.table.Table
+        Table of bad pixels
+    """
+    bad_table = ascii.read(filename)
+
+
 def reference_pixel_map(dimensions, instrument_name):
     """Create a map that flags all reference pixels as such
 
@@ -951,6 +1099,39 @@ def reference_pixel_map(dimensions, instrument_name):
         ref_map[yd-4:yd, :] = 1
 
     return ref_map
+
+
+def range_format(table_cell, total_dimension):
+    """Turn a string containing a possible shorthand list of indexes
+    into an array of the specified indexes. Support the notation that
+    if no beginning or ending index is given that the range will be to
+    the start or end of ``total_dimension``. Note that this function
+    assumes that the input strings do not follow the python convention
+    of using a maximum index value of one beyond the index you really
+    want. (e.g. it assumes that '0:3' means columns 0 through 3 inclusive
+    are what you are interested in (meaning indexing in python would
+    need to use [0:4] to get all the values.))
+
+    Parameters
+    ----------
+    table_cell : str or int
+        Value to process (e.g. '34:36' or 93)
+
+    total_dimension : int
+        The maximum index number to be returned
+    """
+    try:
+        value = np.int(table_cell)
+        vals = [value, value+1]
+    except ValueError:
+        vals = table_cell.split(':')
+        if vals[0] == '':
+            vals[0] = 0
+        if vals[1] == '':
+            vals[1] = total_dimension - 1
+        vals = [np.int(val) for val in vals]
+        vals[1] += 1
+    return vals
 
 
 def save_final_map(bad_pix_map, instrument, detector, files, author, description, pedigree, useafter,
@@ -1133,7 +1314,27 @@ if __name__ == '__main__':
     gainim.doit()
 
 
+def split_row(line, colname):
+    """Convert the indicies in a given row of the manual bad pixel ascii
+    file into integers
 
+    Parameters
+    ----------
+    line : astropy.table.row.Row
+        Row containing x, y, and flag values
 
+    colname : str
+        Column name to examine
 
-
+    Returns
+    -------
+    values : list
+        If the input is an integer, the list will simply be [value]. If
+        a range is given (e.g. 200:210), then values will be [200, 210].
+    """
+    try:
+        val = np.int(line[colname])
+        values = [val]
+    except ValueError:
+        values = [np.int(e) for e in line[colname].split(':')]
+    return values

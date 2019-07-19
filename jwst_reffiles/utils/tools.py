@@ -10,7 +10,7 @@ import re
 import sys
 import types
 import subprocess
-import pytz
+#import pytz
 
 import astropy
 from astropy.io import ascii
@@ -361,7 +361,7 @@ class yamlcfgclass:
             return(1)
         else:
             # get the new parameters
-            newparams = yaml.load(paramstring)
+            newparams = full_load(paramstring)
             # add them
             errorflag = self.addnewparams(newparams, requireParamExists=requireParamExists)
             return(errorflag)
@@ -386,7 +386,7 @@ class yamlcfgclass:
             paramstring = '%s:\n    %s: %s\n' % (section, param, val)
 
             # get the new parameters
-            newparams = yaml.load(paramstring)
+            newparams = yaml.full_load(paramstring)
 
             # check and add them
             errorflag |= self.addnewparams(newparams, requireParamExists=requireParamExists)
@@ -411,7 +411,7 @@ class yamlcfgclass:
             paramstring = '%s: %s\n' % (param, val)
 
             # get the new parameters
-            newparams = yaml.load(paramstring)
+            newparams = yaml.full_load(paramstring)
 
             # check and add them
             errorflag |= self.addnewparams(newparams, requireParamExists=requireParamExists)
@@ -432,7 +432,7 @@ class yamlcfgclass:
             print('loading extra cfg file:', filename)
 
         # get the new parameters
-        newparams = yaml.load(open(filename, 'r'))
+        newparams = yaml.full_load(open(filename, 'r'))
 
         # check and add them
         errorflag = self.addnewparams(newparams, requireParamExists=requireParamExists)
@@ -449,7 +449,7 @@ class yamlcfgclass:
         # Read the main config file
         if verbose > 0:
             print('loading main cfg file:', maincfgfile)
-        self.params = yaml.load(open(maincfgfile, 'r'))
+        self.params = yaml.full_load(open(maincfgfile, 'r'))
 
         # identify all the sections in the config file
         self.getsections()
