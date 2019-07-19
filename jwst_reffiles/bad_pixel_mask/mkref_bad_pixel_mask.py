@@ -34,43 +34,43 @@ class mkrefclass(mkrefclass_template):
         the default argument values present in the config file. To override,
         call these arguments from the command line in the call to mkrefs.py
         """
-        parser.add_argument('dead_search', help='Whether or not to search for DEAD pixels')
+        parser.add_argument('--dead_search', help='Whether or not to search for DEAD pixels')
 
-        parser.add_argument('low_qe_and_open_search', help=('Whether or not to search for LOW_QE, OPEN, '
+        parser.add_argument('--low_qe_and_open_search', help=('Whether or not to search for LOW_QE, OPEN, '
                                                             'and ADJ_OPEN pixels'))
-        parser.add_argument('dead_search_type', help=('Type of search to use when looking for dead pixels. '
+        parser.add_argument('--dead_search_type', help=('Type of search to use when looking for dead pixels. '
                                                       'Options are: sigma_rate, absolute_rate, and '
                                                       'zero_signal'))
-        parser.add_argument('sigma_threshold', help=('Number of standard deviations to use when sigma-'
+        parser.add_argument('--sigma_threshold', help=('Number of standard deviations to use when sigma-'
                                                      'clipping to calculate the mean slope image or the mean '
                                                      'across the detector'))
-        parser.add_argument('smoothing_box_width', help=('Width in pixels of the box kernel to use to '
+        parser.add_argument('--smoothing_box_width', help=('Width in pixels of the box kernel to use to '
                                                          'compute the smoothed mean image'))
-        parser.add_argument('dead_sigma_threshold', help=('Number of standard deviations below the mean at '
+        parser.add_argument('--dead_sigma_threshold', help=('Number of standard deviations below the mean at '
                                                           'which a pixel is considered dead.'))
-        parser.add_argument('min_zero_signal_fraction', help=('For the case where dead pixels are defined as '
+        parser.add_argument('--min_zero_signal_fraction', help=('For the case where dead pixels are defined as '
                                                               'having zero signal, this is the fration of '
                                                               'input integrations in which a pixel must have '
                                                               'zero signal for it to be flagged as dead.'))
-        parser.add_argument('max_dead_norm_signal', help=('Maximum normalized signal rate of a pixel that is '
+        parser.add_argument('--max_dead_norm_signal', help=('Maximum normalized signal rate of a pixel that is '
                                                           'considered dead'))
-        parser.add_argument('max_low_qe_norm_signal', help=('The maximum normalized signal a pixel can have '
+        parser.add_argument('--max_low_qe_norm_signal', help=('The maximum normalized signal a pixel can have '
                                                             'and be considered low QE.'))
-        parser.add_argument('max_open_adj_norm_signal', help=('The maximum normalized signal a pixel '
+        parser.add_argument('--max_open_adj_norm_signal', help=('The maximum normalized signal a pixel '
                                                               'adjacent to a low QE pixel can have in order '
                                                               'for the low QE pixel to be reclassified as '
                                                               'OPEN'))
-        parser.add_argument('do_not_use', help=('List of bad pixel types where the DO_NOT_USE flag should '
-                                                'also be applied (e.g. ["DEAD", "LOW_QE"])'))
-        parser.add_argument('author', help=('CRDS-required name of the reference file author, to be placed '
+        parser.add_argument('--do_not_use', help=('List of bad pixel types where the DO_NOT_USE flag should '
+                                                  'also be applied (e.g. ["DEAD", "LOW_QE"])'))
+        parser.add_argument('--author', help=('CRDS-required name of the reference file author, to be placed '
                                             'in the referece file header'))
-        parser.add_argument('description', help=('CRDS-required description of the reference file, to be '
+        parser.add_argument('--description', help=('CRDS-required description of the reference file, to be '
                                                  'placed in the reference file header'))
-        parser.add_argument('pedigree', help=('CRDS-required pedigree of the data used to create the '
+        parser.add_argument('--pedigree', help=('CRDS-required pedigree of the data used to create the '
                                               'reference file'))
-        parser.add_argument('useafter', help=('CRDS-required date of earliest data with which this reference '
+        parser.add_argument('--useafter', help=('CRDS-required date of earliest data with which this reference '
                                               'file should be used. (e.g. "2019-04-01 00:00:00"'))
-        parser.add_argument('quality_check', help=("If True, the pipeline is run using the output reference "
+        parser.add_argument('--quality_check', help=("If True, the pipeline is run using the output reference "
                                                    "file to be sure the pipeline doens't crash"))
         return(0)
 
@@ -86,7 +86,8 @@ class mkrefclass(mkrefclass_template):
         """
         # Call the wrapped module and provide the proper arguments from the
         # self.parameters dictionary.
-        bpm.find_bad_pix(self.inputimages['output_name'], dead_search=self.parameters['dead_search'],
+
+        bpm.find_bad_pix(self.inputimages, dead_search=self.parameters['dead_search'],
                          low_qe_and_open_search=self.parameters['low_qe_and_open_search'],
                          dead_search_type=self.parameters['dead_search_type'],
                          sigma_threshold=self.parameters['sigma_threshold'],

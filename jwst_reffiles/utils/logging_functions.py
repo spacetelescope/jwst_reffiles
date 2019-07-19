@@ -97,9 +97,14 @@ def configure_logging(module, path='./', log_file_level='info', log_screen_level
     logger_handler = RotatingFileHandler(log_file)
     logger_handler.setLevel(log_file_level.upper())
 
+    print_to_screen = True
     # Create the Handler for logging data to console.
-    console_handler = StreamHandler()
-    console_handler.setLevel(log_screen_level.upper())
+    if not os.path.exists(log_file):
+        # if a log file exists, we don't set screen output
+        console_handler = StreamHandler()
+        console_handler.setLevel(log_screen_level.upper())
+    else:
+        print_to_screen = False
 
     # Create a Formatter for formatting the log messages
     logger_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -107,11 +112,15 @@ def configure_logging(module, path='./', log_file_level='info', log_screen_level
 
     # Add the Formatter to the Handler
     logger_handler.setFormatter(logger_formatter)
-    console_handler.setFormatter(logger_formatter)
+
+    if print_to_screen:
+        console_handler.setFormatter(logger_formatter)
 
     # Add the Handler to the Logger
     root_logger.addHandler(logger_handler)
-    root_logger.addHandler(console_handler)
+
+    if print_to_screen:
+        root_logger.addHandler(console_handler)
 
     # Currently need to be on ST network for this to work??
     set_permissions(log_file, verbose=False)
@@ -165,6 +174,11 @@ def log_info(func):
 
     @wraps(func)
     def wrapped(*a, **kw):
+        # For right now, skip this info, it clutters the output.
+        print('HELLO wrapped')
+    return wrapped
+
+    def wrapped_old(*a, **kw):
 
         # Log environment information
         logging.info('User: ' + getpass.getuser())
