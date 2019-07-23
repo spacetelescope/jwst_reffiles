@@ -127,8 +127,12 @@ def find_bad_pix(filenames, noisy_threshold=5, max_saturated_fraction=0.5, max_j
     # want to do any sigma clipping on the inputs here, right?
     mean_slope = np.mean(slopes, axis=0)
     std_slope = np.std(slopes, axis=0)
-    avg_of_std = np.mean(std_slope)
-    std_of_std = np.std(std_slope)
+
+    # Use sigma-cliping when calculating the mean and standard deviation
+    # of the standard deviations
+    clipped_stdevs, cliplow, cliphigh = sigmaclip(std_slope, low=clipping_sigma, high=clipping_sigma)
+    avg_of_std = np.mean(clipped_stdevs)
+    std_of_std = np.std(clipped_stdevs)
 
     # Identify noisy pixels as those with noise values more than
     # noisy_threshold*sigma above the average noise level
