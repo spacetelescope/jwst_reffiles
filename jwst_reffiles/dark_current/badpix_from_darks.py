@@ -30,6 +30,7 @@ https://jwst-pipeline.readthedocs.io/en/stable/jwst/ramp_fitting/main.html?highl
 
 """
 from astropy.io import fits
+from astropy.stats import sigma_clip
 import copy
 from jwst.datamodels import dqflags
 import numpy as np
@@ -38,7 +39,7 @@ from scipy.stats import sigmaclip
 from jwst_reffiles.bad_pixel_mask.bad_pixel_mask import create_dqdef
 
 
-def find_bad_pix(filenames, clipping_sigma=5., noisy_threshold=5, max_saturated_fraction=0.5,
+def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_threshold=5, max_saturated_fraction=0.5,
                  max_jump_limit=10, jump_ratio_threshold=5, early_cutoff_fraction=0.25,
                  pedestal_sigma_threshold=5, rc_fraction_threshold=0.8, low_pedestal_fraction=0.8,
                  high_cr_fraction=0.8,
@@ -55,6 +56,11 @@ def find_bad_pix(filenames, clipping_sigma=5., noisy_threshold=5, max_saturated_
         Number of sigma to use when sigma-clipping the 2D array of
         standard deviation values. The sigma-clipped mean and standard
         deviation are used to locate noisy pixels.
+
+    max_clipping_iters : int
+        Maximum number of iterations to use when sigma clipping to find
+        the mean and standard deviation values that are used when
+        locating noisy pixels.
 
     noisy_threshold : int
         Number of sigma above the mean noise (associated with the slope)
@@ -136,7 +142,8 @@ def find_bad_pix(filenames, clipping_sigma=5., noisy_threshold=5, max_saturated_
 
     # Use sigma-cliping when calculating the mean and standard deviation
     # of the standard deviations
-    clipped_stdevs, cliplow, cliphigh = sigmaclip(std_slope, low=clipping_sigma, high=clipping_sigma)
+    clipped_stdevs, cliplow, cliphigh = sigma_clip(std_slope, sigma=clipping_sigma, maxiters=max_clipping_iters,
+                                                   masked=False, return_bounds=True)
     avg_of_std = np.mean(clipped_stdevs)
     std_of_std = np.std(clipped_stdevs)
 
