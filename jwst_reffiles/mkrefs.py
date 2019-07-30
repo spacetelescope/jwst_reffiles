@@ -68,8 +68,9 @@ class cmdsclass(astrotableclass):
 
     def filename_with_suffix(self, filename, addsuffix=None):
         if addsuffix != None:
-            if re.search('\.$',filename)==None and re.search('^\.',addsuffix)==None: filename+='.'
-            filename += addsuffix
+            if re.search('%s$' % addsuffix,filename)==None:
+                if re.search('\.$',filename)==None and re.search('^\.',addsuffix)==None: filename+='.'
+                filename += addsuffix
         return(filename)
 
     def check_if_files_exists(self, file_col='output_name', file_exists_col='file_exists', addsuffix=None):
@@ -79,6 +80,7 @@ class cmdsclass(astrotableclass):
 
         for i in range(len(self.t)):
             filename = self.filename_with_suffix(self.t[file_col][i], addsuffix=addsuffix)
+            print('############# checking %s' % filename)
             if os.path.isfile(filename):
                 file_exists[i] = True
 
@@ -279,8 +281,8 @@ class cmdsclass(astrotableclass):
             (errorflag) = executecommand(cmd, '', cmdlog=logfilename, errorlog=errlogfilename)
 
             # extra error checking
-            if not os.path.isfile(outfile):
-                self.create_log_entry('warning', 'File {} did not get created with strun command!'.format(outfile))
+            if not os.path.isfile(self.filename_with_suffix(outfile,addsuffix='fits')):
+                self.create_log_entry('warning', 'File {} did not get created with strun command!'.format(self.filename_with_suffix(outfile,addsuffix='fits')))
                 #self.logger.warning('ERROR: file {} did not get created with strun command!'.format(outfile))
                 errorflag |= 2
 
