@@ -39,7 +39,8 @@ from scipy.stats import sigmaclip
 from jwst_reffiles.bad_pixel_mask.bad_pixel_mask import create_dqdef
 
 
-def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_threshold=5, max_saturated_fraction=0.5,
+def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_threshold=5,
+                 max_saturated_fraction=0.5,
                  max_jump_limit=10, jump_ratio_threshold=5, early_cutoff_fraction=0.25,
                  pedestal_sigma_threshold=5, rc_fraction_threshold=0.8, low_pedestal_fraction=0.8,
                  high_cr_fraction=0.8,
@@ -132,8 +133,8 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     # science pixels are.
     print('Reading slope files...')
     slopes, refpix_additions = read_slope_files(filenames)
-    print('Searching for noisy pixels')
 
+    print('Searching for noisy pixels')
     # Calculate the mean and standard deviation through the stack for
     # each pixel. Assuming that we are looking for noisy pixels, we don't
     # want to do any sigma clipping on the inputs here, right?
@@ -153,25 +154,29 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
     # Read in the optional outputs from the ramp-fitting step, so that
     # we can look at the y-intercepts and the jump flags
+
     saturated = np.zeros(slopes.shape)
     rc_from_pedestal = np.zeros(slopes.shape)
     low_pedestal = np.zeros(slopes.shape)
     high_cr_rate = np.zeros(slopes.shape)
     rc_from_flags = np.zeros(slopes.shape)
+
+    total_ints = 0
     counter = 0
-    print('Working on jump step outputs.')
     for i, filename in enumerate(filenames):
+
         print('Opening {}'.format(filename))
         # Read in the ramp and get the data and dq arrays
-        ramp_file = filename.replace('_ramp_fit_0.fits', '_jump.fits')
+        ramp_file = filename.replace('_0_ramp_fit.fits', '_jump.fits')
+
         groupdq = get_jump_dq_values(ramp_file, refpix_additions)
 
-        # Generate a map of JUMP flags in the ramp
+        # Generate a map of JUMP flags in the ramp for all the integrations
         cr_map = get_cr_flags(groupdq)
 
         # Read in the fitops file associated with the exposure and get
-        # the pedestal array
-        pedestal_file = filename.replace('_ramp_fit_0.fits', '_fitopt.fits')
+        # the pedestal array (y-intercept)
+        pedestal_file = filename.replace('_0_ramp_fit.fits', '_fitopt.fits')
         pedestal = read_pedestal_data(pedestal_file, refpix_additions)
 
         # Work one integration at a time
@@ -181,15 +186,15 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
             mean_pedestal = np.mean(clipped_pedestal)
             std_pedestal = np.std(clipped_pedestal)
 
-            rc_from_pedestal[counter, :, :] = pedestal_int > (mean_pedestal + std_pedestal * pedestal_sigma_threshold)
+            rc_from_pedestal[counter, :, :] += pedestal_int > (mean_pedestal + std_pedestal * pedestal_sigma_threshold)
 
             # Pixels with abnormally low pedestal values
-            low_pedestal[counter, :, :] = pedestal_int < (mean_pedestal - std_pedestal * pedestal_sigma_threshold)
+            low_pedestal[counter, :, :] += pedestal_int < (mean_pedestal - std_pedestal * pedestal_sigma_threshold)
 
             # Find pixels that are saturated in all groups. These will have
             # a pedestal value of 0 (according to the pipeline documentation).
             # These should end up flagged as HOT and DO_NOT_USE
-            saturated[counter, :, :] = saturated_in_all_groups(pedestal_int)
+            saturated[counter, :, :] += saturated_in_all_groups(pedestal_int)
 
             # Find pixels that have an abnormally high number of jumps, as
             # well as those that have most of their jumps concentrated in the
@@ -198,13 +203,17 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
             many_jumps, rc_candidates = find_pix_with_many_jumps(cr_map[int_num, :, :, :], max_jump_limit=10,
                                                                  jump_ratio_threshold=5,
                                                                  early_cutoff_fraction=0.25)
-            high_cr_rate[counter, :, :] = copy.deepcopy(many_jumps)
-            rc_from_flags[counter, :, :] = copy.deepcopy(rc_candidates)
-            counter += 1
+#            high_cr_rate[counter, :, :] = copy.deepcopy(many_jumps)
+#            rc_from_flags[counter, :, :] = copy.deepcopy(rc_candidates)
+            high_cr_rate[counter, :, :] += many_jumps
+            rc_from_flags[counter, :, :] += rc_candidates
 
+            total_ints += 1
+        counter += 1
     # Look through the stack of saturated pixels and keep those saturated
     # more than N% of the time
-    fully_saturated = np.sum(saturated, axis=0) / len(filenames)
+
+    fully_saturated = np.sum(saturated, axis=0) / total_ints
     fully_saturated[fully_saturated < max_saturated_fraction] = 0
     fully_saturated = np.ceil(fully_saturated).astype(np.int)
     fully_saturated = apply_flags(fully_saturated, flag_values['hot'])
@@ -212,8 +221,8 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     print('\n\nFound {} fully saturated pixels.'.format(num_saturated))
 
     # How do we want to combine these to identify RC pixels?
-    rc_pedestal = np.sum(rc_from_pedestal, axis=0) / len(filenames)
-    rc_flags = np.sum(rc_from_flags, axis=0) / len(filenames)
+    rc_pedestal = np.sum(rc_from_pedestal, axis=0) / total_ints
+    rc_flags = np.sum(rc_from_flags, axis=0) / total_ints
 
     rc_from_pedestal_only = (rc_pedestal > rc_fraction_threshold).astype(np.int)
     rc_from_jumps_only = (rc_flags > rc_fraction_threshold).astype(np.int)
@@ -228,14 +237,14 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     print('Found {} RC pixels.'.format(num_rc))
 
     # Low pedestal pixels
-    low_pedestal_vals = np.sum(low_pedestal, axis=0) / len(filenames)
+    low_pedestal_vals = np.sum(low_pedestal, axis=0) / total_ints
     low_ped = low_pedestal_vals > low_pedestal_fraction
     low_ped = apply_flags(low_ped.astype(np.int), flag_values['low_pedestal'])
     num_low_ped = len(np.where(low_ped != 0)[0])
     print('Found {} low pedestal pixels.'.format(num_low_ped))
 
     # Pixels with lots of CR flags should be added to the list of noisy pixels?
-    high_cr = np.sum(high_cr_rate, axis=0) / len(filenames)
+    high_cr = np.sum(high_cr_rate, axis=0) / total_ints
     noisy_second_pass = high_cr > high_cr_fraction
     combined_noisy = np.bitwise_or(noisy, noisy_second_pass)
     combined_noisy = apply_flags(combined_noisy.astype(np.int), flag_values['high_cr'])
@@ -511,6 +520,8 @@ def get_jump_dq_values(filename, refpix):
     groupdq : numpy.ndarray
         4D array of DQ values
     """
+    print(filename)
+
     with fits.open(filename) as hdulist:
         groupdq = hdulist['GROUPDQ'].data
 
@@ -617,13 +628,14 @@ def read_slope_files(filenames):
             header = hdulist[0].header
         # Create a mask where 1 indicates a science pixel and 0 indicates
         # a reference pixel
+
         dq_img = (dq_img & dqflags.pixel['REFERENCE_PIXEL'] == 0)
 
         science = np.where(dq_img == 1)
         left_edge = np.min(science[1])
         right_edge = np.max(science[1]) + 1
         bottom_edge = np.min(science[0])
-        top_edge = np.max(science[1]) + 1
+        top_edge = np.max(science[0]) + 1
 
         left_cols = left_edge
         right_cols = dq_img.shape[1] - right_edge
@@ -642,17 +654,17 @@ def read_slope_files(filenames):
 
         if i == 0:
             slope_data = copy.deepcopy(slopes)
-            #if len(slope_shape) == 2:
+            # if len(slope_shape) == 2:
             #    scipix = np.expand_dims(dq_img, axis=0)
-            #elif len(slope_shape) == 3:
+            # elif len(slope_shape) == 3:
             #    scipix = copy.deepcopy(dq_img)
             header_to_compare = copy.deepcopy(header)
         else:
             # Check to be sure the input files are consistent
-            #check_metadata(header, header_to_compare)
+            # check_metadata(header, header_to_compare)
 
             slope_data = np.vstack([slope_data, slopes])
-            #scipix = np.vstack([scipix, np.expand_dims(dq_img, axis=0)])
+            # scipix = np.vstack([scipix, np.expand_dims(dq_img, axis=0)])
     return slope_data, (left_cols, right_cols, bottom_rows, top_rows)
 
 
@@ -670,4 +682,4 @@ def saturated_in_all_groups(pedestal_array):
         Tuple of (y, x) coordinate lists (output from np.where)
     """
     full_saturation = pedestal_array == 0
-    return full_saturation
+    return full_saturation.astype(int)
