@@ -460,7 +460,7 @@ class CalibPrep:
         # Suffix automatically added by the pipeline
         pipeline_suffix = ''
         if 'rate' not in skip:
-            pipeline_suffix = '_rate'
+            pipeline_suffix = '_0_ramp_fit'
 
         # Remove the entries in skip that are after the last
         # required pipeline step
@@ -488,7 +488,12 @@ class CalibPrep:
 
         # Create the output filename by adding the name of the latest
         # pipeline step to be run
-        ofile = true_base + '_' + suffix + pipeline_suffix
+        ofile = true_base + '_' + suffix #+ pipeline_suffix
+
+        # Suffix for ramp fitting step should be 0_ramp_fits
+        if '_rate' in ofile:
+            ofile = ofile.replace('_rate', '_0_ramp_fit')
+
         ofile = ofile + '.fits'
         output_filename = os.path.join(self.output_dir, ofile)
         return output_filename, true_base
@@ -892,17 +897,40 @@ class CalibPrep:
                     infile_base = infile_base.split('_uncal')[0]
                 outfile_base = os.path.split(outfile)[1]
                 outfile_base = outfile_base.split('.fits')[0]
-                idx = len(infile_base)
-                added_suffix = outfile_base[idx+1:]
+
+                # idx = len(infile_base)
+                # added_suffix = outfile_base[idx+1:]
+
+                # Special case for ramp_fitting step. The pipeline doesn't
+                # seem to check for _0_ramp_fit in the provided filename, and
+                # will tack on a second copy of it if it is present, so
+                # remove that sub-string if it is at the end of outfile_base.
+                # Also, if the pipeline recognizes the previous suffix piece
+                # then it will strip that off the filename before adding
+                # 0_ramp_fit to the output. So here we add a second copy of
+                # a recognized suffix, so that the pipeline will strip that
+                # away and leave a single copy before adding '0_ramp_fit',
+                # which is what we want. This does not happen when stopping
+                # at an earlier step in the pipeline. In that case, the pipeline
+                # does not strip off any suffix pieces.
+                if outfile_base[-11:] == '_0_ramp_fit':
+                    outfile_base = outfile_base.replace('_0_ramp_fit', '')
+                    final_suffix = outfile_base.split('_')[-1]
+                    outfile_base = outfile_base + '_{}'.format(final_suffix)
 
                 # Add step-specific options for saving
                 finstep = steps.split(',')[-1]
                 final_step = step_names[finstep]
-                out_text += (' --steps.{}.suffix={} --steps.{}.output_dir={} --steps.{}.save_results=True'
-                             .format(final_step, added_suffix, final_step, self.output_dir, final_step))
+                #out_text += (' --steps.{}.suffix={} --steps.{}.output_dir={} --steps.{}.save_results=True'
+                #             .format(final_step, added_suffix, final_step, self.output_dir, final_step))
+                out_text += (' --steps.{}.output_file={} --steps.{}.save_results=True'
+                             .format(final_step, outfile_base, final_step))
+
+                # Output directory
+                out_dir = ' --output_dir={}'.format(self.output_dir)
 
                 # Put the whole command together
-                cmd = with_file + skip_text + out_text  # +override_text
+                cmd = with_file + skip_text + out_text + out_dir
 
                 # Since we are getting the output from the final step directly
                 # we can turn off the output from the pipeline
