@@ -898,11 +898,16 @@ class CalibPrep:
                 # Add step-specific options for saving
                 finstep = steps.split(',')[-1]
                 final_step = step_names[finstep]
-                out_text += (' --steps.{}.suffix={} --steps.{}.output_dir={} --steps.{}.save_results=True'
-                             .format(final_step, added_suffix, final_step, self.output_dir, final_step))
+                #out_text += (' --steps.{}.suffix={} --steps.{}.output_dir={} --steps.{}.save_results=True'
+                #             .format(final_step, added_suffix, final_step, self.output_dir, final_step))
+                out_text += (' --steps.{}.output_file={} --steps.{}.save_results=True'
+                             .format(final_step, outfile_base, final_step))
+
+                # Output directory
+                out_dir = ' --output_dir={}'.format(self.output_dir)
 
                 # Put the whole command together
-                cmd = with_file + skip_text + out_text  # +override_text
+                cmd = with_file + skip_text + out_text + out_dir
 
                 # Since we are getting the output from the final step directly
                 # we can turn off the output from the pipeline
