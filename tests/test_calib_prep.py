@@ -183,9 +183,9 @@ def strun_command_test(cp_object):
 
 
     print('')
-    print(constructed_commands[2])
+    print(constructed_commands[0])
     print('')
-    print(truth3)
+    print(truth1)
     print('')
 
 
