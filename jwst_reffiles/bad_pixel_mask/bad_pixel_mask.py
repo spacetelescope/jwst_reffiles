@@ -40,8 +40,7 @@ Notes
         4. Calculate sigma-clipped mean and stdev in normalized image
         5. Find bad pix:
             NIRCam, NIRISS: DEAD+DO_NOT_USE if signal < (mean-N*stdev)
-            MIRI: DEAD+DO_NOT_USE if slope = 0 in >90% of the input images
-            NIRSPec: DEAD+DO_NOT_USE if signal < 0.05
+            NIRSPec, MIRI: DEAD+DO_NOT_USE if signal < 0.05
                      LOW_QE if 0.05 < signal < 0.5 and signal in 4 adjacent pixels
                      are below ADJ_OPEN threshold (1.05)
 
@@ -64,13 +63,16 @@ import os
 from astropy.convolution import convolve, Box2DKernel
 from astropy.io import fits, ascii
 from astropy.stats import sigma_clip
+from scipy.ndimage import median_filter
 from jwst.datamodels import dqflags, util, MaskModel, Level1bModel
 from jwst.dq_init import DQInitStep
 
 
 def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dead_search_type='sigma_rate',
                  sigma_threshold=3, normalization_method='smoothed', smoothing_box_width=15,
-                 dead_sigma_threshold=5., dead_zero_signal_fraction=0.9, max_dead_norm_signal=None,
+                 smoothing_type='Box2D',
+                 dead_sigma_threshold=5.,  max_dead_norm_signal=None,
+                 dead_flux_check=None, flux_check=45000,
                  max_low_qe_norm_signal=0.5, max_open_adj_norm_signal=1.05, manual_flag_file='default',
                  do_not_use=[], output_file=None, author='jwst_reffiles', description='A bad pix mask',
                  pedigree='GROUND', useafter='2019-04-01 00:00:00', history='', quality_check=True):
@@ -97,11 +99,6 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         ``absolute_rate``: Using a normalized signal rate image, dead pixels
                            are defined as those with a rate less than
                            ``max_dead_norm_signal``.
-        ``zero_signal``: Using a stack of integrations, one group is extracted
-                         from each, and a pixel is flagged as dead if it's
-                         signal is zero in at least
-                         (``dead_zero_signal_fraction`` * 100) percent of the
-                         extracted groups.
 
     sigma_threshold : float
         Number of standard deviations to use when sigma-clipping to
@@ -116,24 +113,38 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
                     this smoothed image.
         'none': No normalization is done. Mean slope image is used as is
         'mean': Mean image is normalized by its sigma-clipped mean
+        'fit2d': Mean image will be normalized by a fit of 2-D surface to
+                 mean image. The degree of the fit is controlled by the
+                 ``fit_degree`` parameters
 
     smoothing_box_width : float
         Width in pixels of the box kernel to use to compute the smoothed
         mean image
 
+    smoothing_typ : string
+        Type of smoothing to do ``Box2D `` or ``median`` filtering
+
+    smoothing_sigma : float
+        Number of standard deviations to use when smoothing in a box defined
+        by smoothing_box_width.
+
     dead_sigma_threshold : float
         Number of standard deviations below the mean at which a pixel is
         considered dead.
 
-    dead_zero_signal_fraction : float
-        For the case where dead pixels are defined as having zero signal,
-        this is the fration of input integrations in which a pixel must
-        have zero signal for it to be flagged as dead. (i.e. 0.9 means
-        a pixel must have no signal in 90% of the input integrations for
-        it to be flagged as dead.)
-
     max_dead_norm_signal : float
         Maximum normalized signal rate of a pixel that is considered dead
+
+    dead_flux_check : list
+        List of ramp (uncalibrated) files to use to check the flux of average
+        of last 4 groups. If None then the uncalibration files are not read in
+        and not flux_check is done.
+
+    flux_check: float
+        Tolerance on average signal in last 4 groups. If dead_flux_check is
+        a list of uncalibrated files, then the average of the last four groups
+        for all the integrations is determined. If this average > flux_check
+        then this pixel is not a dead pixel.
 
     max_low_qe_norm_signal: float
         The maximum normalized signal a pixel can have and be considered
@@ -185,7 +196,7 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
 
     # Create smoothed version of mean image
     if normalization_method.lower() == 'smoothed':
-        smoothed_image = smooth(mean_img, box_width=smoothing_box_width)
+        smoothed_image = smooth(mean_img, box_width=smoothing_box_width, type=smoothing_type)
     elif normalization_method.lower() == 'mean':
         img_mean, img_dev = image_stats(mean_img, sigma=3.)
         smoothed_image = np.zeros(mean_img.shape) + img_mean
@@ -210,24 +221,28 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     hdulist = fits.HDUList([h0, h1, h2, h3])
     hdulist.writeto(mean_file, overwrite=True)
 
-
-
     # Sigma-clipped mean and stdev
     norm_mean, norm_dev = image_stats(normalized, sigma=sigma_threshold)
 
     # Find dead pixels
     if dead_search:
-        if dead_search_type == 'zero_signal':
-            dead_map = dead_pixels_zero_signal(science_pixels(input_exposures, instrument),
-                                               dead_zero_signal_fraction=dead_zero_signal_fraction)
-        elif dead_search_type == 'sigma_rate':
+        if dead_search_type == 'sigma_rate':
             dead_map = dead_pixels_sigma_rate(normalized, norm_mean, norm_dev, sigma=dead_sigma_threshold)
         elif dead_search_type == 'absolute_rate':
             if max_dead_norm_signal is None:
-                max_dead_norm_signal = get_max_dead_norm_signal_default(instrument=instrument, 
+                max_dead_norm_signal = get_max_dead_norm_signal_default(instrument=instrument,
                                                                         detector=detector,
                                                                         normalization_method=normalization_method.lower())
             dead_map = dead_pixels_absolute_rate(normalized, max_dead_signal=max_dead_norm_signal)
+
+        # If flux_check then check pixels flagged as dead piels to see if they are hot pixels that
+        # saturate quickly and produce a rate value close to zero.
+        if dead_flux_check is not None:
+            dead_search_type = 'saturation_check'
+            input_ramps, instrument, detector = read_files(dead_flux_check, dead_search_type)
+            dead_map = dead_pixels_flux_check(dead_map, science_pixels(input_ramps, instrument),
+                                              flux_check)
+
         dead_map = pad_with_refpix(dead_map, instrument)
 
         # Save dead map for testing
@@ -239,11 +254,10 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     else:
         dead_map = np.zeros((ydim, xdim))
 
-
     # Find low qe and open pixels
     if low_qe_and_open_search:
         if max_dead_norm_signal is None:
-            max_dead_norm_signal = get_max_dead_norm_signal_default(instrument=instrument, 
+            max_dead_norm_signal = get_max_dead_norm_signal_default(instrument=instrument,
                                                                     detector=detector,
                                                                     normalization_method=normalization_method.lower())
         lowqe_map, open_map, adjacent_to_open_map = find_open_and_low_qe_pixels(normalized,
@@ -258,8 +272,6 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         open_map = np.zeros((ydim, xdim))
         adjacent_to_open_map = np.zeros((ydim, xdim))
 
-
-
     # Save low QE map for testing
     qefile = os.path.join(os.path.split(output_file)[0], 'low_qe_open_adjopen_maps.fits')
     h0 = fits.PrimaryHDU(lowqe_map)
@@ -268,13 +280,10 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     hlist = fits.HDUList([h0, h1, h2])
     hlist.writeto(qefile, overwrite=True)
 
-
-
-
     # Flag MIRI's bad columns
-    #if instrument == 'MIRI':
+    # if instrument == 'MIRI':
     #    miri_bad_col_map = miri_bad_columns(dead_map.shape)
-    #else:
+    # else:
     #    miri_bad_col_map = np.zeros((ydim, xdim))
 
     # Create a map showing locations of reference pixels
@@ -286,14 +295,10 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     hlist = fits.HDUList([h0])
     hlist.writeto(reffile, overwrite=True)
 
-
-
-
-
     # Wrap up all of the individual bad pixel maps into a dictionary
     stack_of_maps = {'DEAD': dead_map, 'LOW_QE': lowqe_map, 'OPEN': open_map,
                      'ADJ_OPEN': adjacent_to_open_map, 'REFERENCE_PIXEL': reference_pix}
-    #'UNRELIABLE_SLOPE': miri_bad_col_map}
+    # 'UNRELIABLE_SLOPE': miri_bad_col_map}
 
     # Check that all flag types to be specified DO_NOT_USE are recognized
     # types.
@@ -512,7 +517,7 @@ def create_dummy_hdu_list(sigma_threshold, smoothing_width, dead_sigma_threshold
     hdu[0].header[sig_thresh_keyword] = sigma_threshold
     hdu[0].header[smooth_keyword] = smoothing_width
     hdu[0].header[dead_sigma_keyword] = dead_sigma_threshold
-    hdu[0].header[max_dead_keyword] = dead_mx_rate
+    hdu[0].header[max_dead_keyword] = dead_max_rate
     hdu[0].header[max_low_qe_keyword] = low_qe_max_rate
     hdu[0].header[max_open_adj_keyword] = open_adj_max_rate
     hdu_list = fits.HDUList([hdu])
@@ -570,6 +575,45 @@ def dead_pixels_absolute_rate(rate_image, max_dead_signal=0.05):
     return dead_pix_map.astype(np.int)
 
 
+def dead_pixels_flux_check(dead_pix_map, ave_group, flux_check):
+    """Check the dead_pix_map with the average_rate of the last 4 groups.
+    We want to remove cases where a pixel was flagged as dead because
+    it is a hot pixel that saturates on the first group causing  the
+    rate for this pixel to be close to 0.
+
+    Parameters
+    ----------
+    dead_pix_map : numpy.ndarray
+        2D map showing DEAD pixels. Good pixels have a value of 0.
+
+    ave_group : numpy.ndaarray
+        2D array of the average signal in the last 4 groups from
+        an average of all integrations and exposures.
+
+    flux_check : float
+        if pixel have a ave_group > flux_check this is not a dead pixel
+
+    Returns
+    -------
+    clean_dead_pix_map : numpy.ndarray
+        2D map showing DEAD pixels. Good pixels have a value of 0.
+        Clean up dead pixel map removing saturated pixels from dead
+        flag.
+    """
+
+    final_ave_group = np.mean(ave_group, axis=0)
+    index = np.where(dead_pix_map == 1)
+
+    ibad = len(index[0])
+
+    updated_pix_map = np.logical_and(dead_pix_map == 1, final_ave_group < flux_check).astype(np.int)
+    index = np.where(updated_pix_map == 1)
+
+    iupdated = len(index[0])
+    print('Number of pixels removed from dead pixel mask after flux check', ibad - iupdated)
+    return updated_pix_map.astype(np.int)
+
+
 def dead_pixels_zero_signal(groups, dead_zero_signal_fraction=0.9):
     """Create a map of dead pixels given a set of individual groups
     from multiple integrations. In this case pixels are only flagged
@@ -622,6 +666,51 @@ def extract_10th_group(hdu_list):
             raise ValueError('Input file {} has fewer than 10 groups.'.format(filename))
         group10 = np.expand_dims(hdu_list['SCI'].data[9, :, :], axis=0)
     return group10
+
+
+def average_last4groups(hdu_list):
+    """Find the median of all the  group from each integration
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        3D or 4D array of data
+
+    Returns
+    -------
+    data : numpy.ndarray
+        3D array (10th group only)
+    """
+    filename = hdu_list[0].header['FILENAME']
+    dims = hdu_list['SCI'].data.shape
+    dims = hdu_list['SCI'].data.shape
+    dims = hdu_list['SCI'].data.shape
+    group4 = np.zeros((4, dims[-2], dims[-1]))
+
+    # for multiple integrations
+    if len(dims) == 4:
+        # dims[0] = number of ints
+        # dims[1] = number of groups
+        if dims[1] < 4:
+            raise ValueError('Input file {} has fewer than 4 groups.'.format(filename))
+        group4[0, :, :] = np.mean(hdu_list['SCI'].data[:, 0, :, :], axis=0)
+        group4[1, :, :] = np.mean(hdu_list['SCI'].data[:, 1, :, :], axis=0)
+        group4[2, :, :] = np.mean(hdu_list['SCI'].data[:, 2, :, :], axis=0)
+        group4[3, :, :] = np.mean(hdu_list['SCI'].data[:, 3, :, :], axis=0)
+        ave_group = np.mean(group4, axis=0)
+
+    elif len(dims) == 3:
+        if dims[0] < 4:
+            raise ValueError('Input file {} has fewer than 10 groups.'.format(filename))
+        group4[0, :, :] = hdu_list['SCI'].data[0, :, :]
+        group4[1, :, :] = hdu_list['SCI'].data[1, :, :]
+        group4[2, :, :] = hdu_list['SCI'].data[2, :, :]
+        group4[3, :, :] = hdu_list['SCI'].data[3, :, :]
+        ave_group = np.mean(group4, axis=0)
+
+    # change format so it is 3 dim
+    ave_group = np.expand_dims(ave_group, axis=0)
+    return ave_group
 
 
 def find_open_and_low_qe_pixels(rate_image, max_dead_signal=0.05, max_low_qe=0.5, max_adj_open=1.05):
@@ -767,14 +856,14 @@ def get_fastaxis(filename):
 
 def get_max_dead_norm_signal_default(instrument, detector, normalization_method):
     """
-    Finds the default max_dead_norm_signal value to use for the 
+    Finds the default max_dead_norm_signal value to use for the
     absolute_rate dead pixel search type.
 
     Parameters
     ----------
     instrument : str
         The name of the instrument
-    
+
     detector : str
         The name of the detector
 
@@ -794,15 +883,16 @@ def get_max_dead_norm_signal_default(instrument, detector, normalization_method)
         The default max_dead_norm_signal value
     """
     if (instrument == 'NIRCAM') & (normalization_method == 'none'):
-        detectors = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCALONG', 
+        detectors = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCALONG',
                      'NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCBLONG']
-        defaults = [25.0, 25.0, 30.0, 30.0, 40.0, 
+        defaults = [25.0, 25.0, 30.0, 30.0, 40.0,
                     25.0, 25.0, 25.0, 25.0, 50.0]
-        default_value = defaults[detectors==detector]
+        default_value = defaults[detectors == detector]
     else:
         default_value = 0.05
 
     return default_value
+
 
 def image_stats(image, sigma=3.):
     """Calculate the sigma-clipped mean and standard deviation across the
@@ -927,6 +1017,33 @@ def miri_bad_columns(dimensions):
     return shorted_map
 
 
+def fit_surface(data, deg):
+    """Fit the rate image with a 2-D surface plot
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        2D image
+
+    deg: degree of polynomial fit
+
+    Returns
+    -------
+    surface_image : numpy.ndarray
+       2D image of polynomial fit
+
+    """
+
+    from astropy.modeling import models, fitting
+    iy, ix = data.shape
+    y, x = np.mgrid[:iy, :ix]
+    p_init = models.Polynomial2D(degree=deg)
+    fit_p = fitting.LevMarLSQFitter()
+    surface = fit_p(p_init, x, y, data)
+    surface_image = surface(x, y)
+    return surface_image
+
+
 def pad_with_refpix(data, instrument_name):
     """Pad the given image with an outer 4 rows and columns of (zeroed out)
     reference pixels.
@@ -987,11 +1104,9 @@ def read_files(filenames, dead_search_type):
         ``absolute_rate``: Using a normalized signal rate image, dead pixels
                            are defined as those with a rate less than
                            ``max_dead_norm_signal``.
-        ``zero_signal``: Using a stack of integrations, one group is extracted
-                         from each, and a pixel is flagged as dead if it's
-                         signal is zero in at least
-                         (``dead_zero_signal_fraction`` * 100) percent of the
-                         extracted groups.
+         ``saturation_check``: this option is set by the program if ``dead_flux_check``
+                               is a list of ramp files. The average of the last four
+                               groups is determined to test if pixel is close to saturation.
 
     Returns
     -------
@@ -1011,7 +1126,7 @@ def read_files(filenames, dead_search_type):
 
             # For the sigma-based and absolute-signal-based dead pixel
             # searches, the data must be slope images
-            if dead_search_type != 'zero_signal':
+            if dead_search_type == 'sigma_rate' or dead_search_type == 'absolute_rate':
                 if rampfit != 'COMPLETE':
                     raise ValueError(('File {} has not had the ramp-fitting pipeline step run. '
                                       'The inputs for the "sigma-rate" and "absolute_rate" dead '
@@ -1025,13 +1140,15 @@ def read_files(filenames, dead_search_type):
                     if ndims == 2:
                         exposure = np.expand_dims(exposure, axis=0)
 
-            else:
+            elif dead_search_type == 'saturation_check':
                 if rampfit == 'COMPLETE':
                     raise ValueError(('File {} has had the ramp-fitting pipeline step run. '
                                       'The inputs for the "zero_signal" dead pixel search '
                                       'cannot be slope images.').format(os.path.basename(filename)))
                 else:
-                    exposure = extract_10th_group(hdu_list)
+                    exposure = average_last4groups(hdu_list)
+            else:
+                raise ValueError('Unknown dead sarch type option: {}.'.format(dead_search_type))
 
         # Create the comparison cases and output array if we are
         # working on the first file
@@ -1281,7 +1398,7 @@ def science_pixels(data, instrument_name):
             return data[:, :, 4:-4]
 
 
-def smooth(data, box_width=15):
+def smooth(data, box_width=15, type='Box2D'):
     """Create a smoothed version of the 2D input data
 
     Parameters
@@ -1292,13 +1409,20 @@ def smooth(data, box_width=15):
     box_width : int
         Width of the smoothing box, in pixels
 
+    sigma: float
+        value to use for sigma clipping
+
     Returns
     -------
     smoothed : numpy.ndarray
         A smoothed version of ``data``
     """
-    smoothing_kernel = Box2DKernel(box_width)
-    smoothed = convolve(data, smoothing_kernel, boundary='fill', fill_value=np.nanmedian(data),
+
+    if type == 'Median':
+        smoothed = median_filter(data, box_width)
+    else:
+        smoothing_kernel = Box2DKernel(box_width)
+        smoothed = convolve(data, smoothing_kernel, boundary='fill', fill_value=np.nanmedian(data),
                         nan_treatment='interpolate')
     return smoothed
 
