@@ -44,22 +44,29 @@ class mkrefclass(mkrefclass_template):
         parser.add_argument('--sigma_threshold', help=('Number of standard deviations to use when sigma-'
                                                      'clipping to calculate the mean slope image or the mean '
                                                      'across the detector'))
+        parser.add_argument('--normalization_method', help=('Specify how the mean image is normalized prior '
+                                                            'to searching for bad pixels.'))
         parser.add_argument('--smoothing_box_width', help=('Width in pixels of the box kernel to use to '
                                                          'compute the smoothed mean image'))
+        parser.add_argument('--smoothing_type', help='Type of smoothing to do ``Box2D `` or ``median`` filtering')
         parser.add_argument('--dead_sigma_threshold', help=('Number of standard deviations below the mean at '
                                                           'which a pixel is considered dead.'))
-        parser.add_argument('--min_zero_signal_fraction', help=('For the case where dead pixels are defined as '
-                                                              'having zero signal, this is the fration of '
-                                                              'input integrations in which a pixel must have '
-                                                              'zero signal for it to be flagged as dead.'))
         parser.add_argument('--max_dead_norm_signal', help=('Maximum normalized signal rate of a pixel that is '
                                                           'considered dead'))
+        parser.add_argument('--dead_flux_check', help=('List of ramp (uncalibrated) files to use to check the '
+                                                       'flux of average of last 4 groups. If None then the '
+                                                       'uncalibration files are not read in and no flux_check is done.'))
+        parser.add_argument('--flux_check', help=('Tolerance on average signal in last 4 groups. If dead_flux_check is '
+                                                  'a list of uncalibrated files, then the average of the last four groups '
+                                                  'for all the integrations is determined. If this average > flux_check '
+                                                  'then this pixel is not a dead pixel.'))
         parser.add_argument('--max_low_qe_norm_signal', help=('The maximum normalized signal a pixel can have '
                                                             'and be considered low QE.'))
         parser.add_argument('--max_open_adj_norm_signal', help=('The maximum normalized signal a pixel '
                                                               'adjacent to a low QE pixel can have in order '
                                                               'for the low QE pixel to be reclassified as '
                                                               'OPEN'))
+        parser.add_argument('--manual_flag_file', help=(('Name of file containing list of pixels to be added manually')))
         parser.add_argument('--do_not_use', help=('List of bad pixel types where the DO_NOT_USE flag should '
                                                   'also be applied (e.g. ["DEAD", "LOW_QE"])'))
         parser.add_argument('--author', help=('CRDS-required name of the reference file author, to be placed '
@@ -70,6 +77,7 @@ class mkrefclass(mkrefclass_template):
                                               'reference file'))
         parser.add_argument('--useafter', help=('CRDS-required date of earliest data with which this reference '
                                               'file should be used. (e.g. "2019-04-01 00:00:00"'))
+        parser.add_argument('--history', help='Text to be placed in the HISTORY keyword of the output reference file')
         parser.add_argument('--quality_check', help=("If True, the pipeline is run using the output reference "
                                                    "file to be sure the pipeline doens't crash"))
         return(0)
@@ -87,16 +95,21 @@ class mkrefclass(mkrefclass_template):
         # Call the wrapped module and provide the proper arguments from the
         # self.parameters dictionary.
 
-        bpm.find_bad_pix(self.inputimages, dead_search=self.parameters['dead_search'],
+        bpm.find_bad_pix(self.inputimages,
+                         dead_search=self.parameters['dead_search'],
                          low_qe_and_open_search=self.parameters['low_qe_and_open_search'],
                          dead_search_type=self.parameters['dead_search_type'],
                          sigma_threshold=self.parameters['sigma_threshold'],
+                         normalization_method=self.parameters['normalization_method'],
                          smoothing_box_width=self.parameters['smoothing_box_width'],
+                         smoothing_type=self.parameters['smoothing_type'],
                          dead_sigma_threshold=self.parameters['dead_sigma_threshold'],
-                         dead_zero_signal_fraction=self.parameters['dead_zero_signal_fraction'],
                          max_dead_norm_signal=self.parameters['max_dead_norm_signal'],
+                         dead_flux_check=self.parameters['dead_flux_check'],
+                         flux_check=self.parameters['flux_check'],
                          max_low_qe_norm_signal=self.parameters['max_low_qe_norm_signal'],
                          max_open_adj_norm_signal=self.parameters['max_open_adj_norm_signal'],
+                         manual_flag_file=self.parameters['manual_flag_file'],
                          do_not_use=self.parameters['do_not_use'],
                          output_file=self.args.outputreffilename,
                          author=self.parameters['author'],

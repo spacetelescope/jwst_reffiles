@@ -154,6 +154,12 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         The maximum normalized signal a pixel adjacent to a low QE pixel can have
         in order for the low QE pixel to be reclassified as OPEN
 
+    manual_flag_file : str
+        Name of the ascii file containing a list of pixels to be added manually
+        to the output bad pixel mask file. Default is 'default', in which case
+        the file contained in the ``bad_pixel_mask`` directory of the repo will
+        be used.
+
     do_not_use : list
         List of bad pixel types where the DO_NOT_USE flag should also be
         applied (e.g. ['DEAD', 'LOW_QE'])
