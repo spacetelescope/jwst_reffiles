@@ -8,6 +8,7 @@ template file: jwst_reffiles/templates/plugin_template.py
 '''
 
 import argparse
+import copy
 import os
 import re
 import sys
@@ -17,6 +18,7 @@ from jwst_reffiles.plugin_wrapper import mkrefclass_template
 
 # import the bad pixel mask script
 from jwst_reffiles.bad_pixel_mask import bad_pixel_mask as bpm
+from jwst_reffiles.utils.definitions import PIPE_STEPS
 
 
 class mkrefclass(mkrefclass_template):
@@ -57,7 +59,7 @@ class mkrefclass(mkrefclass_template):
         parser.add_argument('--dead_flux_check_files', nargs='+', help=('List of ramp (uncalibrated) files to use to check the '
                                                                         'flux of average of last 4 groups. If None then the '
                                                                         'ramp files are not read in and no flux_check is done.'))
-        parser.add_argument('--flux_check', help=('Tolerance on average signal in last 4 groups. If dead_flux_check is '
+        parser.add_argument('--flux_check', type=int, help=('Tolerance on average signal in last 4 groups. If dead_flux_check is '
                                                   'a list of uncalibrated files, then the average of the last four groups '
                                                   'for all the integrations is determined. If this average > flux_check '
                                                   'then this pixel is not a dead pixel.'))
@@ -103,6 +105,8 @@ class mkrefclass(mkrefclass_template):
             if self.parameters['dead_flux_check_files'] is None:
                 self.parameters['dead_flux_check_files'] = 'none'
 
+            input_file_directory, input_file_name = os.path.split(self.inputimagetable['fitsfile'][0])
+
             if isinstance(self.parameters['dead_flux_check_files'], str):
                 possible_suffixes = copy.deepcopy(PIPE_STEPS)
                 possible_suffixes.extend(['0_ramp_fit', '1_ramp_fit'])
@@ -110,13 +114,15 @@ class mkrefclass(mkrefclass_template):
                 for filename in self.inputimages:
                     directory, file = os.path.split(filename)
                     for suffix in possible_suffixes:
-                        if suffix in filename:
-                            filename = filename.replace('_{}'.format(suffix), '')
-                    uncal_files.append(os.path.join(directory, filename.replace('.fits', '_uncal.fits')))
+                        if suffix in file:
+                            file = file.replace('_{}'.format(suffix), '')
+                    uncal_files.append(os.path.join(input_file_directory, file.replace('.fits', '_uncal.fits')))
             elif isinstance(self.parameters['dead_flux_check_files'], list):
                 uncal_files = self.parameters['dead_flux_check_files']
             else:
                 raise ValueError('ERROR: dead_flux_check must be either a list, None, or "none"')
+        else:
+            uncal_files = self.parameters['dead_flux_check_files']
 
         bpm.find_bad_pix(self.inputimages,
                          dead_search=self.parameters['dead_search'],

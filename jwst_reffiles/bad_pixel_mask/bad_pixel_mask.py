@@ -253,7 +253,6 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         # If flux_check then check pixels flagged as dead piels to see if they are hot pixels that
         # saturate quickly and produce a rate value close to zero.
         if run_dead_flux_check and dead_flux_check_files is not None:
-            print('XXXXXXXXRUNNING DEAD FLUX CHECKXXXXXXX')
             dead_search_type = 'saturation_check'
             input_ramps, instrument, detector = read_files(dead_flux_check_files, dead_search_type)
             dead_map = dead_pixels_flux_check(dead_map, science_pixels(input_ramps, instrument),
