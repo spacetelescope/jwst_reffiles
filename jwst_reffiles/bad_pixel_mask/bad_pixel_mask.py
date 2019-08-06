@@ -181,6 +181,12 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         If True, the pipeline is run using the output reference file to be
         sure the pipeline doens't crash
     """
+    # Inputs listed as None in the config file are read in as strings.
+    # Change these to NoneType objects.
+    max_dead_norm_signal = none_check(max_dead_norm_signal)
+    dead_flux_check = none_check(dead_flux_check)
+    output_file = none_check(output_file)
+
     crds_input_checks(author, description, pedigree, useafter)
 
     # Read in input files
@@ -1017,6 +1023,28 @@ def miri_bad_columns(dimensions):
     return shorted_map
 
 
+def none_check(value):
+    """If value is a string containing 'none', then change it to a
+    NoneType object
+
+    Parameters
+    ----------
+    value : str or NoneType
+
+    Returns
+    -------
+    new_value : NoneType
+    """
+    if isinstance(value, str):
+        if 'none' in value.lower():
+            new_value = None
+        else:
+            new_value = value
+    else:
+        new_value = value
+    return new_value
+
+
 def fit_surface(data, deg):
     """Fit the rate image with a 2-D surface plot
 
@@ -1360,7 +1388,7 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
             else:
                 model.history.append(util.create_history_entry(file[val:]))
 
-    if history_text is not None:
+    if history_text != '':
         model.history.append(util.create_history_entry(history_text))
 
     model.save(outfile, overwrite=True)
