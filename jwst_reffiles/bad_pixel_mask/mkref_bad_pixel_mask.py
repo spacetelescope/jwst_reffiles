@@ -53,9 +53,10 @@ class mkrefclass(mkrefclass_template):
                                                           'which a pixel is considered dead.'))
         parser.add_argument('--max_dead_norm_signal', help=('Maximum normalized signal rate of a pixel that is '
                                                           'considered dead'))
-        parser.add_argument('--dead_flux_check', help=('List of ramp (uncalibrated) files to use to check the '
-                                                       'flux of average of last 4 groups. If None then the '
-                                                       'uncalibration files are not read in and no flux_check is done.'))
+        parser.add_argument('--run_dead_flux_check', help=('Whether or not to check for dead pixels using an absolute flux value'))
+        parser.add_argument('--dead_flux_check_files', nargs='+', help=('List of ramp (uncalibrated) files to use to check the '
+                                                                        'flux of average of last 4 groups. If None then the '
+                                                                        'ramp files are not read in and no flux_check is done.'))
         parser.add_argument('--flux_check', help=('Tolerance on average signal in last 4 groups. If dead_flux_check is '
                                                   'a list of uncalibrated files, then the average of the last four groups '
                                                   'for all the integrations is determined. If this average > flux_check '
@@ -95,6 +96,28 @@ class mkrefclass(mkrefclass_template):
         # Call the wrapped module and provide the proper arguments from the
         # self.parameters dictionary.
 
+        # A set of uncal files is needed in the case that ``run_dead_flux_check``
+        # is True. If dead_flux_check_files is None or 'none' then a list of uncal
+        # files is generated from the input list of rate files.
+        if self.parameters['run_dead_flux_check']:
+            if self.parameters['dead_flux_check_files'] is None:
+                self.parameters['dead_flux_check_files'] = 'none'
+
+            if isinstance(self.parameters['dead_flux_check_files'], str):
+                possible_suffixes = copy.deepcopy(PIPE_STEPS)
+                possible_suffixes.extend(['0_ramp_fit', '1_ramp_fit'])
+                uncal_files = []
+                for filename in self.inputimages:
+                    directory, file = os.path.split(filename)
+                    for suffix in possible_suffixes:
+                        if suffix in filename:
+                            filename = filename.replace('_{}'.format(suffix), '')
+                    uncal_files.append(os.path.join(directory, filename.replace('.fits', '_uncal.fits')))
+            elif isinstance(self.parameters['dead_flux_check_files'], list):
+                uncal_files = self.parameters['dead_flux_check_files']
+            else:
+                raise ValueError('ERROR: dead_flux_check must be either a list, None, or "none"')
+
         bpm.find_bad_pix(self.inputimages,
                          dead_search=self.parameters['dead_search'],
                          low_qe_and_open_search=self.parameters['low_qe_and_open_search'],
@@ -105,7 +128,8 @@ class mkrefclass(mkrefclass_template):
                          smoothing_type=self.parameters['smoothing_type'],
                          dead_sigma_threshold=self.parameters['dead_sigma_threshold'],
                          max_dead_norm_signal=self.parameters['max_dead_norm_signal'],
-                         dead_flux_check=self.parameters['dead_flux_check'],
+                         run_dead_flux_check=self.parameters['run_dead_flux_check'],
+                         dead_flux_check_files=uncal_files,
                          flux_check=self.parameters['flux_check'],
                          max_low_qe_norm_signal=self.parameters['max_low_qe_norm_signal'],
                          max_open_adj_norm_signal=self.parameters['max_open_adj_norm_signal'],
