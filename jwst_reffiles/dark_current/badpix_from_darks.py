@@ -865,7 +865,9 @@ def plot_image(image, image_max, titleplot, fileout):
     """
     fig = plt.figure(figsize=(9, 9))
     ax1 = fig.add_subplot(1, 1, 1)
-    im = ax1.imshow(image, extent=[0, 1023, 0, 1023], interpolation='None',
+    ysize = image.shape[0]
+    xsize = image.shape[1]
+    im = ax1.imshow(image, extent=[0, xsize, 0, ysize], interpolation='None',
                     cmap=cm.RdYlGn, origin='lower', vmin=0, vmax=image_max)
     plt.colorbar(im)
 
@@ -899,7 +901,7 @@ def plot_histogram_stats(data_array, sigma_threshold, nbins, titleplot, fileout)
       prints the plot to disk
 
     """
-    # plot 1 image of the stat array
+    
     ave = np.mean(data_array)
     std = np.std(data_array)
     xhigh = ave + std*sigma_threshold
