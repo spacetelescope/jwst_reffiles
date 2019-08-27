@@ -72,7 +72,7 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
                  sigma_threshold=3, normalization_method='smoothed', smoothing_box_width=15,
                  smoothing_type='Box2D',
                  dead_sigma_threshold=5.,  max_dead_norm_signal=None,
-                 dead_flux_check=None, flux_check=45000,
+                 run_dead_flux_check=False, dead_flux_check_files=None, flux_check=45000,
                  max_low_qe_norm_signal=0.5, max_open_adj_norm_signal=1.05, manual_flag_file='default',
                  do_not_use=[], output_file=None, author='jwst_reffiles', description='A bad pix mask',
                  pedigree='GROUND', useafter='2019-04-01 00:00:00', history='', quality_check=True):
@@ -135,13 +135,16 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     max_dead_norm_signal : float
         Maximum normalized signal rate of a pixel that is considered dead
 
-    dead_flux_check : list
+    run_dead_flux_check : bool
+        Whether or not to check for dead pixels using an absolute flux value
+
+    dead_flux_check_files : list
         List of ramp (uncalibrated) files to use to check the flux of average
         of last 4 groups. If None then the uncalibration files are not read in
-        and not flux_check is done.
+        and no flux_check is done.
 
     flux_check: float
-        Tolerance on average signal in last 4 groups. If dead_flux_check is
+        Tolerance on average signal in last 4 groups. If dead_flux_check_files is
         a list of uncalibrated files, then the average of the last four groups
         for all the integrations is determined. If this average > flux_check
         then this pixel is not a dead pixel.
@@ -153,6 +156,12 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     max_open_adj_norm_signal : float
         The maximum normalized signal a pixel adjacent to a low QE pixel can have
         in order for the low QE pixel to be reclassified as OPEN
+
+    manual_flag_file : str
+        Name of the ascii file containing a list of pixels to be added manually
+        to the output bad pixel mask file. Default is 'default', in which case
+        the file contained in the ``bad_pixel_mask`` directory of the repo will
+        be used.
 
     do_not_use : list
         List of bad pixel types where the DO_NOT_USE flag should also be
@@ -181,6 +190,12 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         If True, the pipeline is run using the output reference file to be
         sure the pipeline doens't crash
     """
+    # Inputs listed as None in the config file are read in as strings.
+    # Change these to NoneType objects.
+    max_dead_norm_signal = none_check(max_dead_norm_signal)
+    dead_flux_check_files = none_check(dead_flux_check_files)
+    output_file = none_check(output_file)
+
     crds_input_checks(author, description, pedigree, useafter)
 
     # Read in input files
@@ -237,9 +252,9 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
 
         # If flux_check then check pixels flagged as dead piels to see if they are hot pixels that
         # saturate quickly and produce a rate value close to zero.
-        if dead_flux_check is not None:
+        if run_dead_flux_check and dead_flux_check_files is not None:
             dead_search_type = 'saturation_check'
-            input_ramps, instrument, detector = read_files(dead_flux_check, dead_search_type)
+            input_ramps, instrument, detector = read_files(dead_flux_check_files, dead_search_type)
             dead_map = dead_pixels_flux_check(dead_map, science_pixels(input_ramps, instrument),
                                               flux_check)
 
@@ -1017,6 +1032,28 @@ def miri_bad_columns(dimensions):
     return shorted_map
 
 
+def none_check(value):
+    """If value is a string containing 'none', then change it to a
+    NoneType object
+
+    Parameters
+    ----------
+    value : str or NoneType
+
+    Returns
+    -------
+    new_value : NoneType
+    """
+    if isinstance(value, str):
+        if 'none' in value.lower():
+            new_value = None
+        else:
+            new_value = value
+    else:
+        new_value = value
+    return new_value
+
+
 def fit_surface(data, deg):
     """Fit the rate image with a 2-D surface plot
 
@@ -1104,7 +1141,7 @@ def read_files(filenames, dead_search_type):
         ``absolute_rate``: Using a normalized signal rate image, dead pixels
                            are defined as those with a rate less than
                            ``max_dead_norm_signal``.
-         ``saturation_check``: this option is set by the program if ``dead_flux_check``
+         ``saturation_check``: this option is set by the program if ``dead_flux_check_files``
                                is a list of ramp files. The average of the last four
                                groups is determined to test if pixel is close to saturation.
 
@@ -1360,7 +1397,7 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
             else:
                 model.history.append(util.create_history_entry(file[val:]))
 
-    if history_text is not None:
+    if history_text != '':
         model.history.append(util.create_history_entry(history_text))
 
     model.save(outfile, overwrite=True)
