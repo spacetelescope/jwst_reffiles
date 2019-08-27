@@ -21,4 +21,4 @@
 # This is a list of bad pixels for the MIRI imaging detector
 #
  x       y       flag
-385:386  :      UNRELIABLE_SLOPE
+384:385  :      UNRELIABLE_SLOPE
