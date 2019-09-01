@@ -138,10 +138,8 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
     instrument, slopes, refpix_additions = read_slope_integrations(filenames)
 
-    print('Instrument', instrument)
-    print('Searching for noisy pixels')
     shape_slope = slopes.shape
-    print('Number of integrations used to set noisy flag', shape_slope[0])
+    print('Number of integrations used to flag bad pixels', shape_slope[0])
     # Calculate the mean and standard deviation through the stack for
     # each pixel. Assuming that we are looking for noisy pixels, we don't
     # want to do any sigma clipping on the inputs here, right?
@@ -156,18 +154,29 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
     avg_of_std = np.mean(clipped_stdevs)
     std_of_std = np.std(clipped_stdevs)
-    print('avg_of_std, std_of_std', avg_of_std, std_of_std)
+    cut_limit = avg_of_std + std_of_std*noisy_threshold
+    # print('avg_of_std, std_of_std', avg_of_std, std_of_std)
     # Identify noisy pixels as those with noise values more than
     # noisy_threshold*sigma above the average noise level
-    noisy = std_slope > (avg_of_std + std_of_std*noisy_threshold)
+    noisy = std_slope > cut_limit
 
     if plot:
         xhigh = avg_of_std + std_of_std*noisy_threshold
-        plot_image(std_slope, xhigh, 'Pixel Standard devations', 'pixel_std.png')
+        plot_image(std_slope, xhigh, "Pixel Standard devations", "pixel_std_withjumps.png")
 
-        nbins = 1000
-        plot_histogram_stats(clipped_stdevs, noisy_threshold, nbins,
-                             'Histogram of Clipped STD', 'histo_clipped_std.png')
+        nbins = 5000
+        # titleplot = 'Histogram of Clipped Pixel Slope STD  Average ' + \
+        #    '{:6.4f}'.format(avg_of_std) + '  Std ' + '{:6.4f}'.format(std_of_std)
+
+        # plot_histogram_stats(clipped_stdevs, cut_limit, nbins,
+        #                     titleplot, "histo_clipped_std_withjumps.png")
+
+        titleplot = 'Histogram of Pixel Slope STD with jumps Clipped Ave ' + \
+            '{:6.4f}'.format(avg_of_std) + '  Std ' + '{:6.4f}'.format(std_of_std)
+
+        plot_histogram_stats(std_slope, cut_limit, nbins,
+                             titleplot,
+                             "histo_std_withjumps.png", xaxis_log=True)
 
     # Read in the optional outputs from the ramp-fitting step, so that
     # we can look at the y-intercepts and the jump flags
@@ -177,6 +186,9 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     low_pedestal = np.zeros(slopes.shape)
     high_cr_rate = np.zeros(slopes.shape)
     rc_from_flags = np.zeros(slopes.shape)
+    slope_stack = []
+    islope_stack = []
+
     total_ints = 0
     counter = 0
 
@@ -190,6 +202,9 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
         # Generate a map of JUMP flags in the ramp for all the integrations
         cr_map = get_cr_flags(groupdq)
+
+        # read in the slope array
+        slope = read_slope_data(filename, refpix_additions)
 
         # Read in the fitops file associated with the exposure and get
         # the pedestal array (y-intercept)
@@ -211,6 +226,8 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
             # saturated on group 1.
             first_group = groupdq[int_num, 0, :, :]
             pedestal_int = pedestal[int_num, :, :]
+            slope_int = slope[int_num, :, :]
+
             clipped_pedestal, cliplow, cliphigh = sigmaclip(pedestal_int, low=3., high=3.)
             mean_pedestal = np.mean(clipped_pedestal)
             std_pedestal = np.std(clipped_pedestal)
@@ -223,8 +240,6 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
             # do not allow pixels saturated on group 1 to be marked as low pedestal
             pedestal_results = np.logical_and(pedestal_low, (first_group_sat == 0))
-
-#            low_pedestal[counter, :, :] += pedestal_int < (mean_pedestal - std_pedestal * pedestal_sigma_threshold)
             low_pedestal[counter, :, :] += pedestal_results
 
             # Find pixels that are saturated in all groups. These will have
@@ -242,15 +257,68 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
             # well as those that have most of their jumps concentrated in the
             # early part of the integration. The latter are possibly RC or IRC
             # pixels
-            many_jumps, rc_candidates = find_pix_with_many_jumps(cr_map[int_num, :, :, :], max_jump_limit=10,
-                                                                 jump_ratio_threshold=5,
-                                                                 early_cutoff_fraction=0.25)
+            many_jumps, rc_candidates, number_of_jumps =\
+                find_pix_with_many_jumps(cr_map[int_num, :, :, :], max_jump_limit=10,
+                                         jump_ratio_threshold=5,
+                                         early_cutoff_fraction=0.25)
 
             high_cr_rate[counter, :, :] += many_jumps
             rc_from_flags[counter, :, :] += rc_candidates
 
+            # using the number_of_jumps (a per integration value) create a clean set of
+            # pixel slopes with no cosmic rays
+            clean_slopes, iclean_slopes = slopes_not_cr(slope_int, number_of_jumps)
+            slope_stack.append(clean_slopes)
+            islope_stack.append(iclean_slopes)
+
             total_ints += 1
         counter += 1
+
+    # now find the standard deviation of pixel slopes
+    clean_std_slope, num_good = combine_clean_slopes(slope_stack, islope_stack)
+
+    # Use sigma-cliping to remove large outliers to have clean stats to flag
+    # noisy pixels.
+    # removing nans from clean_std_slope because it causes warning messages to be print
+    clean_std_slope_nonan = clean_std_slope[np.isfinite(clean_std_slope)]
+
+    clipped_stdevs, cliplow, cliphigh = sigma_clip(clean_std_slope_nonan, sigma=clipping_sigma,
+                                                   maxiters=max_clipping_iters,
+                                                   masked=False, return_bounds=True)
+
+    avg_of_std = np.nanmean(clipped_stdevs)
+    std_of_std = np.nanstd(clipped_stdevs)
+    cut_limit = avg_of_std + std_of_std*noisy_threshold
+
+    # assigning nans from clean_std_slope to very large values that will be cut
+    # because it causes warning messages to be print
+    values_nan = np.isnan(clean_std_slope)
+    clean_std_slope[values_nan] = avg_of_std + std_of_std*50
+    # noisy_new = np.logical_or((clean_std_slope > cut_limit),
+    #                          np.isnan(clean_std_slope))
+    noisy_new = clean_std_slope > cut_limit
+    num_noisy2 = len(np.where(noisy_new)[0])
+
+    if plot:
+        # plot the number of good slopes per pixel
+        max_values = np.amax(num_good)
+        plot_image(num_good, max_values, "Number of Good slopes/pixel ",
+                   "clean_pixel_number..png")
+
+        # plot the standard deviation of pixels slope after eliminating
+        # values having jumps detectect in ramp
+        xhigh = avg_of_std + std_of_std
+        plot_image(clean_std_slope, xhigh, "Clean Pixel Standard devations",
+                   "clean_pixel_std.png")
+
+        # plot the histogram before the clipping
+        nbins = 5000
+        titleplot = 'Histogram of Clean Pixel Slope STD  Average ' + \
+            '{:6.4f}'.format(avg_of_std) + '  Std ' + '{:6.4f}'.format(std_of_std)
+
+        plot_histogram_stats(clean_std_slope, cut_limit, nbins,
+                             titleplot, "histo_clean_std.png", xaxis_log=True)
+
     # Look through the stack of saturated pixels and keep those saturated
     # more than N% of the time
 
@@ -291,12 +359,12 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     # Pixels with lots of CR flags should be added to the list of noisy pixels?
     high_cr = np.sum(high_cr_rate, axis=0) / total_ints
     noisy_second_pass = high_cr > high_cr_fraction
-    combined_noisy = np.bitwise_or(noisy, noisy_second_pass)
+    combined_noisy = np.bitwise_or(noisy_new, noisy_second_pass)
     combined_noisy = apply_flags(combined_noisy.astype(np.int), flag_values['high_cr'])
-    num_noisy = len(np.where(noisy)[0])
+
     num_high_cr = len(np.where(noisy_second_pass != 0)[0])
     print('Found {} pixels with a high number of jumps.'.format(num_high_cr))
-    print('Found {} pixels with noise above the threshold.'.format(num_noisy))
+    print('Found {} pixels with noise above the threshold.'.format(num_noisy2))
     num_combined_noisy = len(np.where(combined_noisy != 0)[0])
     print('Combining noisy and high jump pixels, found {} noisy pixels.'.format(num_combined_noisy))
 
@@ -454,6 +522,7 @@ def combine_bad_pixel_types(sat_map, rc_map, low_pedestal_map, high_cr_map):
     final_map : numpy.ndarray
         2D array containing the bitwise combined bad pixel maps
     """
+
     sat_and_rc = np.bitwise_or(sat_map, rc_map)
     add_pedestal = np.bitwise_or(sat_and_rc, low_pedestal_map)
     final_map = np.bitwise_or(add_pedestal, high_cr_map)
@@ -528,7 +597,66 @@ def find_pix_with_many_jumps(jump_map, max_jump_limit=10, jump_ratio_threshold=5
     potential_rc = ((jump_ratio >= jump_ratio_threshold) & (high_jumps == 1))
 #    print('Number of potential_rc pixels based on Jumps: ', len(np.where(potential_rc == 1)[0]))
 
-    return high_jumps, potential_rc
+    return high_jumps, potential_rc, number_of_jumps
+
+
+def slopes_not_cr(slope, number_of_jumps):
+    """ Create an array of pixel slopes which are clean and have not detected cosmic rays
+
+    Parameters
+    ----------
+    slope : numpy.ndarray
+        Array of pixel slopes for integration
+
+    number_of_jumps : numpy.ndarray
+        Array holding the number of jumps detected for each pixel ramp
+
+    Returns
+    -------
+    clean_slope : numpy.ndarray
+        array of slopes for an integration containing no cosmic rays
+         slopes for a pixel ramp that have a cosmic ray detected are set to nan
+    iclean_slope: numpy.ndarray
+         an array of that holds if a good slope was detected. A value of 1 is
+         assigned to array element
+    """
+
+    good = number_of_jumps == 0
+    bad = number_of_jumps != 0
+
+    clean_slope = np.zeros(slope.shape, dtype=np.float)
+    iclean_slope = np.zeros(slope.shape, dtype=np.int)
+    clean_slope[good] = slope[good]
+    clean_slope[bad] = np.nan
+    iclean_slope[good] = 1
+    return clean_slope, iclean_slope
+
+
+def combine_clean_slopes(slope_stack, islope_stack):
+    """ Combine the stack of slopes and form the stanard deviation of the pixel slopes
+
+    Parameters
+    ----------
+    slope : list
+        A list of slopes for full array stacked for each integration
+    islope_stack: list
+        A list of of 1 or 0 for each integration. A 1 is a good slope and 0 is slope
+        with cosmic ray
+    """
+
+    slopes = np.array(slope_stack)
+    islopes = np.array(islope_stack)
+
+    std_slope = np.nanstd(slopes, axis=0)
+    num_good_array = np.sum(islopes, axis=0)
+    # picked the value of 5 at random - should this be a parameter to program ?
+    few_values = num_good_array < 5
+    nfew_values = np.where(few_values)
+    print('Number pixels with less than 5 pixel slopes to determine standard deviation',
+          len(nfew_values[0]))
+    std_slope[few_values] = np.nan
+
+    return std_slope, num_good_array
 
 
 def get_cr_flags(dq_array):
@@ -744,6 +872,49 @@ def read_slope_integrations(filenames):
     return instrument, slope_data, (left_cols, right_cols, bottom_rows, top_rows)
 
 
+def read_slope_data(filename, refpix):
+    """Read in the science extension from a group of slope images
+
+    Parameters
+    ----------
+    filenames : list
+        List of fits files containing slope values
+
+    refpix : tup
+        4-element tuple listing the number of outer rows and columns that
+        are reference pixels
+
+    Returns
+    -------
+    slope : numpy.ndarray
+        2D or 3D array of slope values (signal extrapolated to time=0)
+        Reference pixels have been stripped off.
+
+    """
+
+    left, right, bottom, top = refpix
+    slope_file = filename.replace('0_ramp_fit.fits', '1_ramp_fit.fits')
+    check = path.exists(slope_file)
+    if not check:
+        print('slope does not exist, using *0_ramp_fit.fits file for slope results')
+        slope_file = filename
+
+    with fits.open(slope_file) as hdulist:
+        slope_img = hdulist['SCI'].data
+        # dq_int = hdulist['DQ'].data  # should we check DQ array to toss out any data
+        slope_shape = slope_img.shape
+
+        # Crop the reference pixels from the array.
+        if len(slope_shape) == 2:
+            ydim, xdim = slope_img.shape
+            slope = slope_img[bottom: ydim-top, left: xdim-right]
+            slopes = np.expand_dims(slope, axis=0)
+        elif len(slope_shape) == 3:
+            nint, ydim, xdim = slope_img.shape
+            slopes = slope_img[:, bottom: ydim-top, left: xdim-right]
+    return slopes
+
+
 def read_slope_files(filenames):
     """Read in the science extension from a group of slope images
 
@@ -812,7 +983,7 @@ def read_slope_files(filenames):
             #    scipix = np.expand_dims(dq_img, axis=0)
             # elif len(slope_shape) == 3:
             #    scipix = copy.deepcopy(dq_img)
-            header_to_compare = copy.deepcopy(header)
+            # header_to_compare = copy.deepcopy(header)
         else:
             # Check to be sure the input files are consistent
             # check_metadata(header, header_to_compare)
@@ -871,16 +1042,16 @@ def plot_image(image, image_max, titleplot, fileout):
                     cmap=cm.RdYlGn, origin='lower', vmin=0, vmax=image_max)
     plt.colorbar(im)
 
-    titleplot = 'Image of standard deviation of pixel slopes'
     ax1.set_title(titleplot)
     fig.tight_layout()
     plt.savefig(fileout, bbox_inches='tight')
-    plt.show(block=False)
+    # plt.show(block=False)
     # input('Press Enter to continue')
-    plt.close('all')
+    plt.close()
 
 
-def plot_histogram_stats(data_array, sigma_threshold, nbins, titleplot, fileout):
+def plot_histogram_stats(data_array, cut_limit, nbins, titleplot, fileout,
+                         xaxis_log=False):
     """ Plot a histogram of stats and over the upper limit cut off
 
     Parameters
@@ -901,36 +1072,50 @@ def plot_histogram_stats(data_array, sigma_threshold, nbins, titleplot, fileout)
       prints the plot to disk
 
     """
-    
-    ave = np.mean(data_array)
-    std = np.std(data_array)
-    xhigh = ave + std*sigma_threshold
 
     # plot histogram
+    data = data_array.flatten()
+    data_good = np.isfinite(data)
+    data = data[data_good]
 
     fig = plt.figure(figsize=(9, 9))
     ax1 = fig.add_subplot(1, 1, 1)
-    ax1.hist(data_array, bins=nbins)
+    h = np.histogram(data, bins=nbins)
+    if not xaxis_log:
+        ax1.hist(data, bins=nbins)
+        ymax = np.amax(h[0])
+        x = np.array([cut_limit, cut_limit])
+        y = np.array([0, ymax])
+        ax1.plot(x, y)
+        ax1.set_xlabel(' Pixel Slope Standard Deviation')
+    else:
+        xh = h[1]
+        data_small = np.logical_and(data > 0, data < 1)
+        xsmall = np.amin(data[data_small])
+        logbins = np.logspace(np.log(xsmall), np.log10(xh[-1]), len(xh))
+        hlog = np.histogram(data, bins=logbins)
+
+        ymax = np.amax(hlog[0])
+        ax1.hist(data, bins=logbins)
+
+        x = np.array([cut_limit, cut_limit])
+        y = np.array([0, ymax])
+        ax1.plot(x, y)
+        # print('min and max histogram',np.amin(data),np.amax(data))
+        ax1.set_xlim(0.01, 10)
+        ax1.set_xscale('log')
+        ax1.set_xlabel(' Log Pixel Slope Standard Deviation')
     # noisy flag set based on stats from clipped array
-    h = np.histogram(data_array, bins=nbins)
-    ymax = np.amax(h[0])
-    x = np.array([xhigh, xhigh])
-    y = np.array([0, ymax])
-    ax1.plot(x, y)
 
-    ax1.set_xlabel(' Pixel Slope Standard Deviation')
     ax1.set_ylabel(' Number of Pixels')
-
-    num_above = len(np.where(data_array > xhigh)[0])
+    num_above = len(np.where(data > cut_limit)[0])
     # print('number beyond cut',num_above)
 
-    titleplot = titleplot + ' Average ' + '{:6.4f}'.format(ave) + \
-        '  Std ' + '{:6.4f}'.format(std) +  \
-        ' # beyond limit' + '{:6d}'.format(num_above)
-
+    titleplot = titleplot + ' # beyond limit' + '{:6d}'.format(num_above)
     ax1.set_title(titleplot)
     fig.tight_layout()
+
+    # plt.show(block=False)
+    # cont = input('Press Enter to continue')
     plt.savefig(fileout, bbox_inches='tight')
-    plt.show(block=False)
-    # input('Press Enter to continue')
-    plt.close('all')
+    plt.close()
