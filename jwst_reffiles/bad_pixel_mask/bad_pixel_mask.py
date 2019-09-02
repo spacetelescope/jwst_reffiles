@@ -1027,8 +1027,11 @@ def miri_bad_columns(dimensions):
     shorted_map : numpy.ndarray
         2D map showing the locations of the shorted columns (1)
     """
+
+    print('*************',dimensions)
+
     shorted_map = np.zeros(dimensions).astype(np.int)
-    shorted_map[:, 385:387] = 1
+    shorted_map[:, 384:386] = 1
     return shorted_map
 
 
