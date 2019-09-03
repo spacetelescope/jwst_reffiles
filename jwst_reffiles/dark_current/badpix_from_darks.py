@@ -32,6 +32,7 @@ https://jwst-pipeline.readthedocs.io/en/stable/jwst/ramp_fitting/main.html?highl
 from astropy.io import fits
 from astropy.stats import sigma_clip
 import copy
+import os
 from jwst.datamodels import dqflags
 import numpy as np
 from os import path
@@ -130,6 +131,14 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
         if key.lower() in do_not_use:
             flag_values[key].append('DO_NOT_USE')
 
+    # Form the outfile and outdir
+    if outfile is None:
+        outfile = 'badpixels_from_darks.fits'
+
+    outdir = os.path.dirname(outfile)
+    if not outdir:
+        outdir = '.'
+
     # Read in the slope data. Strip off reference pixels.
     # Return a 3D array of slopes and a 3D array mapping where the
     # science pixels are.
@@ -162,7 +171,8 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
     if plot:
         xhigh = avg_of_std + std_of_std*noisy_threshold
-        plot_image(std_slope, xhigh, "Pixel Standard devations", "pixel_std_withjumps.png")
+        plot_image(std_slope, xhigh, outdir,
+                   "Pixel Standard devations", "pixel_std_withjumps.png")
 
         nbins = 5000
         # titleplot = 'Histogram of Clipped Pixel Slope STD  Average ' + \
@@ -175,7 +185,7 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
             '{:6.4f}'.format(avg_of_std) + '  Std ' + '{:6.4f}'.format(std_of_std)
 
         plot_histogram_stats(std_slope, cut_limit, nbins,
-                             titleplot,
+                             outdir, titleplot,
                              "histo_std_withjumps.png", xaxis_log=True)
 
     # Read in the optional outputs from the ramp-fitting step, so that
@@ -302,13 +312,15 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     if plot:
         # plot the number of good slopes per pixel
         max_values = np.amax(num_good)
-        plot_image(num_good, max_values, "Number of Good slopes/pixel ",
-                   "clean_pixel_number..png")
+        plot_image(num_good, max_values, outdir,
+                   "Number of Good slopes/pixel ",
+                   "clean_pixel_number.png")
 
         # plot the standard deviation of pixels slope after eliminating
         # values having jumps detectect in ramp
         xhigh = avg_of_std + std_of_std
-        plot_image(clean_std_slope, xhigh, "Clean Pixel Standard devations",
+        plot_image(clean_std_slope, xhigh, outdir,
+                   "Clean Pixel Standard devations",
                    "clean_pixel_std.png")
 
         # plot the histogram before the clipping
@@ -316,7 +328,7 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
         titleplot = 'Histogram of Clean Pixel Slope STD  Average ' + \
             '{:6.4f}'.format(avg_of_std) + '  Std ' + '{:6.4f}'.format(std_of_std)
 
-        plot_histogram_stats(clean_std_slope, cut_limit, nbins,
+        plot_histogram_stats(clean_std_slope, cut_limit, nbins, outdir,
                              titleplot, "histo_clean_std.png", xaxis_log=True)
 
     # Look through the stack of saturated pixels and keep those saturated
@@ -381,8 +393,7 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     # Eventually this routine will be called as part of the dark current reference file
     # generator, and the bad pixel mask will be saved in the DQ extension of the
     # reference file
-    if outfile is None:
-        outfile = 'badpixels_from_darks.fits'
+
     h0 = fits.PrimaryHDU(fully_saturated)
     h0.header['EXTNAME'] = 'SATURATED'
     h1a = fits.ImageHDU(rc_from_pedestal_only)
@@ -1015,7 +1026,7 @@ def saturated_in_all_groups(pedestal_array, first_group_sat):
     return full_saturation.astype(int)
 
 
-def plot_image(image, image_max, titleplot, fileout):
+def plot_image(image, image_max, outdir, titleplot, fileout):
     """ Plot an Image
 
     Parameters
@@ -1044,13 +1055,15 @@ def plot_image(image, image_max, titleplot, fileout):
 
     ax1.set_title(titleplot)
     fig.tight_layout()
+    fileout = outdir + '/' + fileout
     plt.savefig(fileout, bbox_inches='tight')
     # plt.show(block=False)
     # input('Press Enter to continue')
     plt.close()
 
 
-def plot_histogram_stats(data_array, cut_limit, nbins, titleplot, fileout,
+def plot_histogram_stats(data_array, cut_limit, nbins, outdir,
+                         titleplot, fileout,
                          xaxis_log=False):
     """ Plot a histogram of stats and over the upper limit cut off
 
@@ -1117,5 +1130,6 @@ def plot_histogram_stats(data_array, cut_limit, nbins, titleplot, fileout,
 
     # plt.show(block=False)
     # cont = input('Press Enter to continue')
+    fileout = outdir + '/' + fileout
     plt.savefig(fileout, bbox_inches='tight')
     plt.close()
