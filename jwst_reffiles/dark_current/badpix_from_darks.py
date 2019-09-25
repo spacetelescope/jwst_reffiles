@@ -279,7 +279,7 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
             total_ints += 1
         counter += 1
 
-    # now find the standard deviation of pixel slopes
+    # now find the standard deviation of pixel slopes using the clean slopes
     clean_std_slope, num_good = combine_clean_slopes(slope_stack, islope_stack)
 
     # Use sigma-cliping to remove large outliers to have clean stats to flag
@@ -302,9 +302,8 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
     print('avg_of_std, std_of_std of clean slopes',avg_of_std,std_of_std)
     # flag the noise pixels using the orginal data (not cleaned up data)
-
-    noisy = clean_std_slope > cut_limit
-  #  noisy = std_slope > cut_limit
+  #  noisy = clean_std_slope > cut_limit
+    noisy = std_slope > cut_limit
     num_noisy2 = len(np.where(noisy)[0])
 
     if plot:
