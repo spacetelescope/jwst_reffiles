@@ -154,6 +154,10 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     # want to do any sigma clipping on the inputs here, right?
     mean_slope = np.mean(slopes, axis=0)
     std_slope = np.std(slopes, axis=0)
+    hdout = fits.PrimaryHDU(mean_slope)
+    hdout.writeto('average_of_slopes.fits',overwrite=True)
+    hdout = fits.PrimaryHDU(std_slope)
+    hdout.writeto('sigma_of_slopes.fits',overwrite=True)
 
     # Use sigma-cliping when calculating the mean and standard deviation
     # of the standard deviations
@@ -205,8 +209,10 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     for i, filename in enumerate(filenames):
 
         # Read in the ramp and get the data and dq arrays
-        jump_file = filename.replace('_0_ramp_fit.fits', '_jump.fits')
-
+        if '0_ramp_fit.fits' in filename:
+            jump_file = filename.replace('_0_ramp_fit.fits', '_jump.fits')
+        else:
+            jump_file = filename.replace('_ramp_fit_0.fits', '_jump.fits')
         print('Opening Jump File {}'.format(jump_file))
         groupdq = get_jump_dq_values(jump_file, refpix_additions)
 
@@ -218,7 +224,10 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
         # Read in the fitops file associated with the exposure and get
         # the pedestal array (y-intercept)
-        pedestal_file = filename.replace('_0_ramp_fit.fits', '_fitopt.fits')
+        if '_0_ramp_fit.fits' in filename:
+            pedestal_file = filename.replace('_0_ramp_fit.fits', '_fitopt.fits')
+        else:
+            pedestal_file = filename.replace('_ramp_fit_0.fits', '_fitopt.fits')
         pedestal = read_pedestal_data(pedestal_file, refpix_additions)
 
         # for MIRI the zero point of the ramp drifts with time. Adjust the
@@ -284,8 +293,15 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
             total_ints += 1
         counter += 1
 
-    # now find the standard deviation of pixel slopes
-    clean_std_slope, num_good = combine_clean_slopes(slope_stack, islope_stack)
+    # now find the mean and standard deviation of the "clean" pixel slopes
+    clean_mean_slope, clean_std_slope, num_good = combine_clean_slopes(slope_stack, islope_stack)
+    hdout = fits.PrimaryHDU(clean_mean_slope)
+    hdout.writeto('average_of_slopes_nojumps.fits',overwrite=True)
+    hdout = fits.PrimaryHDU(clean_std_slope)
+    hdout.writeto('sigma_of_slopes_nojumps.fits',overwrite=True)
+    num_good_slopes = num_good.astype(np.int16)
+    hdout = fits.PrimaryHDU(num_good_slopes)
+    hdout.writeto('number_of_slopes_nojumps.fits',overwrite=True)
 
     # Use sigma-cliping to remove large outliers to have clean stats to flag
     # noisy pixels.
@@ -295,9 +311,6 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     clipped_stdevs, cliplow, cliphigh = sigma_clip(clean_std_slope_nonan, sigma=clipping_sigma,
                                                    maxiters=max_clipping_iters,
                                                    masked=False, return_bounds=True)
-
-    avg_of_std = np.nanmean(clipped_stdevs)
-    std_of_std = np.nanstd(clipped_stdevs)
     cut_limit = avg_of_std + std_of_std*noisy_threshold
 
     # assigning nans from clean_std_slope to very large values that will be cut
@@ -658,6 +671,7 @@ def combine_clean_slopes(slope_stack, islope_stack):
     slopes = np.array(slope_stack)
     islopes = np.array(islope_stack)
 
+    mean_slope = np.nanmean(slopes,axis=0)
     std_slope = np.nanstd(slopes, axis=0)
     num_good_array = np.sum(islopes, axis=0)
     # picked the value of 5 at random - should this be a parameter to program ?
@@ -667,7 +681,7 @@ def combine_clean_slopes(slope_stack, islope_stack):
           len(nfew_values[0]))
     std_slope[few_values] = np.nan
 
-    return std_slope, num_good_array
+    return mean_slope, std_slope, num_good_array
 
 
 def get_cr_flags(dq_array):
@@ -835,7 +849,10 @@ def read_slope_integrations(filenames):
     slope_stack = []
     for i, filename in enumerate(filenames):
         # Read all of the slope data into an array
-        slope_file = filename.replace('0_ramp_fit.fits', '1_ramp_fit.fits')
+        if '_0_ramp_fit.fits' in filename:
+            slope_file = filename.replace('_0_ramp_fit.fits', '_1_ramp_fit.fits')
+        elsew:
+            slope_file = filename.replace('_ramp_fit_0.fits', '_ramp_fit_1.fits')
         check = path.exists(slope_file)
         if not check:
             print('slope does not exist, using *0_ramp_fit.fits file for slope results')
@@ -904,7 +921,10 @@ def read_slope_data(filename, refpix):
     """
 
     left, right, bottom, top = refpix
-    slope_file = filename.replace('0_ramp_fit.fits', '1_ramp_fit.fits')
+    if '_0_ramp_fit.fits' in filename:
+        slope_file = filename.replace('_0_ramp_fit.fits', '_1_ramp_fit.fits')
+    else:
+        slope_file = filename.replace('_ramp_fit_0.fits', '_ramp_fit_1.fits')
     check = path.exists(slope_file)
     if not check:
         print('slope does not exist, using *0_ramp_fit.fits file for slope results')
