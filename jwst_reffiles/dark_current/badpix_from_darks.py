@@ -851,7 +851,7 @@ def read_slope_integrations(filenames):
         # Read all of the slope data into an array
         if '_0_ramp_fit.fits' in filename:
             slope_file = filename.replace('_0_ramp_fit.fits', '_1_ramp_fit.fits')
-        elsew:
+        else:
             slope_file = filename.replace('_ramp_fit_0.fits', '_ramp_fit_1.fits')
         check = path.exists(slope_file)
         if not check:
