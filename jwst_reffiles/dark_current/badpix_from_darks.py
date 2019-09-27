@@ -40,6 +40,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import sigmaclip
 import matplotlib.cm as cm
 from jwst_reffiles.bad_pixel_mask.bad_pixel_mask import create_dqdef
+from jwst_reffiles.utils.constants import RATE_FILE_SUFFIXES
 
 
 def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_threshold=5,
@@ -145,7 +146,7 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     print('Reading slope files...')
 #    instrument,slopes, refpix_additions = read_slope_files(filenames)
 
-    instrument, slopes, refpix_additions = read_slope_integrations(filenames)
+    instrument, slopes, indexes, refpix_additions = read_slope_integrations(filenames)
 
     shape_slope = slopes.shape
     print('Number of integrations used to flag bad pixels', shape_slope[0])
@@ -209,34 +210,45 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     for i, filename in enumerate(filenames):
 
         # Read in the ramp and get the data and dq arrays
-        if '0_ramp_fit.fits' in filename:
-            jump_file = filename.replace('_0_ramp_fit.fits', '_jump.fits')
-        else:
-            jump_file = filename.replace('_ramp_fit_0.fits', '_jump.fits')
+        jump_file = None
+        for suffix in RATE_FILE_SUFFIXES:
+            if suffix in filename:
+                slope_suffix = '{}.fits'.format(suffix)
+                jump_file = filename.replace(slope_suffix, '_jump.fits')
+                break
+        if jump_file is None:
+            raise ValueError("ERROR: Unrecognized slope filename suffix.")
+        if not os.path.isfile(jump_file):
+            raise FileNotFoundError("ERROR: Jump file {} not found.".format(jump_file))
+
         print('Opening Jump File {}'.format(jump_file))
         groupdq = get_jump_dq_values(jump_file, refpix_additions)
 
         # Generate a map of JUMP flags in the ramp for all the integrations
         cr_map = get_cr_flags(groupdq)
 
-        # read in the slope array
-        slope = read_slope_data(filename, refpix_additions)
+        # Get slope data corresponding to this file by extracting the
+        # appropriate frames from the ``slopes`` stack
+        slope = slopes[indexes[i]: indexes[i+1], :, :]
 
         # Read in the fitops file associated with the exposure and get
         # the pedestal array (y-intercept)
-        if '_0_ramp_fit.fits' in filename:
-            pedestal_file = filename.replace('_0_ramp_fit.fits', '_fitopt.fits')
-        else:
-            pedestal_file = filename.replace('_ramp_fit_0.fits', '_fitopt.fits')
+        pedestal_file = filename.replace(slope_suffix, '_fitopt.fits')
+        if not os.path.isfile(pedestal_file):
+            raise FileNotFoundError("ERROR: Pedestal file {} not found.".format(pedestal_file))
+        print('Opening Pedestal File {}'.format(pedestal_file))
         pedestal = read_pedestal_data(pedestal_file, refpix_additions)
 
         # for MIRI the zero point of the ramp drifts with time. Adjust the
         # pedestal to be a relative pedestal wrt to group 2
         if instrument == 'MIRI':
-            uncal_file = filename.replace('_0_ramp_fit.fits', '_uncal.fits')
+            uncal_file = filename.replace(slope_suffix, '_uncal.fits')
+            if not os.path.isfile(uncal_file):
+                raise FileNotFoundError("ERROR: Uncal file {} not found.".format(uncal_file))
             group2 = extract_group2(uncal_file, refpix_additions)
             pedestal_org = copy.deepcopy(pedestal)
             pedestal = np.fabs(group2 - pedestal)
+
         # Work one integration at a time
         for int_num in range(pedestal.shape[0]):
 
@@ -829,9 +841,19 @@ def read_slope_integrations(filenames):
 
     Returns
     -------
+    instrument : str
+        Name of instrument associated with the data
+
     slope_data : numpy.ndarray
         3D array containing slope values for science pixels only.
         Reference pixels have been stripped off.
+
+    starting_indexes : list
+        List of numbers corresponding to the index numbers within slope_data
+        where each file's data begins. For example, if slope_data is an array
+        of size (10, 2048, 2048), and starting_indexes = [0, 5, 7, 10] then
+        we can pull apart slope_data into its constituent exposures using
+        slope_data[starting_indexes[0]: starting_indexes[1]], etc.
 
     left_cols : int
         Number of columns of reference pixels on the left side of the array
@@ -845,18 +867,11 @@ def read_slope_integrations(filenames):
     top_rows : int
         Number of rows of reference pixels on the top of the array
     """
-    print('METADATA check turned off for testing with old NIRCAM data that is missing keywords')
     slope_stack = []
-    for i, filename in enumerate(filenames):
-        # Read all of the slope data into an array
-        if '_0_ramp_fit.fits' in filename:
-            slope_file = filename.replace('_0_ramp_fit.fits', '_1_ramp_fit.fits')
-        else:
-            slope_file = filename.replace('_ramp_fit_0.fits', '_ramp_fit_1.fits')
-        check = path.exists(slope_file)
-        if not check:
-            print('slope does not exist, using *0_ramp_fit.fits file for slope results')
-            slope_file = filename
+    starting_indexes = []
+    for i, slope_file in enumerate(filenames):
+        if not os.path.isfile(slope_file):
+            raise FileNotFoundError('ERROR: Input slope file {} does not exist'.format(slope_file))
 
         with fits.open(slope_file) as hdulist:
             slope_img = hdulist['SCI'].data
@@ -885,6 +900,9 @@ def read_slope_integrations(filenames):
         bottom_rows = bottom_edge
         top_rows = dq_img.shape[0] - top_edge
 
+        # Add to the list of starting indexes
+        starting_indexes.append(len(slope_stack))
+
         # loop over integrations and pull out slope for int
         # Crop the reference pixels from the array.
 
@@ -896,8 +914,9 @@ def read_slope_integrations(filenames):
             for i in range(num_int):
                 slopes = slope_img[i, bottom_edge:top_edge, left_edge:right_edge]
                 slope_stack.append(slopes)
+    starting_indexes.append(len(slope_stack))
     slope_data = np.array(slope_stack)
-    return instrument, slope_data, (left_cols, right_cols, bottom_rows, top_rows)
+    return instrument, slope_data, starting_indexes, (left_cols, right_cols, bottom_rows, top_rows)
 
 
 def read_slope_data(filename, refpix):
@@ -921,16 +940,10 @@ def read_slope_data(filename, refpix):
     """
 
     left, right, bottom, top = refpix
-    if '_0_ramp_fit.fits' in filename:
-        slope_file = filename.replace('_0_ramp_fit.fits', '_1_ramp_fit.fits')
-    else:
-        slope_file = filename.replace('_ramp_fit_0.fits', '_ramp_fit_1.fits')
-    check = path.exists(slope_file)
-    if not check:
-        print('slope does not exist, using *0_ramp_fit.fits file for slope results')
-        slope_file = filename
+    if not os.path.isfile(filename):
+        raise FileNotFoundError('ERROR: Slope file {} does not exist.'.format(filename))
 
-    with fits.open(slope_file) as hdulist:
+    with fits.open(filename) as hdulist:
         slope_img = hdulist['SCI'].data
         # dq_int = hdulist['DQ'].data  # should we check DQ array to toss out any data
         slope_shape = slope_img.shape
