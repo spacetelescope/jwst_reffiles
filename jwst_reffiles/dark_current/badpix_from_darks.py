@@ -169,24 +169,19 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     avg_of_std = np.mean(clipped_stdevs)
     std_of_std = np.std(clipped_stdevs)
     cut_limit = avg_of_std + std_of_std*noisy_threshold
-    # print('avg_of_std, std_of_std', avg_of_std, std_of_std)
+
     # Identify noisy pixels as those with noise values more than
     # noisy_threshold*sigma above the average noise level
-    noisy = std_slope > cut_limit
-
+    # noisy = std_slope > cut_limit # not a good stat we need to remove slopes with cr hits
+    # Plot histogram to later compare with better std_slope only containing
+    # slopes with no jumps detected. 
     if plot:
         xhigh = avg_of_std + std_of_std*noisy_threshold
         plot_image(std_slope, xhigh, outdir,
                    "Pixel Standard devations", "pixel_std_withjumps.png")
 
         nbins = 5000
-        # titleplot = 'Histogram of Clipped Pixel Slope STD  Average ' + \
-        #    '{:6.4f}'.format(avg_of_std) + '  Std ' + '{:6.4f}'.format(std_of_std)
-
-        # plot_histogram_stats(clipped_stdevs, cut_limit, nbins,
-        #                     titleplot, "histo_clipped_std_withjumps.png")
-
-        titleplot = 'Histogram of Pixel Slope STD with jumps Clipped Ave ' + \
+        titleplot = 'Histogram of Pixel Slope STD with cosmic ray jumps: Clipped Ave ' + \
             '{:6.4f}'.format(avg_of_std) + '  Std ' + '{:6.4f}'.format(std_of_std)
 
         plot_histogram_stats(std_slope, cut_limit, nbins,
@@ -329,10 +324,9 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     # because it causes warning messages to be print
     values_nan = np.isnan(clean_std_slope)
     clean_std_slope[values_nan] = avg_of_std + std_of_std*50
-    # noisy_new = np.logical_or((clean_std_slope > cut_limit),
-    #                          np.isnan(clean_std_slope))
-    noisy_new = clean_std_slope > cut_limit
-    num_noisy2 = len(np.where(noisy_new)[0])
+
+    noisy = clean_std_slope > cut_limit
+    num_noisy = len(np.where(noisy)[0])
 
     if plot:
         # plot the number of good slopes per pixel
@@ -396,7 +390,7 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     # Pixels with lots of CR flags should be added to the list of noisy pixels?
     high_cr = np.sum(high_cr_rate, axis=0) / total_ints
     noisy_second_pass = high_cr > high_cr_fraction
-    combined_noisy = np.bitwise_or(noisy_new, noisy_second_pass)
+    combined_noisy = np.bitwise_or(noisy, noisy_second_pass)
     combined_noisy = apply_flags(combined_noisy.astype(np.int), flag_values['high_cr'])
 
     num_high_cr = len(np.where(noisy_second_pass != 0)[0])
