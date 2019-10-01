@@ -11,57 +11,38 @@ os:
 # Setting sudo to false opts in to Travis-CI container-based builds.
 sudo: false
 
-# The apt packages below are needed for sphinx builds, which can no longer
-# be installed with sudo apt-get.
-addons:
-    apt:
-        packages:
-            - graphviz
-            - texlive-latex-extra
-            - dvipng
-
 env:
     global:
-        - MAIN_CMD='python setup.py'
-        - CONDA_CHANNELS='http://ssb.stsci.edu/astroconda-dev'
-        - CONDA_DEPENDENCIES='pytest=3.6 sphinx jwst'
-        - PIP_DEPENDENCIES=''
         - PYTHON_VERSION=3.6
-        - NUMPY_VERSION=stable
-        - ASTROPY_VERSION=stable
         - EVENT_TYPE='push pull_request'
 
-    matrix:
-        - SETUP_CMD='install'
-        - SETUP_CMD='test'
-
 matrix:
-
-    # Don't wait for allowed failures
-    fast_finish: true
-
     include:
-        # build sphinx documentation with warnings
-        - os: linux
-          env: SETUP_CMD='build_sphinx'
-               CONDA_DEPENDENCIES=$CONDA_DEPENDENCIES
-               PIP_DEPENDENCIES='sphinx_rtd_theme stsci_rtd_theme sphinx-automodapi nbsphinx'
+        # Run pytest suite
+        - name: test linux
+          os: linux
 
-        # PEP8 check with flake8 (only once, i.e. "os: linux")
-        - os: linux
-          env: MAIN_CMD='flake8 --count'
-               SETUP_CMD='jwst_reffiles'
-               CONDA_DEPENDENCIES=$CONDA_DEPENDENCIES
+        # Run pytest suite
+        - name: test osx
+          os: osx
+          osx_image: xcode10.2
 
-    allow_failures:
-        # PEP8 will fail for numerous reasons. Ignore it.
-        - env: MAIN_CMD='flake8 --count'
-               SETUP_CMD='jwst_reffiles'
-               CONDA_DEPENDENCIES=$CONDA_DEPENDENCIES
-
-install:
+before_install:
     - git clone git://github.com/astropy/ci-helpers.git
     - source ci-helpers/travis/setup_conda_$TRAVIS_OS_NAME.sh
 
+install:
+    # Remove WebbPSF conda install
+    #- sed '/webbpsf/d' environment.yml
+    # Install jwst_reffile dependencies
+    - conda env update -f=environment.yml
+    # Install development versions of webbpsf and poppy
+    #- git clone git://github.com/spacetelescope/poppy.git
+    #- git clone git://github.com/spacetelescope/webbpsf.git
+    #- pip install -e poppy/
+    #- pip install -e webbpsf/
+    # Install jwst_reffiles package
+    - pip install -e .
+
 script:
-    - $MAIN_CMD $SETUP_CMD
+    - pytest ./tests/

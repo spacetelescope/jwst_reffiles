@@ -2,6 +2,7 @@
 
 """Tests for bad_pixel_mask.py"""
 
+from astropy.io import fits
 import numpy as np
 from jwst.datamodels import dqflags
 
@@ -133,7 +134,11 @@ def test_extract_10th_group():
     test = np.zeros((2, 12, 3, 3))
     test[0, 9, :, :] = 1.
     test[1, 9, :, :] = 2.
-    extracted = bpm.extract_10th_group(test)
+    hdu0 = fits.PrimaryHDU(test)
+    hdu0.header['FILENAME'] = 'test.fits'
+    hdu0.header['EXTNAME'] = 'SCI'
+    hdu_list = fits.HDUList([hdu0])
+    extracted = bpm.extract_10th_group(hdu_list)
     manual = np.zeros((2, 3, 3))
     manual[0, :, :] = 1.
     manual[1, :, :] = 2.
@@ -141,7 +146,11 @@ def test_extract_10th_group():
 
     test = np.zeros((12, 3, 3))
     test[9, :, :] = 3.
-    extracted = bpm.extract_10th_group(test)
+    hdu0 = fits.PrimaryHDU(test)
+    hdu0.header['FILENAME'] = 'test.fits'
+    hdu0.header['EXTNAME'] = 'SCI'
+    hdu_list = fits.HDUList([hdu0])
+    extracted = bpm.extract_10th_group(hdu_list)
     manual = np.zeros((1, 3, 3))
     manual[0, :, :] = 3.
     assert np.all(extracted == manual)
@@ -181,9 +190,14 @@ def test_smooth():
     width = 3
     test = np.arange(25).reshape(5, 5)
     smoothed = bpm.smooth(test, box_width=width)
-    truth = np.array([[1.33333333,  2.33333333,  3.,  3.66666667,  2.66666667],
-                      [3.66666667,  6.,  7.,  8.,  5.66666667],
-                      [7., 11., 12., 13.,  9.],
-                      [10.33333333, 16., 17., 18., 12.33333333],
-                      [8., 12.33333333, 13., 13.66666667, 9.33333333]])
+    #truth = np.array([[1.33333333,  2.33333333,  3.,  3.66666667,  2.66666667],
+    #                  [3.66666667,  6.,  7.,  8.,  5.66666667],
+    #                  [7., 11., 12., 13.,  9.],
+    #                  [10.33333333, 16., 17., 18., 12.33333333],
+    #                  [8., 12.33333333, 13., 13.66666667, 9.33333333]])
+    truth = np.array([[ 8.        ,  6.33333333,  7.        ,  7.66666667,  9.33333333],
+                      [ 7.66666667,  6.        ,  7.        ,  8.        ,  9.66666667],
+                      [11.        , 11.        , 12.        , 13.        , 13.        ],
+                      [14.33333333, 16.        , 17.        , 18.        , 16.33333333],
+                      [14.66666667, 16.33333333, 17.        , 17.66666667, 16.        ]])
     assert np.allclose(smoothed, truth, atol=1e-6, rtol=0)
