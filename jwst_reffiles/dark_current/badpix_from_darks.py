@@ -156,9 +156,9 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     mean_slope = np.mean(slopes, axis=0)
     std_slope = np.std(slopes, axis=0)
     hdout = fits.PrimaryHDU(mean_slope)
-    hdout.writeto('average_of_slopes.fits',overwrite=True)
+    hdout.writeto('average_of_slopes.fits', overwrite=True)
     hdout = fits.PrimaryHDU(std_slope)
-    hdout.writeto('sigma_of_slopes.fits',overwrite=True)
+    hdout.writeto('sigma_of_slopes.fits', overwrite=True)
 
     # Use sigma-cliping when calculating the mean and standard deviation
     # of the standard deviations
@@ -174,7 +174,7 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     # noisy_threshold*sigma above the average noise level
     # noisy = std_slope > cut_limit # not a good stat we need to remove slopes with cr hits
     # Plot histogram to later compare with better std_slope only containing
-    # slopes with no jumps detected. 
+    # slopes with no jumps detected.
     if plot:
         xhigh = avg_of_std + std_of_std*noisy_threshold
         plot_image(std_slope, xhigh, outdir,
@@ -303,12 +303,12 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     # now find the mean and standard deviation of the "clean" pixel slopes
     clean_mean_slope, clean_std_slope, num_good = combine_clean_slopes(slope_stack, islope_stack)
     hdout = fits.PrimaryHDU(clean_mean_slope)
-    hdout.writeto('average_of_slopes_nojumps.fits',overwrite=True)
+    hdout.writeto('average_of_slopes_nojumps.fits', overwrite=True)
     hdout = fits.PrimaryHDU(clean_std_slope)
-    hdout.writeto('sigma_of_slopes_nojumps.fits',overwrite=True)
+    hdout.writeto('sigma_of_slopes_nojumps.fits', overwrite=True)
     num_good_slopes = num_good.astype(np.int16)
     hdout = fits.PrimaryHDU(num_good_slopes)
-    hdout.writeto('number_of_slopes_nojumps.fits',overwrite=True)
+    hdout.writeto('number_of_slopes_nojumps.fits', overwrite=True)
 
     # Use sigma-cliping to remove large outliers to have clean stats to flag
     # noisy pixels.
@@ -319,7 +319,6 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
                                                    maxiters=max_clipping_iters,
                                                    masked=False, return_bounds=True)
     cut_limit = avg_of_std + std_of_std*noisy_threshold
-
     # assigning nans from clean_std_slope to very large values that will be cut
     # because it causes warning messages to be print
     values_nan = np.isnan(clean_std_slope)
@@ -395,7 +394,7 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
     num_high_cr = len(np.where(noisy_second_pass != 0)[0])
     print('Found {} pixels with a high number of jumps.'.format(num_high_cr))
-    print('Found {} pixels with noise above the threshold.'.format(num_noisy2))
+    print('Found {} pixels with noise above the threshold.'.format(num_noisy))
     num_combined_noisy = len(np.where(combined_noisy != 0)[0])
     print('Combining noisy and high jump pixels, found {} noisy pixels.'.format(num_combined_noisy))
 
@@ -677,7 +676,7 @@ def combine_clean_slopes(slope_stack, islope_stack):
     slopes = np.array(slope_stack)
     islopes = np.array(islope_stack)
 
-    mean_slope = np.nanmean(slopes,axis=0)
+    mean_slope = np.nanmean(slopes, axis=0)
     std_slope = np.nanstd(slopes, axis=0)
     num_good_array = np.sum(islopes, axis=0)
     # picked the value of 5 at random - should this be a parameter to program ?
