@@ -42,7 +42,7 @@ def flag_map(dq_array, mnemonic):
     cr_map : numpy.ndarray
         GROUP_DQ extension with all flags other than jumps removed
     """
-    cr_map = (dq_array & dqflags.group[mnemonic.upper()] > 0)
+    cr_map = (dq_array & dqflags.pixel[mnemonic.upper()] > 0)
     return cr_map
 
 
