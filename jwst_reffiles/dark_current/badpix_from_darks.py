@@ -40,6 +40,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import sigmaclip
 import matplotlib.cm as cm
 from jwst_reffiles.bad_pixel_mask.bad_pixel_mask import create_dqdef
+from jwst_reffiles.utils import dq_flags
 from jwst_reffiles.utils.constants import RATE_FILE_SUFFIXES
 
 
