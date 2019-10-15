@@ -217,10 +217,8 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
             raise FileNotFoundError("ERROR: Jump file {} not found.".format(jump_file))
 
         print('Opening Jump File {}'.format(jump_file))
-        groupdq = get_jump_dq_values(jump_file, refpix_additions)
-
-        # Generate a map of JUMP flags in the ramp for all the integrations
-        cr_map = get_cr_flags(groupdq)
+        groupdq = dq_flags.get_groupdq(jump_file, refpix_additions)
+        cr_map = dq_flags.flag_map(groupdq, 'JUMP_DET')
 
         # Get slope data corresponding to this file by extracting the
         # appropriate frames from the ``slopes`` stack
@@ -566,7 +564,7 @@ def find_pix_with_many_jumps(jump_map, max_jump_limit=10, jump_ratio_threshold=5
     Parameters
     ----------
     jump_map : numpy.ndarray
-        Map of jump flags for all pixels (e.g. output from ``get_cr_flags``)
+        Map of jump flags for all pixels (e.g. output from ``dqflags.flag_map``)
         Assume we are working one integration at a time.
 
     max_jump_limit : int
@@ -687,51 +685,6 @@ def combine_clean_slopes(slope_stack, islope_stack):
     std_slope[few_values] = np.nan
 
     return mean_slope, std_slope, num_good_array
-
-
-def get_cr_flags(dq_array):
-    """Return a map of cosmic ray flags given a data quality array
-
-    Parameters
-    ----------
-    dq_array : numpy.ndarray
-        GROUP_DQ extension of an integration
-
-    Returns
-    -------
-    cr_map : numpy.ndarray
-        GROUP_DQ extension with all flags other than jumps removed
-    """
-    cr_map = (dq_array & dqflags.pixel['JUMP_DET'] > 0)
-    return cr_map
-
-
-def get_jump_dq_values(filename, refpix):
-    """Read in the GROUPDQ extension of a file and crop reference pixels
-
-    Parameters
-    ----------
-    filename : str
-        fits file to be read in
-
-    refpix : tup
-        4-element tuple giving the left, right, bottom, and top number
-        of rows and columns of reference pixels
-
-    Returns
-    -------
-    groupdq : numpy.ndarray
-        4D array of DQ values
-    """
-    with fits.open(filename) as hdulist:
-        groupdq = hdulist['GROUPDQ'].data
-
-    if len(groupdq.shape) != 4:
-        raise ValueError("ERROR: expecting groupdq to be a 4D array")
-
-    nint, ngroup, ydim, xdim = groupdq.shape
-    left, right, bottom, top = refpix
-    return groupdq[:, :, bottom: ydim-top, left: xdim-right]
 
 
 def pedestal_stats(pedestal_array, threshold=5):
