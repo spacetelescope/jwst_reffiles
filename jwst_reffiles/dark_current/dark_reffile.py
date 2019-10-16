@@ -1,7 +1,62 @@
 #! /usr/env/bin python
 
 """
-This module contains code for creating a dark current reference file
+This module contains code for creating a dark current reference file.
+
+Input:
+    List of exposures at a calibration state from which you wish to create
+    dark current reference files. For NIR detectors, this should be after:
+
+    0) group_scale
+    1) dq_init
+    2) saturation
+    3) ipc* - not currently run
+    4) superbias
+    5) refpix
+    6) linearity
+    7) persistence
+
+    For MIRI, this should be after:
+
+    0) group_scale
+    1) dq_init
+    2) saturation
+    3) linearity
+    4) rscd
+
+    Also, versions of these files that have been run up through the JUMP
+    step must also be present. This is because we need to know where the
+    CR hits are in the data.
+
+    All files should be from the same instrument/detector/aperture/readpattern
+
+
+
+Ouputs:
+    A dark current reference file in the proper format
+    A series of images showing for each pixel in each group, how many
+        measurements of the signal were used to calculate the mean
+        dark value.
+
+Function:
+Get file headers from each file. Check for consistency.
+Extract CR flags from the JUMP version of the files.
+    From these, create arrays giving the group number of the first cosmic
+    ray hit in each pixel for each integration
+Create images of how many dark current measurements are considered good
+    for each pixel and each group. All groups after the first CR hit in a
+    pixel are considered bad and not used.
+Read in the data. To avoid memory problems only read in N groups at a time,
+    where N is determined from user inputs.
+Flag all groups that occur between the first CR hit and the end of the integration
+    as bad.
+From the remaining good data, calculate the sigma-clipped mean dark signal
+    in each pixel for each group (i.e. take the mean across integrations).
+    Also calculate the sigma-clipped stdard deviation.
+Save the sigma-clipped mean as the dark data, and the sigma-clipped stdev
+    as the uncertainty in a DarkModel or MIRIDarkModel instance. The
+    DQ array is currently all zeros, anticipating bad pixels being placed
+    in the bad pixel reference file.
 """
 
 from astropy.io import fits
@@ -132,6 +187,9 @@ class Dark():
         # Get a map of reference pixels
         refpix_map = dq_flags.create_refpix_map(filenames[0])
 
+        # Create arrays to hold the final dark current data and uncertainty
+        final_dark = np.zeros((self.metadata['NGROUPS'], self.metadata['SUBSIZE2'], self.metadata['SUBSIZE1']))
+        final_dark_dev = np.zeros((self.metadata['NGROUPS'], self.metadata['SUBSIZE2'], self.metadata['SUBSIZE1']))
         # Read in the data
         for i in range(len(self.group_index) - 1):
             for file_index, filename in enumerate(self.file_list):
@@ -147,7 +205,6 @@ class Dark():
 
                     jump_map = cr_indexes[filename][integration, :, :]
 
-                    # Same as above but without looping over pixels
                     # Pixels/groups that come after a CR hit are set to NaN
                     group_arr = np.zeros_like(file_data)
                     for idx, g in enumerate(groups):
@@ -169,13 +226,18 @@ class Dark():
             mean_dark = np.nanmean(clipped_data, axis=0)
             dev_dark = np.nanstd(clipped_data, axis=0)
 
+            # Place the mean and stdev of the dark signals into the correct
+            # location within the final dark arrays that contain all groups
+            final_dark[self.group_index[i]: self.group_index[i + 1], :, :] = mean_dark
+            final_dark_dev[self.group_index[i]: self.group_index[i + 1], :, :] = dev_dark
+
             # DQ array associated with dark data
             # All bad pix are put in bad pixel mask, so dark reffile DQ array
             # is empty?
-            dq_dark = np.zeros_like(mean_dark).astype(np.int8)
+            dq_dark = np.zeros_like(final_dark).astype(np.int8)
 
             # Save reference file
-            self.save_reffile(mean_dark, dev_dark, dq_dark)
+            self.save_reffile(fianl_dark, final_dark_dev, dq_dark)
 
     def prepare_cr_maps(self):
         """Read in groupdq extension from jump files, extract only the
