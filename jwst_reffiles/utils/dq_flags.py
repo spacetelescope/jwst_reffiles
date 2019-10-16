@@ -14,6 +14,72 @@ Bryan Hilbert
 from astropy.io import fits
 from jwst.datamodels import dqflags
 
+from jwst_reffiles.utils.file_utils import read_ramp
+
+
+def collapse_cr_map(dq_map):
+    """Transform a 4D array containing cosmic ray hit locations
+    (1 for CR hit, 0 for no hit), into a 3D (integration, y, x)
+    map that lists for each pixel the group number of the first
+    CR hit. If that pixel has no CR hits in the integration, then
+    it will have a value of NaN.
+
+    Parameters
+    ----------
+    dq_map : numpy.ndarray
+        4D array of CR hit locations
+
+    Returns
+    -------
+    index_map : numpy.ndarray
+        3D array of group numbers of the first CR hit in each pixel
+    """
+    nints, ngroups, ny, nx = dq_map.shape
+    index_map = np.zeros((nints, ny, nx)) * np.nan
+
+    # Create an array containing all group indexes
+    all_groups = np.zeros((1, ngroups, 1, 1))
+    all_groups[0, :, 0, 0] = np.arange(ngroups)
+    intermediate1 = np.repeat(all_groups, nints, axis=0)
+    intermediate2 = np.repeat(intermediate1, ny, axis=2)
+    all_indexes = np.repeat(intermediate2, nx, axis=3)
+
+    # Array to contain only group numbers of CR hits
+    hit_indexes = np.zeros_like(all_indexes) + np.nan
+
+    # Find the CR flag locations
+    hits = np.where(dq_map != 0)
+
+    # All elements are NaN except the groups with CR hits
+    hit_indexes[hits] = all_indexes[hits]
+
+    # Find the minimum group number of the CR-hit groups for each pixel
+    index_map = np.min(hit_indexes, axis=1)
+    return index_map
+
+
+def create_refpix_map(filename):
+    """Create a map of reference pixel locations in a given file.
+    Reference pixels have a value of 1. Other pixels have a value
+    of zero.
+
+    Parameters
+    ----------
+    filename : str
+        Name of FITS file containing the data quality information
+
+    Returns
+    -------
+    refmap : numpy.ndarray
+        2D array containing a map of reference pixels. 1 indicates a
+        reference pixel, while 0 indicates a science pixel
+    """
+    groupdq = read_ramp(filename, integ_number=0, min_group=0, max_group=1, extension='GROUPDQ')
+
+    # Keep only the REFERENCE_PIXEL flags
+    refmap = flag_map(groupdq, 'REFERENCE_PIXEL')
+    return refmap
+
 
 def extract_cr_mask(filename):
     """Read in ``filename``, which is assumed to be a 4D ramp, extract
@@ -72,3 +138,41 @@ def get_groupdq(filename, refpix):
     nint, ngroup, ydim, xdim = groupdq.shape
     left, right, bottom, top = refpix
     return groupdq[:, :, bottom: ydim-top, left: xdim-right]
+
+
+def signals_per_group(number_of_good, ngroup):
+    """Translate an array that lists the number of good groups per
+    integration with good signal into an array that shows the number
+    of good signal values per group (i.e. look across integrations)
+
+    Parameters
+    ----------
+    number_of_good : numpy.ndarray
+        3D array (integration, y, x) of the number of good groups per
+        integration.
+
+    ngroup : int
+        The total number of groups in an integration
+
+    Returns
+    -------
+    good_per_group : numpy.ndarray
+        3D array (group, y, x) giving the number of good signal values
+        within each group
+
+    bad_per_group : numpy.ndarray
+        3D array (group, y, x) giving the number of bad signal values
+        within each group
+    """
+    nint, ny, nx = number_of_good.shape
+    good_per_group = np.array((ngroup, ny, nx)).astype(np.int)
+    bad_per_group = np.array((ngroup, ny, nx)).astype(np.int)
+    for group in range(ngroup):
+        grp_map = np.sum(group < data, axis=0)
+        good_per_group[group, :, :] = grp_map
+        bad_per_group[group, :, :] = nint - grp_map
+    return good_per_group, bad_per_group
+
+
+
+
