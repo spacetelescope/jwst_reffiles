@@ -13,6 +13,7 @@ Bryan Hilbert
 
 from astropy.io import fits
 from jwst.datamodels import dqflags
+import numpy as np
 
 from jwst_reffiles.utils.file_utils import read_ramp
 
@@ -35,7 +36,6 @@ def collapse_cr_map(dq_map):
         3D array of group numbers of the first CR hit in each pixel
     """
     nints, ngroups, ny, nx = dq_map.shape
-    index_map = np.zeros((nints, ny, nx)) * np.nan
 
     # Create an array containing all group indexes
     all_groups = np.zeros((1, ngroups, 1, 1))
@@ -54,7 +54,7 @@ def collapse_cr_map(dq_map):
     hit_indexes[hits] = all_indexes[hits]
 
     # Find the minimum group number of the CR-hit groups for each pixel
-    index_map = np.min(hit_indexes, axis=1)
+    index_map = np.nanmin(hit_indexes, axis=1)
     return index_map
 
 
@@ -165,14 +165,11 @@ def signals_per_group(number_of_good, ngroup):
         within each group
     """
     nint, ny, nx = number_of_good.shape
-    good_per_group = np.array((ngroup, ny, nx)).astype(np.int)
-    bad_per_group = np.array((ngroup, ny, nx)).astype(np.int)
+    good_per_group = np.zeros((ngroup, ny, nx)).astype(np.int)
+    bad_per_group = np.zeros((ngroup, ny, nx)).astype(np.int)
+
     for group in range(ngroup):
-        grp_map = np.sum(group < data, axis=0)
+        grp_map = np.sum(group < number_of_good, axis=0)
         good_per_group[group, :, :] = grp_map
         bad_per_group[group, :, :] = nint - grp_map
     return good_per_group, bad_per_group
-
-
-
-

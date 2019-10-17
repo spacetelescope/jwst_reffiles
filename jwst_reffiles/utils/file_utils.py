@@ -8,6 +8,9 @@ Author
 Bryan Hilbert
 
 """
+import os
+
+from astropy.io import fits
 
 
 def get_file_header(file_name, extension='SCI'):
@@ -64,12 +67,12 @@ def read_ramp(file_name, integ_number=None, min_group=0, max_group=None, extensi
     with fits.open(file_name) as hdulist:
         if integ_number is None:
             if max_group is None:
-                data = hdulist[extension][:, min_group:, :, :]
+                data = hdulist[extension].data[:, min_group:, :, :]
             else:
-                data = hdulist[extension][:, min_group: max_group, :, :]
+                data = hdulist[extension].data[:, min_group: max_group, :, :]
         else:
             if max_group is None:
-                data = hdulist[extension][integration, min_group:, :, :]
+                data = hdulist[extension].data[integ_number, min_group:, :, :]
             else:
-                data = hdulist[extension][integration, min_group: max_group, :, :]
+                data = hdulist[extension].data[integ_number, min_group: max_group, :, :]
     return data
