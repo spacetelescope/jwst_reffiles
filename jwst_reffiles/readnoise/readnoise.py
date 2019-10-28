@@ -17,7 +17,7 @@ Use
 Notes
 -----
     Overview:
-    Inputs: A list of calibrated dark current ramps
+    Inputs: A list of calibrated (refpix-correctd) dark current ramps
 
     Algorithm:
 
@@ -106,7 +106,7 @@ def make_cds_stack(data, group_diff_type='independent'):
     
     group_diff_type : str
         The method for calculating group differences. Options are:
-        ``independent``: Each groups is only differenced once (e.g. 6-5, 4-3, 
+        ``independent``: Each group is only differenced once (e.g. 6-5, 4-3, 
                          2-1)
         ``consecutive``: Each group is differenced to its neighbors (e.g. 
                          4-3, 3-2, 2-1)
@@ -134,7 +134,7 @@ def make_cds_stack(data, group_diff_type='independent'):
     return cds_stack
 
 def make_readnoise(filenames, method='stack', group_diff_type='independent', 
-                   clipping_sigma=3, max_clipping_iters=5, nproc=3, 
+                   clipping_sigma=3, max_clipping_iters=5, nproc=1, 
                    slice_width=50):
     """The main function. Creates a readnoise reference file using the input 
     dark current ramps. See module docstring for more details.
@@ -158,7 +158,7 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
 
     group_diff_type : str
         The method for calculating group differences. Options are:
-        ``independent``: Each groups is only differenced once (e.g. 6-5, 4-3, 
+        ``independent``: Each group is only differenced once (e.g. 6-5, 4-3, 
                          2-1).
         ``consecutive``: Each group is differenced to its neighbors (e.g. 
                          4-3, 3-2, 2-1).
@@ -191,6 +191,8 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
         # CDS images that incorporates every input dark ramp and integration; 
         # do this in slices to allow for multiprocessing and avoiding memory 
         # issues.
+        print('Calculating the readnoise in {} separate image slices...'
+              .format(n_cols))
         p = Pool(nproc)
         files = [filenames] * n_cols
         group_diff_types = [group_diff_type] * n_cols
@@ -200,13 +202,15 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
         readnoise = p.map(wrapper_readnoise_by_slice, 
                           zip(files, group_diff_types, sigmas, iters, 
                               columns, slice_widths)
-                         )
+                          )
         readnoise = np.concatenate(readnoise, axis=1)
         p.close()
 
     elif method == 'ramp':
 
         # Create a 3D stack of readnoise images, one for each input ramp
+        print('Calculating the readnoise in each of the {} input ramps '
+              'individually...'.format(len(filenames)))
         p = Pool(nproc)
         n_files = len(filenames)
         group_diff_types = [group_diff_type] * n_files
@@ -215,12 +219,14 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
         readnoise_stack = p.map(wrapper_readnoise_by_ramp,
                                 zip(filenames, group_diff_types, sigmas, 
                                     iters)
-                               )
+                                )
         p.close()
 
         # Create the final readnoise map by averaging the individual  
         # readnoise images.
-        readnoise = calculate_mean(readnoise_stack, 
+        print('Combining the readnoises for all {} individual ramps '
+              'together...'.format(len(filenames)))
+        readnoise = calculate_mean(np.array(readnoise_stack), 
                                    clipping_sigma=clipping_sigma, 
                                    max_clipping_iters=max_clipping_iters)
 
@@ -253,7 +259,7 @@ def readnoise_by_ramp(filename, group_diff_type='independent',
 
     group_diff_type : str
         The method for calculating group differences. Options are:
-        ``independent``: Each groups is only differenced once (e.g. 6-5, 4-3, 
+        ``independent``: Each group is only differenced once (e.g. 6-5, 4-3, 
                          2-1)
         ``consecutive``: Each group is differenced to its neighbors (e.g. 
                          4-3, 3-2, 2-1)
@@ -265,6 +271,8 @@ def readnoise_by_ramp(filename, group_diff_type='independent',
         Maximum number of iterations to use when sigma-clipping.
     """
 
+    print('Calculating readnoise for {}'.format(filename))
+
     # Get the ramp data; remove first 5 groups and last group for MIRI to 
     # avoid reset/rscd effects.
     data = fits.getdata(filename, 'SCI')
@@ -273,7 +281,7 @@ def readnoise_by_ramp(filename, group_diff_type='independent',
         data = data[:, 5:-1, :, :]
 
     # Create a CDS stack for the input ramp (combining multiple integrations 
-    # if necessary)
+    # if necessary).
     cds_stack = make_cds_stack(data, group_diff_type=group_diff_type)
 
     # Calculate the readnoise
@@ -297,7 +305,7 @@ def readnoise_by_slice(filenames, group_diff_type='independent',
 
     group_diff_type : str
         The method for calculating group differences. Options are:
-        ``independent``: Each groups is only differenced once (e.g. 6-5, 4-3, 
+        ``independent``: Each group is only differenced once (e.g. 6-5, 4-3, 
                          2-1)
         ``consecutive``: Each group is differenced to its neighbors (e.g. 
                          4-3, 3-2, 2-1)
@@ -320,6 +328,9 @@ def readnoise_by_slice(filenames, group_diff_type='independent',
         2D image of the calculated readnoise.
     """
 
+    print('Calculating readnoise in image slice [{}:{}]'.format(column, 
+          column+slice_width))
+
     for i,filename in enumerate(filenames):
 
         # Get image data for the given slice; if the slice goes outside of 
@@ -331,7 +342,7 @@ def readnoise_by_slice(filenames, group_diff_type='independent',
         # effects.
         instrument = fits.getheader(filename)['INSTRUME']
         if instrument == 'MIRI':
-            data = data[:, 5:-1, :, :]  # need to test this
+            data = data[:, 5:-1, :, :]
 
         # Create the CDS stack for the image (combining multiple 
         # integrations if necessary) and add it to the master CDS stack 
@@ -373,6 +384,8 @@ def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC',
         The readout pattern to use this reference file for.
     """
 
+    outfile = 'readnoise.fits'
+
     r = ReadnoiseModel()
     r.data = readnoise
     r.meta.instrument.name = instrument
@@ -381,7 +394,9 @@ def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC',
     r.meta.exposure.readpatt = readpatt
     r.meta.description = 'Readnoise image'
     r.meta.useafter = '2000-01-01T00:00:00'
-    r.save('readnoise.fits')
+    r.save(outfile)
+
+    print('Final readnoise map saved to {}'.format(outfile))
 
 def wrapper_readnoise_by_ramp(args):
     """A wrapper around the readnoise_by_ramp function to allow for 
