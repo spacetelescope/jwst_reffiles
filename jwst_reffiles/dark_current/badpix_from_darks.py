@@ -318,7 +318,11 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     clipped_stdevs, cliplow, cliphigh = sigma_clip(clean_std_slope_nonan, sigma=clipping_sigma,
                                                    maxiters=max_clipping_iters,
                                                    masked=False, return_bounds=True)
+
+    avg_of_std = np.mean(clipped_stdevs)
+    std_of_std = np.std(clipped_stdevs)
     cut_limit = avg_of_std + std_of_std*noisy_threshold
+
     # assigning nans from clean_std_slope to very large values that will be cut
     # because it causes warning messages to be print
     values_nan = np.isnan(clean_std_slope)
@@ -666,7 +670,7 @@ def combine_clean_slopes(slope_stack, islope_stack):
 
     Parameters
     ----------
-    slope : list
+    slope_stack : list
         A list of slopes for full array stacked for each integration
     islope_stack: list
         A list of of 1 or 0 for each integration. A 1 is a good slope and 0 is slope
