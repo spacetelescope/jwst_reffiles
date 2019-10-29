@@ -38,7 +38,7 @@ import numpy as np
 
 from jwst.datamodels import ReadnoiseModel
 
-def calculate_mean(stack, clipping_sigma=3, max_clipping_iters=5):
+def calculate_mean(stack, clipping_sigma=3, max_clipping_iters=3):
     """Calculates the sigma-clipped mean through a stack of images.
 
     Parameters
@@ -65,7 +65,7 @@ def calculate_mean(stack, clipping_sigma=3, max_clipping_iters=5):
 
     return mean_image
 
-def calculate_stddev(stack, clipping_sigma=3, max_clipping_iters=5):
+def calculate_stddev(stack, clipping_sigma=3, max_clipping_iters=3):
     """Calculates the sigma-clipped standard deviation through a stack
     of images.
 
@@ -134,7 +134,7 @@ def make_cds_stack(data, group_diff_type='independent'):
     return cds_stack
 
 def make_readnoise(filenames, method='stack', group_diff_type='independent', 
-                   clipping_sigma=3, max_clipping_iters=5, nproc=1, 
+                   clipping_sigma=3, max_clipping_iters=3, nproc=1, 
                    slice_width=50):
     """The main function. Creates a readnoise reference file using the input 
     dark current ramps. See module docstring for more details.
@@ -248,7 +248,7 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
     save_readnoise(readnoise, instrument, detector, subarray)
 
 def readnoise_by_ramp(filename, group_diff_type='independent', 
-                      clipping_sigma=3, max_clipping_iters=5):
+                      clipping_sigma=3, max_clipping_iters=3):
     """Calculates the readnoise for the given input dark current ramp.
     
     Parameters
@@ -291,7 +291,7 @@ def readnoise_by_ramp(filename, group_diff_type='independent',
     return readnoise
 
 def readnoise_by_slice(filenames, group_diff_type='independent', 
-                       clipping_sigma=3, max_clipping_iters=5, column=0,
+                       clipping_sigma=3, max_clipping_iters=3, column=0,
                        slice_width=50):
     """Calculates the readnoise for a given slice in the input dark file 
     ramps. Useful for multiprocessing and avoiding memory issues for large 
