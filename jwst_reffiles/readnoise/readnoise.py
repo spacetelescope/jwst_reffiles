@@ -17,7 +17,7 @@ Use
 Notes
 -----
     Overview:
-    Inputs: A list of calibrated (refpix-correctd) dark current ramps
+    Inputs: A list of calibrated (refpix-corrected) dark current ramps
 
     Algorithm:
 
@@ -275,7 +275,7 @@ def readnoise_by_ramp(filename, group_diff_type='independent',
 
     # Get the ramp data; remove first 5 groups and last group for MIRI to 
     # avoid reset/rscd effects.
-    data = fits.getdata(filename, 'SCI')
+    data = fits.getdata(filename, 'SCI', uint=False)
     instrument = fits.getheader(filename)['INSTRUME']
     if instrument == 'MIRI':
         data = data[:, 5:-1, :, :]
@@ -335,7 +335,7 @@ def readnoise_by_slice(filenames, group_diff_type='independent',
 
         # Get image data for the given slice; if the slice goes outside of 
         # the image border, the slice just goes up to the end of the image.
-        data = fits.getdata(filename, 'SCI')
+        data = fits.getdata(filename, 'SCI', uint=False)
         data = data[:, :, :, column:column+slice_width]
 
         # Remove first 5 groups and last group for MIRI to avoid reset/rscd 
