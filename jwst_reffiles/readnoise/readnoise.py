@@ -38,7 +38,7 @@ import numpy as np
 
 from jwst.datamodels import ReadnoiseModel
 
-def calculate_mean(stack, clipping_sigma=3, max_clipping_iters=3):
+def calculate_mean(stack, clipping_sigma=3.0, max_clipping_iters=3):
     """Calculates the sigma-clipped mean through a stack of images.
 
     Parameters
@@ -46,7 +46,7 @@ def calculate_mean(stack, clipping_sigma=3, max_clipping_iters=3):
     stack : numpy.ndarray
         A 3D stack of images.
     
-    clipping_sigma : int
+    clipping_sigma : float
         Number of sigmas to use when sigma-clipping the input stack.
 
     max_clipping_iters : int
@@ -65,7 +65,7 @@ def calculate_mean(stack, clipping_sigma=3, max_clipping_iters=3):
 
     return mean_image
 
-def calculate_stddev(stack, clipping_sigma=3, max_clipping_iters=3):
+def calculate_stddev(stack, clipping_sigma=3.0, max_clipping_iters=3):
     """Calculates the sigma-clipped standard deviation through a stack
     of images.
 
@@ -74,7 +74,7 @@ def calculate_stddev(stack, clipping_sigma=3, max_clipping_iters=3):
     stack : numpy.ndarray
         A 3D stack of images.
     
-    clipping_sigma : int
+    clipping_sigma : float
         Number of sigmas to use when sigma-clipping the input stack.
 
     max_clipping_iters : int
@@ -134,8 +134,8 @@ def make_cds_stack(data, group_diff_type='independent'):
     return cds_stack
 
 def make_readnoise(filenames, method='stack', group_diff_type='independent', 
-                   clipping_sigma=3, max_clipping_iters=3, nproc=1, 
-                   slice_width=50):
+                   clipping_sigma=3.0, max_clipping_iters=3, nproc=1, 
+                   slice_width=50, outfile='readnoise_jwst_reffiles.fits'):
     """The main function. Creates a readnoise reference file using the input 
     dark current ramps. See module docstring for more details.
     
@@ -163,7 +163,7 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
         ``consecutive``: Each group is differenced to its neighbors (e.g. 
                          4-3, 3-2, 2-1).
 
-    clipping_sigma : int
+    clipping_sigma : float
         Number of sigma to use when sigma-clipping.
 
     max_clipping_iters : int
@@ -177,6 +177,9 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
         multiprocessing. The readnoise of each slice is calculatd separately 
         during multiprocessing and combined together at the end of 
         processing. Only relevant if method==stack.
+
+    outfile : str
+        The filename to give to the output readnoise image.
     """
 
     if method == 'stack':
@@ -245,10 +248,10 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
     instrument = header['INSTRUME']
     detector = header['DETECTOR']
     subarray = header['SUBARRAY']
-    save_readnoise(readnoise, instrument, detector, subarray)
+    save_readnoise(readnoise, instrument, detector, subarray, outfile=outfile)
 
 def readnoise_by_ramp(filename, group_diff_type='independent', 
-                      clipping_sigma=3, max_clipping_iters=3):
+                      clipping_sigma=3.0, max_clipping_iters=3):
     """Calculates the readnoise for the given input dark current ramp.
     
     Parameters
@@ -264,7 +267,7 @@ def readnoise_by_ramp(filename, group_diff_type='independent',
         ``consecutive``: Each group is differenced to its neighbors (e.g. 
                          4-3, 3-2, 2-1)
 
-    clipping_sigma : int
+    clipping_sigma : float
         Number of sigma to use when sigma-clipping.
 
     max_clipping_iters : int
@@ -291,7 +294,7 @@ def readnoise_by_ramp(filename, group_diff_type='independent',
     return readnoise
 
 def readnoise_by_slice(filenames, group_diff_type='independent', 
-                       clipping_sigma=3, max_clipping_iters=3, column=0,
+                       clipping_sigma=3.0, max_clipping_iters=3, column=0,
                        slice_width=50):
     """Calculates the readnoise for a given slice in the input dark file 
     ramps. Useful for multiprocessing and avoiding memory issues for large 
@@ -310,7 +313,7 @@ def readnoise_by_slice(filenames, group_diff_type='independent',
         ``consecutive``: Each group is differenced to its neighbors (e.g. 
                          4-3, 3-2, 2-1)
 
-    clipping_sigma : int
+    clipping_sigma : float
         Number of sigma to use when sigma-clipping.
 
     max_clipping_iters : int
@@ -362,7 +365,7 @@ def readnoise_by_slice(filenames, group_diff_type='independent',
     return readnoise
 
 def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC', 
-                   readpatt='ANY'):
+                   readpatt='ANY', outfile='readnoise_jwst_reffiles.fits'):
     """Saves a readnoise image that can be used as a reference file in the 
     JWST calibration pipeline.
 
@@ -382,9 +385,10 @@ def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC',
 
     readpatt : str
         The readout pattern to use this reference file for.
-    """
 
-    outfile = 'readnoise.fits'
+    outfile : str
+        The filename to give to the output readnoise image.
+    """
 
     r = ReadnoiseModel()
     r.data = readnoise
