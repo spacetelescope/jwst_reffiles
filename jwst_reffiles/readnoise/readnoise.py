@@ -17,7 +17,7 @@ Use
 Notes
 -----
     Overview:
-    Inputs: A list of calibrated (refpix-corrected) dark current ramps
+    Inputs: A list of dark current ramps
 
     Algorithm:
 
@@ -31,12 +31,13 @@ Notes
     these readnoise images together to produce a final readnoise map.
 """
 
+from multiprocessing import Pool
+import os
+
 from astropy.io import fits
 from astropy.stats import sigma_clip
-from multiprocessing import Pool
+from jwst.datamodels import ReadnoiseModel, util
 import numpy as np
-
-from jwst.datamodels import ReadnoiseModel
 
 def calculate_mean(stack, clipping_sigma=3.0, max_clipping_iters=3):
     """Calculates the sigma-clipped mean through a stack of images.
@@ -94,6 +95,57 @@ def calculate_stddev(stack, clipping_sigma=3.0, max_clipping_iters=3):
 
     return stddev_image
 
+def get_crds_info(filename, subarray, readpatt):
+    """Get CRDS-required header information to put into the final readnoise 
+    reference file.
+
+    Parameters
+    ----------
+    filename : str
+        Path to one of the files being used to generate the readnoise 
+        reference file. Will be used to find default values.
+
+    subarray : str
+        CRDS-required subarray for which to use this reference file for.
+
+    readpatt : str
+        CRDS-required read pattern for which to use this reference file for.
+
+    Returns
+    -------
+    instrument : str
+        CRDS-required instrument for which to use this reference file for.
+
+    detector : str
+        CRDS-required detector for which to use this reference file for.
+
+    subarray : str
+        CRDS-required subarray for which to use this reference file for.
+
+    readpatt : str
+        CRDS-required read pattern for which to use this reference file for.
+
+    fastaxis : int
+        CRDS-required fastaxis of the reference file.
+    
+    slowaxis : int
+        CRDS-required slowaxis of the reference file.
+    """
+
+    header = fits.getheader(filename)
+    instrument = header['INSTRUME']
+    detector = header['DETECTOR']
+    fastaxis = header['FASTAXIS']
+    slowaxis = header['SLOWAXIS']
+
+    if subarray is None:
+        subarray = header['SUBARRAY']
+    if readpatt is None:
+        readpatt = 'ANY'
+
+    return instrument, detector, subarray, readpatt, fastaxis, slowaxis
+
+
 def make_cds_stack(data, group_diff_type='independent'):
     """Creates a stack of CDS images (group difference images) using the 
     input ramp data, combining multiple integrations if necessary.
@@ -135,7 +187,10 @@ def make_cds_stack(data, group_diff_type='independent'):
 
 def make_readnoise(filenames, method='stack', group_diff_type='independent', 
                    clipping_sigma=3.0, max_clipping_iters=3, nproc=1, 
-                   slice_width=50, outfile='readnoise_jwst_reffiles.fits'):
+                   slice_width=50, outfile='readnoise_jwst_reffiles.fits', 
+                   author='jwst_reffiles', description='CDS Noise Image', 
+                   pedigree='GROUND', useafter='2000-01-01T00:00:00', 
+                   history='', subarray=None, readpatt=None):
     """The main function. Creates a readnoise reference file using the input 
     dark current ramps. See module docstring for more details.
     
@@ -179,8 +234,46 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
         processing. Only relevant if method==stack.
 
     outfile : str
-        The filename to give to the output readnoise image.
+        Name of the CRDS-formatted readnoise reference file to save the final
+        readnoise map to.
+
+    author : str
+        CRDS-required name of the reference file author, to be placed in the
+        referece file header.
+
+    description : str
+        CRDS-required description of the reference file, to be placed in the
+        reference file header.
+
+    pedigree : str
+        CRDS-required pedigree of the data used to create the reference file.
+
+    useafter : str
+        CRDS-required date of earliest data with which this referece file
+        should be used. (e.g. '2019-04-01T00:00:00').
+
+    history : str
+        CRDS-required history section to place in the reference file header.
+
+    subarray : str
+        CRDS-required subarray for which to use this reference file for.
+
+    readpatt : str
+        CRDS-required read pattern for which to use this reference file for.
     """
+
+    # Inputs listed as None in the config file are read in as strings.
+    # Change these to NoneType objects.
+    subarray = none_check(subarray)
+    readpatt = none_check(readpatt)
+
+    # CRDS doesnt allow descriptions over 65 characters
+    if len(description) > 65:
+        raise ValueError('Description cannot exceed 65 characters.')
+
+    # Get info needed by CRDS to put into the final readnoise reference file
+    instrument, detector, subarray, readpatt, fastaxis, slowaxis = \
+        get_crds_info(filenames[0], subarray, readpatt)
 
     if method == 'stack':
 
@@ -243,12 +336,41 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
     if n_nans > 0:
         print('Warning: Readnoise file has {} nan pixels.'.format(n_nans))
     
-    # Save the final readnoise reference file
-    header = fits.getheader(filenames[0])
-    instrument = header['INSTRUME']
-    detector = header['DETECTOR']
-    subarray = header['SUBARRAY']
-    save_readnoise(readnoise, instrument, detector, subarray, outfile=outfile)
+    # Save final readnoise map before turning it into CRDS format in case
+    # that step has issues (so all of the previous work isnt lost).
+    outfile_temp = outfile.replace('.fits','_temp.fits')
+    fits.writeto(outfile_temp, readnoise, overwrite=True)
+    print('Readnoise map saved to {}'.format(outfile_temp))
+
+    # Save the final readnoise reference file in CRDS format
+    print('Creating CRDS-formatted version of {}...'.format(outfile_temp))
+    save_readnoise(readnoise, instrument=instrument, detector=detector, 
+                   subarray=subarray, readpatt=readpatt, outfile=outfile, 
+                   author=author, description=description, pedigree=pedigree, 
+                   useafter=useafter, history=history, filenames=filenames)
+
+def none_check(value):
+    """If value is a string containing 'none', then change it to a
+    NoneType object.
+
+    Parameters
+    ----------
+    value : str or NoneType
+    
+    Returns
+    -------
+    new_value : NoneType
+    """
+
+    if isinstance(value, str):
+        if 'none' in value.lower():
+            new_value = None
+        else:
+            new_value = value
+    else:
+        new_value = value
+
+    return new_value
 
 def readnoise_by_ramp(filename, group_diff_type='independent', 
                       clipping_sigma=3.0, max_clipping_iters=3):
@@ -365,9 +487,11 @@ def readnoise_by_slice(filenames, group_diff_type='independent',
     return readnoise
 
 def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC', 
-                   readpatt='ANY', outfile='readnoise_jwst_reffiles.fits'):
-    """Saves a readnoise image that can be used as a reference file in the 
-    JWST calibration pipeline.
+                   readpatt='ANY', outfile='readnoise_jwst_reffiles.fits',
+                   author='jwst_reffiles', description='CDS Noise Image', 
+                   pedigree='GROUND', useafter='2000-01-01T00:00:00', 
+                   history='', fastaxis=-1, slowaxis=2, filenames=[]):
+    """Saves a CRDS-formatted readnoise reference file.
 
     Parameters
     ----------
@@ -375,32 +499,96 @@ def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC',
         The 2D readnoise image.
 
     instrument : str
-        The instrument to use this reference file for.
+        CRDS-required instrument for which to use this reference file for.
 
     detector : str
-        The detector to use this reference file for.
+        CRDS-required detector for which to use this reference file for.
 
     subarray : str
-        The subarray to use this reference file for.
+        CRDS-required subarray for which to use this reference file for.
 
     readpatt : str
-        The readout pattern to use this reference file for.
+        CRDS-required read pattern for which to use this reference file for.
 
     outfile : str
-        The filename to give to the output readnoise image.
+        Name of the CRDS-formatted readnoise reference file to save the final
+        readnoise map to.
+
+    author : str
+        CRDS-required name of the reference file author, to be placed in the
+        referece file header.
+
+    description : str
+        CRDS-required description of the reference file, to be placed in the
+        reference file header.
+
+    pedigree : str
+        CRDS-required pedigree of the data used to create the reference file.
+
+    useafter : str
+        CRDS-required date of earliest data with which this referece file
+        should be used. (e.g. '2019-04-01T00:00:00').
+
+    history : str
+        CRDS-required history section to place in the reference file header.
+
+    fastaxis : int
+        CRDS-required fastaxis of the reference file.
+    
+    slowaxis : int
+        CRDS-required slowaxis of the reference file.
+
+    filenames : list
+        List of dark current files that were used to generate the reference 
+        file.
     """
 
     r = ReadnoiseModel()
+    
     r.data = readnoise
     r.meta.instrument.name = instrument
     r.meta.instrument.detector = detector
     r.meta.subarray.name = subarray
     r.meta.exposure.readpatt = readpatt
-    r.meta.description = 'Readnoise image'
-    r.meta.useafter = '2000-01-01T00:00:00'
-    r.save(outfile)
+    r.meta.author = author
+    r.meta.description = description
+    r.meta.pedigree = pedigree
+    r.meta.useafter = useafter
+    r.meta.subarray.fastaxis = fastaxis
+    r.meta.subarray.slowaxis = slowaxis
+    r.meta.reftype = 'READNOISE'
 
-    print('Final readnoise map saved to {}'.format(outfile))
+    yd, xd = readnoise.shape
+    r.meta.subarray.xstart = 1
+    r.meta.subarray.xsize = xd
+    r.meta.subarray.ystart = 1
+    r.meta.subarray.ysize = yd
+
+    package_note = ('This file was created using the readnoise.py module '
+                    'within the jwst_reffiles package.')
+    software_dict = {'name': 'jwst_reffiles.readnoise.py', 'author': 'STScI',
+                     'homepage': 'https://github.com/spacetelescope/jwst_reffiles',
+                     'version': '0.0.0'}
+    entry = util.create_history_entry(package_note, software=software_dict)
+    r.history.append(entry)
+
+    # Add the list of input files used to create the readnoise reference file
+    r.history.append('DATA USED:')
+    for f in filenames:
+        f = os.path.basename(f)
+        totlen = len(f)
+        div = np.arange(0, totlen, 60)
+        for val in div:
+            if totlen > (val+60):
+                r.history.append(util.create_history_entry(f[val:val+60]))
+            else:
+                r.history.append(util.create_history_entry(f[val:]))
+    
+    if history != '':
+        r.history.append(util.create_history_entry(history))
+    
+    r.save(outfile, overwrite=True)
+    print('Final CRDS-formatted readnoise map saved to {}'.format(outfile))
 
 def wrapper_readnoise_by_ramp(args):
     """A wrapper around the readnoise_by_ramp function to allow for 
