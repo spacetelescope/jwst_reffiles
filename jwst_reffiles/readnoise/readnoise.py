@@ -347,7 +347,8 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
     save_readnoise(readnoise, instrument=instrument, detector=detector, 
                    subarray=subarray, readpatt=readpatt, outfile=outfile, 
                    author=author, description=description, pedigree=pedigree, 
-                   useafter=useafter, history=history, filenames=filenames)
+                   useafter=useafter, history=history, fastaxis=fastaxis, 
+                   slowaxis=slowaxis, filenames=filenames)
 
 def none_check(value):
     """If value is a string containing 'none', then change it to a
