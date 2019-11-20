@@ -858,6 +858,43 @@ class mkrefsclass(astrotableclass):
         self.logger.debug(DD.t)
         return(DD, ('D1', 'D2'))
 
+    def getDpluslist(self, detector, max_Delta_MJD=None):
+        '''
+        returns all Dark indeces, where the indices refer to the self.imtable table
+        '''
+        self.logger.info('# Getting D+ list')
+
+        # indices for dark frames
+        dindex, = np.where(self.imtable.t['imtype'] == 'dark')
+        # indices for detector and not skipped
+        dindex4detector = dindex[np.where(np.logical_and(self.imtable.t['DETECTOR'][dindex] == detector,
+                                                         np.logical_not(self.imtable.t['skip'][dindex])))]
+        self.logger.info('{} Darks for detector {}'.format(len(dindex4detector), detector))
+        for goodrow in self.imtable.t[dindex4detector]:
+            row_str = ''
+            for col in self.imtable.t.colnames:
+                row_str = row_str + '  {}'.format(goodrow[col])
+            self.logger.info(row_str)
+
+        if len(dindex4detector)<1:
+
+            Dplus = astrotableclass()
+            return(Dplus,())
+
+        cols = ['D%dindex' % i for i in range(1,len(dindex4detector)+1)]
+        cols.extend(['D%dimID' % i for i in range(1,len(dindex4detector)+1)])
+        dtypes = ['i4' for i in range(len(cols))]
+        imagelabels = ['D%d' % i for i in range(1,len(dindex4detector)+1)]
+
+        Dplus = astrotableclass(names=cols, dtype=dtypes)
+        r =  Dplus.t.add_row({})
+
+        for i in range(1,len(dindex4detector)+1):
+            Dplus.t['D%dindex' % i][r]=dindex4detector[i-1]
+            Dplus.t['D%dimID' % i][r]=self.imtable.t['imID'][dindex4detector[i-1]]
+
+        return(Dplus,imagelabels)
+
     def getFpluslist(self, detector, max_Delta_MJD=None):
         '''
         returns all Flat indeces, where the indices refer to the self.imtable table
@@ -1008,6 +1045,8 @@ class mkrefsclass(astrotableclass):
             imagesets, imagelabels = self.getDlist(detector)
         elif imtypes == 'DD':
             imagesets, imagelabels = self.getDDlist(detector, max_Delta_MJD=DD_max_Delta_MJD)
+        elif imtypes == 'D+':
+            imagesets, imagelabels = self.getDpluslist(detector)
         elif imtypes == 'FF':
             imagesets, imagelabels = self.getFFlist(detector, max_Delta_MJD=FF_max_Delta_MJD)
         elif imtypes == 'F+':
