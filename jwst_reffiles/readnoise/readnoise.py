@@ -190,7 +190,7 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
                    slice_width=50, outfile='readnoise_jwst_reffiles.fits', 
                    author='jwst_reffiles', description='CDS Noise Image', 
                    pedigree='GROUND', useafter='2000-01-01T00:00:00', 
-                   history='', subarray=None, readpatt=None):
+                   history='', subarray=None, readpatt=None, save_tmp=False):
     """The main function. Creates a readnoise reference file using the input 
     dark current ramps. See module docstring for more details.
     
@@ -229,7 +229,7 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
 
     slice_width : int
         The width (in pixels) of the image slice to use during 
-        multiprocessing. The readnoise of each slice is calculatd separately 
+        multiprocessing. The readnoise of each slice is calculated separately 
         during multiprocessing and combined together at the end of 
         processing. Only relevant if method==stack.
 
@@ -260,6 +260,12 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
 
     readpatt : str
         CRDS-required read pattern for which to use this reference file for.
+
+    save_tmp : bool
+        Option to save the final readnoise map before turning it into CRDS 
+        format. This is useful if the CRDS transformation fails; in this  
+        scenario, you won't lose all of the final readnoise results so all 
+        of the previous processing wasn't for nothing.
     """
 
     # Inputs listed as None in the config file are read in as strings.
@@ -301,6 +307,7 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
                           )
         readnoise = np.concatenate(readnoise, axis=1)
         p.close()
+        p.join()
 
     elif method == 'ramp':
 
@@ -317,6 +324,7 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
                                     iters)
                                 )
         p.close()
+        p.join()
 
         # Create the final readnoise map by averaging the individual  
         # readnoise images.
@@ -338,12 +346,13 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
     
     # Save final readnoise map before turning it into CRDS format in case
     # that step has issues (so all of the previous work isnt lost).
-    outfile_temp = outfile.replace('.fits','_temp.fits')
-    fits.writeto(outfile_temp, readnoise, overwrite=True)
-    print('Readnoise map saved to {}'.format(outfile_temp))
+    if save_tmp:
+        outfile_temp = outfile.replace('.fits','_temp.fits')
+        fits.writeto(outfile_temp, readnoise, overwrite=True)
+        print('Readnoise map saved to {}'.format(outfile_temp))
+        print('Creating CRDS-formatted version of {}...'.format(outfile_temp))
 
     # Save the final readnoise reference file in CRDS format
-    print('Creating CRDS-formatted version of {}...'.format(outfile_temp))
     save_readnoise(readnoise, instrument=instrument, detector=detector, 
                    subarray=subarray, readpatt=readpatt, outfile=outfile, 
                    author=author, description=description, pedigree=pedigree, 
