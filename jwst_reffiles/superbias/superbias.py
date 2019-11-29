@@ -20,16 +20,22 @@ Notes
     Inputs: A list of dark current ramps
 
     Algorithm: The superbias is the sigma-clipped mean of all 0th frames.
-               The superbias error is the sigma-clipped stddev of all 0th 
-               frames.
+               The superbias error is the stddev of all 0th frames.
+               Pixels with high superbias values are flagged as UNRELIABLE_BIAS
+               and DO_NOT_USE in the superbias DQ array.
 """
 
+import copy
 import os
 
 from astropy.io import fits
 from astropy.stats import sigma_clip
 from jwst.datamodels import dqflags, SuperBiasModel, util
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import numpy as np
+from scipy.ndimage import median_filter
 
 def calculate_mean(stack, clipping_sigma=3.0, max_clipping_iters=3):
     """Calculates the sigma-clipped mean through a stack of images.
@@ -69,7 +75,6 @@ def calculate_stddev(stack, clipping_sigma=3.0, max_clipping_iters=3):
     
     clipping_sigma : float
         Number of sigmas to use when sigma-clipping the input stack.
-
     max_clipping_iters : int
         Maximum number of iterations to use when sigma-clipping the input 
         stack.
@@ -87,28 +92,112 @@ def calculate_stddev(stack, clipping_sigma=3.0, max_clipping_iters=3):
 
     return stddev_image
 
-def create_dqdef():
-    """Create the DQ definition data needed to populate the final superbias 
-    reference file.
+def find_unreliable_bias_pixels(superbias, refpix_map, box_width=3, 
+                                bad_sigma_threshold=5.0, plot=False, 
+                                save_tmp=False, save_filled=False):
+    """Identifies pixels with high superbias values (i.e. UNRELIABLE_BIAS 
+    pixels).
+
+    Parameters
+    ----------
+    superbias : numpy.ndarray
+        A 2D superbias image.
+
+    refpix_map : numpy.ndarray
+        A 2D image where refpix have a value of 1 and all other pixels have 
+        a value of 0.
+
+    box_width : int
+        Width in pixels of the box kernel to use to compute the smoothed
+        superbias image.
+
+    bad_sigma_threshold : float
+        Number of standard deviations above the mean at which a pixel is 
+        flagged as UNRELIABLE_BIAS.
+
+    plot : bool
+        Option to save a histogram of the superbias image minus the smoothed 
+        superbias image values, with the threshold used for flagging 
+        UNRELIABLE_BIAS pixels also shown.
+
+    save_tmp : bool
+        Option to save intermediate images that were used to identify 
+        UNRELIABLE_BIAS pixels (e.g. a smoothed superbias image).
+
+    save_filled : bool
+        Option to save an image where UNRELIABLE_BIAS pixels are replaced by 
+        their smoothed values.
 
     Returns
     -------
-    definitions : list
-        Bad pixel bit definitions
+    dq : numpy.ndarray
+        A 2D DQ image that flags pixels with high superbias values as 
+        UNRELIABLE_BIAS (2) and DO_NOT_USE (1).
     """
 
-    definitions = []
-    standard_defs = dqflags.pixel
-    for bitname in standard_defs:
-        bitvalue = standard_defs[bitname]
-        if bitvalue != 0:
-            bitnumber = np.uint8(np.log(bitvalue)/np.log(2))
-        else:
-            bitnumber = 0
-        newrow = (bitnumber, bitvalue, bitname, '')
-        definitions.append(newrow)
-    
-    return definitions
+    # Trim the refpix from the input superbias
+    scipix = np.where(refpix_map==0)
+    ymin = np.min(scipix[0])
+    xmin = np.min(scipix[1])
+    ymax = np.max(scipix[0]) + 1
+    xmax = np.max(scipix[1]) + 1
+    superbias_no_refpix = superbias[ymin:ymax, xmin:xmax].copy()
+
+    # Make initial DQ arrays, with and without refpix
+    dq = np.zeros(superbias.shape, dtype=int)
+    dq_no_refpix = np.zeros(superbias_no_refpix.shape, dtype=int)
+
+    # Flag pixels with nan/inf superbias values
+    dq_no_refpix[~np.isfinite(superbias_no_refpix)] = 3
+
+    # Median-filter the superbias image; replace any nans/infs first as 
+    # these mess up the smoothing. Then subtract this smoothed image from 
+    # the original superbias image.
+    superbias_no_refpix[~np.isfinite(superbias_no_refpix)] = \
+        np.nanmedian(superbias_no_refpix)
+    smoothed = median_filter(superbias_no_refpix, box_width)
+    diff = superbias_no_refpix - smoothed
+
+    # Flag pixels X sigma greater than the mean in the difference image
+    clipped = sigma_clip(diff, sigma=3, maxiters=5)
+    mean = np.mean(clipped)
+    std = np.std(clipped)
+    thresh = mean + bad_sigma_threshold*std
+    dq_no_refpix[diff > thresh] = 3
+
+    # Put DQ array back into original dimensions
+    dq[ymin:ymax, xmin:xmax] = dq_no_refpix
+
+    # Plot a histogram of the difference image values
+    if plot:
+        plt.hist(diff.flatten(), range=(-thresh*4, thresh*4), bins=80)
+        plt.axvline(thresh, ls='--', color='red')
+        plt.yscale('log')
+        plt.ylabel('Number of Pixels')
+        plt.xlabel('Difference (superbias - smoothed superbias) [DN]')
+        plt.title('# of UNRELIABLE_BIAS pixels: {}'.format(len(dq[dq!=0])))
+        plt.savefig('diff_hist.png', dpi=100, bbox_inches='tight')
+
+    # Save images used to identify UNRELIABLE_BIAS pixels
+    if save_tmp:
+        fits.writeto('superbias_original.fits', superbias_no_refpix, 
+                     overwrite=True)
+        fits.writeto('superbias_smoothed.fits', smoothed, overwrite=True)
+        fits.writeto('superbias_original_minus_smoothed.fits', diff, 
+                     overwrite=True)
+
+    # Save an image where bad superbias pixels are replaced by their smoothed
+    # values.
+    if save_filled:
+        superbias_filled_no_refpix = superbias[ymin:ymax, xmin:xmax].copy()
+        superbias_filled_no_refpix[dq_no_refpix != 0] = \
+            smoothed[dq_no_refpix != 0]
+        superbias_filled = superbias.copy()
+        superbias_filled[ymin:ymax, xmin:xmax] = superbias_filled_no_refpix
+        fits.writeto('superbias_filled.fits', superbias_filled, 
+                     overwrite=True)
+
+    return dq
 
 def get_crds_info(filename, subarray, readpatt):
     """Get CRDS-required header information to put into the final superbias 
@@ -160,8 +249,40 @@ def get_crds_info(filename, subarray, readpatt):
 
     return instrument, detector, subarray, readpatt, fastaxis, slowaxis
 
+def make_refpix_map(filename):
+    """Creates a map of the reference pixels based on the input fits file.
+
+    Parameters
+    ----------
+    filename : str
+        The fits image file to create the refpix map from. Must include a 
+        PIXELDQ extension.
+
+    Returns
+    -------
+    refpix_map : numpy.ndarray
+        A map of the reference pixels, where refpix are 1 and all other 
+        pixels are 0. Same dimension as the input fits image data quality 
+        extension.
+    """
+
+    try:
+        dq = fits.getdata(filename, 'PIXELDQ')
+        refpix_map = (dq & dqflags.pixel['REFERENCE_PIXEL'] > 0).astype('int')
+    except KeyError:
+        print('Warning: No PIXELDQ extension found in input file. Assuming '
+              'no reference pixels exist (if this isnt true, i.e. if refpix '
+              'actually do exist in this file, it may affect the search for '
+              'UNRELIABLE_BIAS pixels).')
+        data = fits.getdata(filename, 'SCI')[0,0,:,:]
+        refpix_map = np.zeros(data.shape).astype('int')
+
+    return refpix_map
+
 def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3, 
-                   save_reffile=True, outfile='superbias_jwst_reffiles.fits', 
+                   box_width=3, bad_sigma_threshold=5.0, plot=False, 
+                   save_tmp=False, save_filled=False, save_reffile=True, 
+                   outfile='superbias_jwst_reffiles.fits', 
                    author='jwst_reffiles', description='Super Bias Image', 
                    pedigree='GROUND', useafter='2000-01-01T00:00:00', 
                    history='', subarray=None, readpatt=None):
@@ -179,6 +300,27 @@ def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3,
 
     max_clipping_iters : int
         Maximum number of iterations to use when sigma-clipping.
+
+    box_width : int
+        The box size to use in pixels when smoothing the superbias image 
+        to find UNRELIABLE_BIAS pixels.
+
+    bad_sigma_threshold : float
+        Number of standard deviations above the mean at which a pixel is 
+        flagged as UNRELIABLE_BIAS.
+
+    plot : bool
+        Option to save a histogram of the superbias image minus the smoothed 
+        superbias image values, with the threshold used for flagging 
+        UNRELIABLE_BIAS pixels also shown.
+
+    save_tmp : bool
+        Option to save intermediate images that were used to identify 
+        UNRELIABLE_BIAS pixels (e.g. a smoothed superbias image).
+
+    save_filled : bool
+        Option to save an image where UNRELIABLE_BIAS pixels are replaced by 
+        their smoothed values.
 
     save_reffile : bool
         Option to save the generated superbias map into a CRDS-formatted 
@@ -226,11 +368,15 @@ def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3,
     # Convert masked array to normal numpy array and check for any missing 
     # data.
     superbias = superbias.filled(fill_value=np.nan)
-    n_nans = len(superbias[~np.isfinite(superbias)])
-    if n_nans > 0:
-        print('Warning: Superbias file has {} nan pixels.'.format(n_nans))
+    n_bad = len(superbias[~np.isfinite(superbias)])
+    if n_bad > 0:
+        print('Warning: Superbias file has {} nan/inf pixels.'.format(n_bad))
 
     if save_reffile:
+
+        # Get a map of the refpix pixels, so they can be excluded when 
+        # creating the superbias DQ extension
+        refpix_map = make_refpix_map(filenames[0])
 
         # Inputs listed as None in the config file are read in as strings.
         # Change these to NoneType objects.
@@ -253,14 +399,18 @@ def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3,
         # Convert masked array to normal numpy array and check for any missing 
         # data.
         error = error.filled(fill_value=np.nan)
-        n_nans = len(error[~np.isfinite(error)])
-        if n_nans > 0:
-            print('Warning: Superbias Error array has {} nan pixels.'
-                  .format(n_nans))
+        n_bad = len(error[~np.isfinite(error)])
+        if n_bad > 0:
+            print('Warning: Superbias Error array has {} nan/inf pixels.'
+                  .format(n_bad))
 
-        # Use empty DQ array
-        dq = np.zeros((n_y, n_x))
-        
+        # Flag pixels with high superbias values as UNRELIABLE_BIAS
+        dq = find_unreliable_bias_pixels(superbias, refpix_map, 
+                                         box_width=box_width,
+                                         bad_sigma_threshold=bad_sigma_threshold,
+                                         plot=plot, save_tmp=save_tmp, 
+                                         save_filled=save_filled)
+
         # Save CRDS-formatted superbias reference file
         save_superbias(superbias, error, dq, instrument=instrument, 
                        detector=detector, subarray=subarray, readpatt=readpatt, 
@@ -363,7 +513,9 @@ def save_superbias(superbias, error, dq, instrument='', detector='',
     s.data = superbias
     s.err = error
     s.dq = dq
-    s.dq_def = create_dqdef()
+    s.dq_def = [(0, 0, 'GOOD', ''),
+                (0, 1, 'DO_NOT_USE', ''),
+                (1, 2, 'UNRELIABLE_BIAS', '')]
 
     s.meta.instrument.name = instrument
     s.meta.instrument.detector = detector
