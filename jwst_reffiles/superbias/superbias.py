@@ -25,7 +25,6 @@ Notes
                and DO_NOT_USE in the superbias DQ array.
 """
 
-import copy
 import os
 
 from astropy.io import fits
@@ -96,7 +95,7 @@ def calculate_stddev(stack, clipping_sigma=3.0, max_clipping_iters=3):
 def find_unreliable_bias_pixels(superbias, refpix_map, bad_clipping_sigma=3.0, 
                                 bad_max_clipping_iters=3, bad_sigma_threshold=5.0, 
                                 box_width=3, plot=False, save_tmp=False, 
-                                save_filled=False):
+                                save_filled=False, outfile='superbias_jwst_reffiles.fits'):
     """Identifies pixels with high superbias values (i.e. UNRELIABLE_BIAS 
     pixels).
 
@@ -137,6 +136,11 @@ def find_unreliable_bias_pixels(superbias, refpix_map, bad_clipping_sigma=3.0,
     save_filled : bool
         Option to save an image where UNRELIABLE_BIAS pixels are replaced by 
         their smoothed values.
+
+    outfile : str
+        Name of the CRDS-formatted superbias reference file to save the final
+        superbias map to. This is only used in this function to name the  
+        optional output files.
 
     Returns
     -------
@@ -203,13 +207,13 @@ def find_unreliable_bias_pixels(superbias, refpix_map, bad_clipping_sigma=3.0,
     # Save an image where bad superbias pixels are replaced by their smoothed
     # values.
     if save_filled:
+        outname = outfile.replace('.fits', '_filled.fits')
         superbias_filled_no_refpix = superbias[ymin:ymax, xmin:xmax].copy()
         superbias_filled_no_refpix[dq_no_refpix != 0] = \
             smoothed[dq_no_refpix != 0]
         superbias_filled = superbias.copy()
         superbias_filled[ymin:ymax, xmin:xmax] = superbias_filled_no_refpix
-        fits.writeto('superbias_jwst_reffiles_filled.fits', superbias_filled, 
-                     overwrite=True)
+        fits.writeto(outname, superbias_filled, overwrite=True)
 
     return dq
 
@@ -450,7 +454,7 @@ def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3,
                                          bad_sigma_threshold=bad_sigma_threshold,
                                          box_width=box_width,
                                          plot=plot, save_tmp=save_tmp, 
-                                         save_filled=save_filled)
+                                         save_filled=save_filled, outfile=outfile)
 
         # Save CRDS-formatted superbias reference file
         save_superbias(superbias, error, dq, instrument=instrument, 
