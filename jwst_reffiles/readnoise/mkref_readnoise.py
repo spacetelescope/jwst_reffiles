@@ -49,6 +49,8 @@ class mkrefclass(mkrefclass_template):
                                                    'is calculated separately during multiprocessing and '
                                                    'combined together at the end of processing. Only '
                                                    'relevant if method==stack.'))
+        parser.add_argument('--single_value', help=('Option to use a single readnoise value (the average ' 
+                                                    'of all readnoise values) for all pixels.'))
         parser.add_argument('--author', help=('CRDS-required name of the reference file author, to be '
                                               'placed in the referece file header.'))
         parser.add_argument('--description', help=('CRDS-required description of the reference file, to '
@@ -91,6 +93,7 @@ class mkrefclass(mkrefclass_template):
                                  max_clipping_iters=self.parameters['max_clipping_iters'], 
                                  nproc=self.parameters['nproc'], 
                                  slice_width=self.parameters['slice_width'], 
+                                 single_value=self.parameters['single_value'], 
                                  outfile=self.args.outputreffilename, 
                                  author=self.parameters['author'], 
                                  description=self.parameters['description'], 

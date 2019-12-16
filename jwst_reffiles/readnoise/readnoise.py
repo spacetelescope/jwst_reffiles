@@ -21,12 +21,12 @@ Notes
 
     Algorithm:
 
-    Method 1: 
+    Method 1 (method='stack'): 
     Create CDS images for each input ramp. Stack all of these 
     images from each input ramp together. The readnoise is the sigma-clipped 
     standard deviation through this master CDS image stack.
     
-    Method 2:
+    Method 2 (method='ramp'):
     Calculate the readnoise in each ramp individually, and then average
     these readnoise images together to produce a final readnoise map.
 """
@@ -130,6 +130,12 @@ def get_crds_info(filename, subarray, readpatt):
     
     slowaxis : int
         CRDS-required slowaxis of the reference file.
+
+    substrt1 : int
+        CRDS-required starting pixel in axis 1 direction.
+
+    substrt2 : int
+        CRDS-required starting pixel in axis 2 direction.
     """
 
     header = fits.getheader(filename)
@@ -137,13 +143,15 @@ def get_crds_info(filename, subarray, readpatt):
     detector = header['DETECTOR']
     fastaxis = header['FASTAXIS']
     slowaxis = header['SLOWAXIS']
+    substrt1 = header['SUBSTRT1']
+    substrt2 = header['SUBSTRT2']
 
     if subarray is None:
         subarray = header['SUBARRAY']
     if readpatt is None:
         readpatt = 'ANY'
 
-    return instrument, detector, subarray, readpatt, fastaxis, slowaxis
+    return instrument, detector, subarray, readpatt, fastaxis, slowaxis, substrt1, substrt2
 
 
 def make_cds_stack(data, group_diff_type='independent'):
@@ -187,7 +195,8 @@ def make_cds_stack(data, group_diff_type='independent'):
 
 def make_readnoise(filenames, method='stack', group_diff_type='independent', 
                    clipping_sigma=3.0, max_clipping_iters=3, nproc=1, 
-                   slice_width=50, outfile='readnoise_jwst_reffiles.fits', 
+                   slice_width=50, single_value=False, 
+                   outfile='readnoise_jwst_reffiles.fits', 
                    author='jwst_reffiles', description='CDS Noise Image', 
                    pedigree='GROUND', useafter='2000-01-01T00:00:00', 
                    history='', subarray=None, readpatt=None, save_tmp=False):
@@ -232,6 +241,10 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
         multiprocessing. The readnoise of each slice is calculated separately 
         during multiprocessing and combined together at the end of 
         processing. Only relevant if method==stack.
+
+    single_value : bool
+        Option to use a single readnoise value (the average of all readnoise 
+        values) for all pixels.
 
     outfile : str
         Name of the CRDS-formatted readnoise reference file to save the final
@@ -278,7 +291,7 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
         raise ValueError('Description cannot exceed 65 characters.')
 
     # Get info needed by CRDS to put into the final readnoise reference file
-    instrument, detector, subarray, readpatt, fastaxis, slowaxis = \
+    instrument, detector, subarray, readpatt, fastaxis, slowaxis, substrt1, substrt2 = \
         get_crds_info(filenames[0], subarray, readpatt)
 
     if method == 'stack':
@@ -343,6 +356,13 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
     n_nans = len(readnoise[~np.isfinite(readnoise)])
     if n_nans > 0:
         print('Warning: Readnoise file has {} nan pixels.'.format(n_nans))
+
+    # Option to use a single readnoise value for all pixels
+    if single_value:
+        readnoise = use_single_value(readnoise, instrument=instrument,
+                                     detector=detector, subarray=subarray, 
+                                     clipping_sigma=clipping_sigma, 
+                                     max_clipping_iters=max_clipping_iters)
     
     # Save final readnoise map before turning it into CRDS format in case
     # that step has issues (so all of the previous work isnt lost).
@@ -357,7 +377,8 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
                    subarray=subarray, readpatt=readpatt, outfile=outfile, 
                    author=author, description=description, pedigree=pedigree, 
                    useafter=useafter, history=history, fastaxis=fastaxis, 
-                   slowaxis=slowaxis, filenames=filenames)
+                   slowaxis=slowaxis, substrt1=substrt1, substrt2=substrt2, 
+                   filenames=filenames)
 
 def none_check(value):
     """If value is a string containing 'none', then change it to a
@@ -500,7 +521,8 @@ def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC',
                    readpatt='ANY', outfile='readnoise_jwst_reffiles.fits',
                    author='jwst_reffiles', description='CDS Noise Image', 
                    pedigree='GROUND', useafter='2000-01-01T00:00:00', 
-                   history='', fastaxis=-1, slowaxis=2, filenames=[]):
+                   history='', fastaxis=-1, slowaxis=2, substrt1=1, substrt2=1, 
+                   filenames=[]):
     """Saves a CRDS-formatted readnoise reference file.
 
     Parameters
@@ -548,6 +570,12 @@ def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC',
     slowaxis : int
         CRDS-required slowaxis of the reference file.
 
+    substrt1 : int
+        CRDS-required starting pixel in axis 1 direction.
+
+    substrt2 : int
+        CRDS-required starting pixel in axis 2 direction.
+
     filenames : list
         List of dark current files that were used to generate the reference 
         file.
@@ -556,6 +584,7 @@ def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC',
     r = ReadnoiseModel()
     
     r.data = readnoise
+    r.meta.bunit_data = 'DN'
     r.meta.instrument.name = instrument
     r.meta.instrument.detector = detector
     r.meta.subarray.name = subarray
@@ -569,9 +598,9 @@ def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC',
     r.meta.reftype = 'READNOISE'
 
     yd, xd = readnoise.shape
-    r.meta.subarray.xstart = 1
+    r.meta.subarray.xstart = substrt1
     r.meta.subarray.xsize = xd
-    r.meta.subarray.ystart = 1
+    r.meta.subarray.ystart = substrt2
     r.meta.subarray.ysize = yd
 
     package_note = ('This file was created using the readnoise.py module '
@@ -599,6 +628,59 @@ def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC',
     
     r.save(outfile, overwrite=True)
     print('Final CRDS-formatted readnoise map saved to {}'.format(outfile))
+
+def use_single_value(readnoise, instrument, detector, subarray, 
+                     clipping_sigma=3.0, max_clipping_iters=3):
+    """Replaces all readnoise image values with the average of all readnoise
+    values.
+
+    Parameters
+    ----------
+    readnoise : numpy.ndarray
+        The 2D readnoise image.
+
+    instrument : str
+        CRDS-required instrument for which to use this reference file for.
+
+    detector : str
+        CRDS-required detector for which to use this reference file for.
+
+    subarray : str
+        CRDS-required subarray for which to use this reference file for.
+
+    clipping_sigma : float
+        Number of sigma to use when sigma-clipping.
+
+    max_clipping_iters : int
+        Maximum number of iterations to use when sigma-clipping.
+
+    Returns
+    -------
+    readnoise_single_value : numpy.ndarray
+        2D readnoise image where all of the readnoise values are the same 
+        (the average of all of the original readnoise values).
+    """
+
+    readnoise_single_value = np.zeros(readnoise.shape)
+
+    # Only use Amp 1 values for NIRCam full-frame BLONG since this is the 
+    # output used to readout the SUB640, SUB320, and SUB160 subarrays.
+    # For the other subarrays, use all pixels from all amp regions.
+    if instrument == 'NIRCAM':
+        if ((detector == 'NRCBLONG') & 
+            ((subarray == 'FULL') | (subarray == 'GENERIC'))):
+            print('Only using Amp 1 values to find single readnoise value '
+                  '(i.e. assuming this readnoise reffile is being used for '
+                  'NRCBLONG SUB640/320/160).')
+            readnoise, *_ = np.split(readnoise, 4, axis=1)
+
+    # Find the average of all readnoise values, and use it as the single 
+    # readnoise value in the readnoise reffile.
+    clipped = sigma_clip(readnoise, sigma=clipping_sigma, 
+                         maxiters=max_clipping_iters)
+    readnoise_single_value[:, :] = np.mean(clipped)
+
+    return readnoise_single_value
 
 def wrapper_readnoise_by_ramp(args):
     """A wrapper around the readnoise_by_ramp function to allow for 
