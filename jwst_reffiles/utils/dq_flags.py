@@ -38,14 +38,14 @@ def collapse_cr_map(dq_map):
     nints, ngroups, ny, nx = dq_map.shape
 
     # Create an array containing all group indexes
-    all_groups = np.zeros((1, ngroups, 1, 1))
+    all_groups = np.zeros((1, ngroups, 1, 1), dtype=np.int)
     all_groups[0, :, 0, 0] = np.arange(ngroups)
     intermediate1 = np.repeat(all_groups, nints, axis=0)
     intermediate2 = np.repeat(intermediate1, ny, axis=2)
     all_indexes = np.repeat(intermediate2, nx, axis=3)
 
     # Array to contain only group numbers of CR hits
-    hit_indexes = np.zeros_like(all_indexes) + np.nan
+    hit_indexes = np.zeros_like(all_indexes) + ngroups #np.nan
 
     # Find the CR flag locations
     hits = np.where(dq_map != 0)
