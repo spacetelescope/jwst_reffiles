@@ -86,11 +86,11 @@ inst_abbreviations = {'nircam': 'NRC', 'niriss': 'NIS', 'fgs': 'FGS', 'miri': 'M
 
 
 class Dark():
-    def __init__(self, file_list=[], max_equivalent_groups=120, sigma_threshold=3, reffile_metadata=None,
+    def __init__(self, file_list=[], max_equivalent_groups=60, sigma_threshold=3, reffile_metadata=None,
                  output_file=None, contribution_file='good_signals_per_group.pdf'):
         self.file_list = file_list
         self.sigma_threshold = sigma_threshold
-        self.reffile_metadata = reffile_metadata  # Dict?
+        self.reffile_metadata = reffile_metadata
         self.output_file = output_file
         self.contribution_file = contribution_file
 
@@ -122,7 +122,13 @@ class Dark():
         # in the input aperture, divided by the number of files, and
         # finally divided by 2, since we will also need to read in the
         # cosmic ray flags associated with each file
-        delta_groups = np.int(max_equivalent_groups / pix_ratio / len(self.file_list) / 2.)
+        delta_groups = np.int(max_equivalent_groups / pix_ratio / len(self.file_list)) # / 2.)
+        if delta_groups == 0:
+            raise ValueError(('ERROR: max_equivalent_groups incompatible with the number/size '
+                              'of input files. Even reading just a single group at a time from '
+                              'all input files would result in more than max_equivalent_groups '
+                              'groups in memory at one time. Increase max_equivalent_groups or '
+                              'decrease the number of input exposures.'))
         self.group_index = np.arange(0, self.metadata['NGROUPS'], delta_groups)
         self.group_index = np.append(self.group_index, self.metadata['NGROUPS'])
 
@@ -185,12 +191,6 @@ class Dark():
         # group numbers associated with the first CR hit in the integration
         cr_indexes = self.prepare_cr_maps()
 
-        print('We need to do something here about RC/IRC pixels, which in some groups will be flagged as CR hit in every integration.')
-        print('For these we need to ignore the CR flags and use all the data...I guess? Look in the DQ array for RC pixels?')
-        print('This will only work if we actually flag RC pixels as RC in the bad pixel masks...')
-        print('Also, do we flag these pixels in the reference file as UNRELAIBLE_DARK? Probably not, since they will already')
-        print('be flagged as RC.')
-
         # Collect info on the number of remaining good pixels
         for filenum, filename in enumerate(self.file_list):
             # Number of good groups per integration
@@ -215,6 +215,8 @@ class Dark():
         good_counter, bad_counter = dq_flags.signals_per_group(all_good, self.metadata['NGROUPS'])
 
         # Save num_good and num_bad as images
+        print(('Save the arrays listing the number of good and bad signals for each pixel/group '
+               'into good_and_bad_counters.fits'))
         hh0 = fits.PrimaryHDU(good_counter)
         hh1 = fits.ImageHDU(bad_counter)
         hlist = fits.HDUList([hh0, hh1])
@@ -225,14 +227,13 @@ class Dark():
         del num_bad
         del all_good
         del all_bad
-        #do_that_here()
 
         # What we really want is an image of the number of good signal
         # values for every pixel in every group
         self.create_num_contributions_plots(good_counter, bad_counter)
 
         # Get a map of reference pixels
-        refpix_map = dq_flags.create_refpix_map(self.file_list[0])
+        #refpix_map = dq_flags.create_refpix_map(self.file_list[0])
 
         # Create arrays to hold the final dark current data and uncertainty
         final_dark = np.zeros((self.metadata['NGROUPS'], self.metadata['SUBSIZE2'], self.metadata['SUBSIZE1']))
@@ -268,21 +269,29 @@ class Dark():
 
                     # Place data in full container
                     if integration == 0:
-                        num_g, num_y, num_x = file_data.shape
-                        data = np.zeros((1, num_g, num_y, num_x))
-                        #data = np.zeros_like(file_data)
-                        print('file_data.shape', file_data.shape)
-                        #data[0, :, :, :] = file_data
-                        #data = copy.deepcopy(file_data)
+                        data = np.expand_dims(file_data, axis=0)
                     else:
-                        data = np.vstack(data, np.expand_dims(file_data, axis=0))
-                        print('data.shape', data.shape)
+                        data = np.vstack([data, np.expand_dims(file_data, axis=0)])
+
+                if file_index == 0:
+                    all_data = copy.deepcopy(data)
+                else:
+                    all_data = np.vstack([all_data, data])
+
+            # Free up some memory
+            del data
 
             # Now calculate the sigma_clipped mean for each pixel through
             # all the files
-            clipped_data = sigma_clip(data, sigma=self.sigma_threshold, axis=0, masked=False)
+            clipped_data = sigma_clip(all_data, sigma=self.sigma_threshold, axis=0, masked=False)
             mean_dark = np.nanmean(clipped_data, axis=0)
             dev_dark = np.nanstd(clipped_data, axis=0)
+
+            # Pixels with no good signals will have values of NaN in mean_dark
+            # Set these to zero.
+            zero_values = np.isnan(mean_dark)
+            mean_dark[zero_values] = 0.
+            dev_dark[zero_values] = 0.
 
             # Place the mean and stdev of the dark signals into the correct
             # location within the final dark arrays that contain all groups
@@ -313,17 +322,17 @@ class Dark():
         self.jump_files = []
         for filename in self.file_list:
             # Find the jump file (i.e. output from jump step of calwebb_detector1)
-            suffix = filename.split('_')[-1]
-            jump_file = filename.replace(suffix, 'jump.fits')
-            self.jump_files.append(jump_file)
+            #suffix = filename.split('_')[-1]
+            #jump_file = filename.replace(suffix, 'jump.fits')
+            #self.jump_files.append(jump_file)
 
-            if not os.path.isfile(jump_file):
-                raise FileNotFoundError("ERROR: Jump file {} not found.".format(jump_file))
+            if not os.path.isfile(filename):
+                raise FileNotFoundError("ERROR: Jump file {} not found.".format(filename))
 
-            print('Getting CR map from Jump File {}'.format(jump_file))
+            print('Getting CR map from file {}'.format(filename))
 
             # Read in the entire exposure from the GROUPDQ extension
-            groupdq = read_ramp(jump_file, extension='GROUPDQ')
+            groupdq = read_ramp(filename, extension='GROUPDQ')
 
             # Keep only the JUMP_DET flags
             file_cr_map = dq_flags.flag_map(groupdq, 'JUMP_DET')
@@ -332,7 +341,7 @@ class Dark():
             # The pixel value is the group number of the first CR hit
             first_hits = dq_flags.collapse_cr_map(file_cr_map)
 
-            print('Temporarily save CR maps for development')
+            print('Temporarily save CR maps for development, into CR_maps.fits')
             hh0 = fits.PrimaryHDU(file_cr_map.astype(np.int))
             hh1 = fits.ImageHDU(first_hits)
             hlist = fits.HDUList([hh0, hh1])
@@ -340,6 +349,7 @@ class Dark():
 
             # Update the CR index map for this file
             hit_indexes[filename] = first_hits
+
         return hit_indexes
 
     def save_reffile(self, data, uncertainty, dq):
