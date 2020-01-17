@@ -198,7 +198,7 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
                    slice_width=50, single_value=False, 
                    outfile='readnoise_jwst_reffiles.fits', 
                    author='jwst_reffiles', description='CDS Noise Image', 
-                   pedigree='GROUND', useafter='2015-10-01 00:00:00', 
+                   pedigree='GROUND', useafter='2015-10-01T00:00:00', 
                    history='', subarray=None, readpatt=None, save_tmp=False):
     """The main function. Creates a readnoise reference file using the input 
     dark current ramps. See module docstring for more details.
@@ -520,7 +520,7 @@ def readnoise_by_slice(filenames, group_diff_type='independent',
 def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC', 
                    readpatt='ANY', outfile='readnoise_jwst_reffiles.fits',
                    author='jwst_reffiles', description='CDS Noise Image', 
-                   pedigree='GROUND', useafter='2015-10-01 00:00:00', 
+                   pedigree='GROUND', useafter='2015-10-01T00:00:00', 
                    history='', fastaxis=-1, slowaxis=2, substrt1=1, substrt2=1, 
                    filenames=[]):
     """Saves a CRDS-formatted readnoise reference file.
