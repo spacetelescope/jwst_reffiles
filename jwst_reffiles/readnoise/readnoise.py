@@ -198,7 +198,7 @@ def make_readnoise(filenames, method='stack', group_diff_type='independent',
                    slice_width=50, single_value=False, 
                    outfile='readnoise_jwst_reffiles.fits', 
                    author='jwst_reffiles', description='CDS Noise Image', 
-                   pedigree='GROUND', useafter='2000-01-01T00:00:00', 
+                   pedigree='GROUND', useafter='2015-10-01 00:00:00', 
                    history='', subarray=None, readpatt=None, save_tmp=False):
     """The main function. Creates a readnoise reference file using the input 
     dark current ramps. See module docstring for more details.
@@ -520,7 +520,7 @@ def readnoise_by_slice(filenames, group_diff_type='independent',
 def save_readnoise(readnoise, instrument='', detector='', subarray='GENERIC', 
                    readpatt='ANY', outfile='readnoise_jwst_reffiles.fits',
                    author='jwst_reffiles', description='CDS Noise Image', 
-                   pedigree='GROUND', useafter='2000-01-01T00:00:00', 
+                   pedigree='GROUND', useafter='2015-10-01 00:00:00', 
                    history='', fastaxis=-1, slowaxis=2, substrt1=1, substrt2=1, 
                    filenames=[]):
     """Saves a CRDS-formatted readnoise reference file.
@@ -663,16 +663,29 @@ def use_single_value(readnoise, instrument, detector, subarray,
 
     readnoise_single_value = np.zeros(readnoise.shape)
 
-    # Only use Amp 1 values for NIRCam full-frame BLONG since this is the 
-    # output used to readout the SUB640, SUB320, and SUB160 subarrays.
-    # For the other subarrays, use all pixels from all amp regions.
-    if instrument == 'NIRCAM':
-        if ((detector == 'NRCBLONG') & 
-            ((subarray == 'FULL') | (subarray == 'GENERIC'))):
-            print('Only using Amp 1 values to find single readnoise value '
-                  '(i.e. assuming this readnoise reffile is being used for '
-                  'NRCBLONG SUB640/320/160).')
-            readnoise, *_ = np.split(readnoise, 4, axis=1)
+    # For NIRCam full-frame darks, this option is used to create a readnoise 
+    # reffile to be used for those subarrays without refpix. Therefore, 
+    # only use the readnoise values within the output used to readout the 
+    # subarrays. This is always output 7, i.e. x,y=[0:511,0:2047] in detector 
+    # coordinates.
+    if ((instrument == 'NIRCAM') & 
+        ((subarray == 'FULL') | (subarray == 'GENERIC'))):
+        print('Only using Output 7 values to find single readnoise value '
+              '(i.e. assuming this readnoise reffile is being used for '
+              'those subarrays without reference pixels).')
+
+        # Put the data into detector coordinates
+        if detector in ['NRCA1', 'NRCA3', 'NRCALONG', 'NRCB2', 'NRCB4']:
+            readnoise = np.flip(readnoise, axis=1)
+        elif detector in ['NRCA2', 'NRCA4', 'NRCB1', 'NRCB3', 'NRCBLONG']:
+            readnoise = np.flip(readnoise, axis=0)
+        else:
+            print('Detector {} not recognized - keeping coordinates as is.'
+                  .format(detector))
+        
+        # Get only the output 7 values (i.e. x,y=[0:511,0:2047] in detector 
+        # coordinates).
+        readnoise, *_ = np.split(readnoise, 4, axis=1)
 
     # Find the average of all readnoise values, and use it as the single 
     # readnoise value in the readnoise reffile.
