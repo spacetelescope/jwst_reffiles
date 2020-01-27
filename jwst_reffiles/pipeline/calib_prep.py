@@ -132,9 +132,8 @@ class CalibPrep:
         Rows that do not contain the command for any other rows will have an empty
         set. These need to be set to -1 as well, so that they are run.
         """
-        empty_entries = self.inputs['index_contained_within'] == set([])
-        print('empty_entries:', empty_entries)
-        self.inputs['index_contained_within'][empty_entries] = [-1]  # set([-1])
+        empty_entries = np.where(self.inputs['index_contained_within'] == set([]))[0]
+        self.inputs['index_contained_within'][empty_entries] = [[-1]]  # set([-1])
 
         # Change the entries in the 'index_contained_within' to be lists, for easy
         # indexing later.
@@ -936,6 +935,11 @@ class CalibPrep:
                 # Since we are getting the output from the final step directly
                 # we can turn off the output from the pipeline
                 cmd = cmd + ' --save_results=False'
+
+                # Jump detection step finds way too many jumps with the
+                # default sigma value. Let's set it much higher for the
+                # moment.
+                cmd = cmd + ' --steps.jump.rejection_threshold=100'
 
                 # For NIRCam we skip the odd even rows in refpix.
                 if instrument == 'nircam':

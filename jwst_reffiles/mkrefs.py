@@ -623,6 +623,17 @@ class mkrefsclass(astrotableclass):
                 imagelist.append(os.path.abspath(s))
 
         imagelist = self.trim_imagelist(imagelist, basenamepattern)
+
+        # If the user did not supply a reflabel to go with the filepattern/
+        # list of input files, then reflabellist will be empty, but mkrefs
+        # will not crash until much later, and with a cryptic message.
+        # Instead, check to be sure reflabellist is not empty here, and raise
+        # an error if it is.
+        if len(reflabellist) == 0:
+            self.logger.error(("ERROR: reflabellist is empty. Did you forget to supply a reflabel before the "
+                               "list of input files in your call to mkrefs.py?"))
+            raise ValueError(("ERROR: reflabellist is empty. Did you forget to supply a reflabel before the "
+                              "list of input files in your call to mkrefs.py?"))
         return(reflabellist, imagelist)
 
     def getimtypes(self):
@@ -1276,6 +1287,17 @@ class mkrefsclass(astrotableclass):
     #@log_fail
     #@log_info
     def mk_ref_cmds(self, force_redo_refcmds=False, maxNrefcmds=None):
+
+
+
+
+
+        print(self.refcmdtable.t)
+        stop
+
+
+
+
 
         self.refcmdtable.t['refcmd'] = None
         self.logger.info('refcmd table colnames: {}'.format(self.refcmdtable.t.colnames))
