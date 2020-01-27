@@ -1287,18 +1287,6 @@ class mkrefsclass(astrotableclass):
     #@log_fail
     #@log_info
     def mk_ref_cmds(self, force_redo_refcmds=False, maxNrefcmds=None):
-
-
-
-
-
-        print(self.refcmdtable.t)
-        stop
-
-
-
-
-
         self.refcmdtable.t['refcmd'] = None
         self.logger.info('refcmd table colnames: {}'.format(self.refcmdtable.t.colnames))
         self.logger.debug(self.refcmdtable.t)
