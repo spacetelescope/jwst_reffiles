@@ -133,7 +133,8 @@ class CalibPrep:
         set. These need to be set to -1 as well, so that they are run.
         """
         empty_entries = self.inputs['index_contained_within'] == set([])
-        self.inputs['index_contained_within'][empty_entries] = set([-1])
+        print('empty_entries:', empty_entries)
+        self.inputs['index_contained_within'][empty_entries] = [-1]  # set([-1])
 
         # Change the entries in the 'index_contained_within' to be lists, for easy
         # indexing later.
