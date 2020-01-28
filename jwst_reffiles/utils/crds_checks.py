@@ -57,5 +57,5 @@ def validate_useafter(value):
     except ValueError:
         raise ValueError("ERROR: date format in use_after should be yyyy-mm-dd")
 
-    if month > 12:
+    if int(month) > 12:
         raise ValueError("ERROR: date format in use_after should be yyyy-mm-dd")
