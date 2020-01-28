@@ -100,6 +100,18 @@ class Dark():
         self.output_file = output_file
         self.contribution_file = contribution_file
 
+        # If an output directory is specified, save that here, so that
+        # ancillary outputs can be saved to the same location
+        if self.output_file is not None:
+            self.output_dir = os.path.dirname(self.output_file)
+        else:
+            self.output_dir = './'
+
+        # If no output directory is given for the contribution file, then
+        # save it to the same location as the reference file
+        if os.path.dirname(self.contribution_file) == '':
+            self.contribution_file = os.path.join(self.output_dir, self.contribution_file)
+
         # Check that all necessary entries are in the dictionary to be used
         # to populate the header of the final reference file
         #self.check_reffile_info()
@@ -239,12 +251,13 @@ class Dark():
         good_counter, bad_counter = dq_flags.signals_per_group(all_good, self.metadata['NGROUPS'])
 
         # Save num_good and num_bad as images
-        print(('Save the arrays listing the number of good and bad signals for each pixel/group '
-               'into good_and_bad_counters.fits'))
+        counter_file = '{}fits'.format(self.contribution_file[0: -3])
+        print(('Save the arrays listing the number of good signals for each pixel/group '
+               'into {}'.format(counter_file)))
         hh0 = fits.PrimaryHDU(good_counter)
-        hh1 = fits.ImageHDU(bad_counter)
-        hlist = fits.HDUList([hh0, hh1])
-        hlist.writeto('good_and_bad_counters.fits', overwrite=True)
+        #hh1 = fits.ImageHDU(bad_counter)
+        hlist = fits.HDUList([hh0])  #, hh1])
+        hlist.writeto(counter_file, overwrite=True)
 
         # Save some memory
         del num_good
