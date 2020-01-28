@@ -165,19 +165,19 @@ def strun_command_test(cp_object):
     truth1 = ('strun {} {} --steps.group_scale.skip=True --steps.dq_init.skip=True --steps.ipc.skip=True '
               '--steps.refpix.skip=True --steps.linearity.skip=True --steps.persistence.skip=True '
               '--steps.ramp_fit.skip=True --steps.jump.output_file={} --steps.jump.save_results=True '
-              '--output_dir={} --save_results=False --steps.refpix.odd_even_rows=False'
+              '--output_dir={} --save_results=False --steps.jump.rejection_threshold=100 --steps.refpix.odd_even_rows=False'
               .format(pipeline_cfg_file, in_names[0], out_names[0], cp_object.output_dir))
     truth2 = ('strun {} {} --steps.group_scale.skip=True --steps.saturation.skip=True --steps.ipc.skip=True '
               '--steps.linearity.skip=True --steps.persistence.skip=True --steps.dark_current.skip=True '
               '--steps.jump.skip=True --steps.ramp_fit.skip=True --steps.refpix.output_file={} '
               '--steps.refpix.save_results=True --output_dir={} --save_results=False '
-              '--steps.refpix.odd_even_rows=False'
+              '--steps.jump.rejection_threshold=100 --steps.refpix.odd_even_rows=False'
               .format(pipeline_cfg_file, in_names[1], out_names[1], cp_object.output_dir))
     truth3 = ('strun {} {} --steps.group_scale.skip=True --steps.dq_init.skip=True --steps.saturation.skip=True '
               '--steps.ipc.skip=True --steps.superbias.skip=True --steps.refpix.skip=True '
               '--steps.persistence.skip=True --steps.jump.skip=True --steps.ramp_fit.output_file={} '
               '--steps.ramp_fit.save_results=True --output_dir={} --save_results=False '
-              '--steps.refpix.odd_even_rows=False'
+              '--steps.jump.rejection_threshold=100 --steps.refpix.odd_even_rows=False'
               .format(pipeline_cfg_file, in_names[2], out_names[2], cp_object.output_dir))
     truths = [truth1, truth2, truth3]
 

@@ -79,6 +79,7 @@ import os
 from jwst.datamodels import DarkModel, DarkMIRIModel
 
 from jwst_reffiles.utils import dq_flags
+from jwst_reffiles.utils import crds_checks
 from jwst_reffiles.utils.file_utils import read_ramp, get_file_header
 
 
@@ -86,13 +87,30 @@ inst_abbreviations = {'nircam': 'NRC', 'niriss': 'NIS', 'fgs': 'FGS', 'miri': 'M
 
 
 class Dark():
-    def __init__(self, file_list=[], max_equivalent_groups=60, sigma_threshold=3, reffile_metadata=None,
-                 output_file=None, contribution_file='good_signals_per_group.pdf'):
+    def __init__(self, file_list=[], max_equivalent_groups=60, sigma_threshold=3, pedigree=None,
+                 descrip=None, author=None, use_after=None, history=None, output_file=None,
+                 contribution_file='good_signals_per_group.pdf'):
         self.file_list = file_list
         self.sigma_threshold = sigma_threshold
-        self.reffile_metadata = reffile_metadata
+        self.pedigree = pedigree
+        self.descrip = descrip
+        self.author = author
+        self.use_after = use_after
+        self.history = history
         self.output_file = output_file
         self.contribution_file = contribution_file
+
+        # If an output directory is specified, save that here, so that
+        # ancillary outputs can be saved to the same location
+        if self.output_file is not None:
+            self.output_dir = os.path.dirname(self.output_file)
+        else:
+            self.output_dir = './'
+
+        # If no output directory is given for the contribution file, then
+        # save it to the same location as the reference file
+        if os.path.dirname(self.contribution_file) == '':
+            self.contribution_file = os.path.join(self.output_dir, self.contribution_file)
 
         # Check that all necessary entries are in the dictionary to be used
         # to populate the header of the final reference file
@@ -184,6 +202,24 @@ class Dark():
         Creates a dark current reference file from a list of input dark
         current exposures
         """
+        # Make sure reference file metadata have been provided
+        if self.pedigree is None:
+            raise ValueError("ERROR: 'pedigree' must be provided in order to save a valid reference file.")
+        if self.descrip is None:
+            raise ValueError("ERROR: 'descrip' must be provided in order to save a valid reference file.")
+        if self.author is None:
+            raise ValueError("ERROR: 'author' must be provided in order to save a valid reference file.")
+        if self.use_after is None:
+            raise ValueError("ERROR: 'use_after' must be provided in order to save a valid reference file.")
+        if self.history is None:
+            raise ValueError(("WARNING: No 'history' provided for the reference file. The list of files "
+                              "used to create the reference file will be added as a HISTORY entry, but "
+                              "nothing else."))
+
+        # Very basic checks on reference file metadata
+        crds_checks.validate_pedigree(self.pedigree)
+        crds_checks.validate_useafter(self.use_after)
+
         # Data consistency check
         self.consistency_check()
 
@@ -215,12 +251,13 @@ class Dark():
         good_counter, bad_counter = dq_flags.signals_per_group(all_good, self.metadata['NGROUPS'])
 
         # Save num_good and num_bad as images
-        print(('Save the arrays listing the number of good and bad signals for each pixel/group '
-               'into good_and_bad_counters.fits'))
+        counter_file = '{}fits'.format(self.contribution_file[0: -3])
+        print(('Save the arrays listing the number of good signals for each pixel/group '
+               'into {}'.format(counter_file)))
         hh0 = fits.PrimaryHDU(good_counter)
-        hh1 = fits.ImageHDU(bad_counter)
-        hlist = fits.HDUList([hh0, hh1])
-        hlist.writeto('good_and_bad_counters.fits', overwrite=True)
+        #hh1 = fits.ImageHDU(bad_counter)
+        hlist = fits.HDUList([hh0])  #, hh1])
+        hlist.writeto(counter_file, overwrite=True)
 
         # Save some memory
         del num_good
@@ -319,13 +356,7 @@ class Dark():
             value is a 3D array (integ, y, x) of group numbers of CR hits
         """
         hit_indexes = {}
-        self.jump_files = []
         for filename in self.file_list:
-            # Find the jump file (i.e. output from jump step of calwebb_detector1)
-            #suffix = filename.split('_')[-1]
-            #jump_file = filename.replace(suffix, 'jump.fits')
-            #self.jump_files.append(jump_file)
-
             if not os.path.isfile(filename):
                 raise FileNotFoundError("ERROR: Jump file {} not found.".format(filename))
 
@@ -406,22 +437,19 @@ class Dark():
             model.meta.exposure.preadpatt = self.metadata['P_READPA']
 
         # User-provided metadata
-        model.meta.pedigree = self.reffile_metadata['pedigree']
-        model.meta.descrip = self.reffile_metadata['descrip']
-        model.meta.author = self.reffile_metadata['author']
-        model.meta.useafter = self.reffile_metadata['useafter']
+        model.meta.pedigree = self.pedigree
+        model.meta.descrip = self.descrip
+        model.meta.author = self.author
+        model.meta.useafter = self.use_after
 
         # Add HISTORY entries
-        if 'history' in self.reffile_metadata.keys():
-            model.history.append(self.reffile_metadata['history'])
-        if 'HISTORY' in self.reffile_metadata.keys():
-            model.history.append(self.reffile_metadata['HISTORY'])
+        if self.history is not None:
+            model.history.append(self.history)
         model.history.append(("{} {} {} dark current file, created from data in files: "
                               .format(self.metadata['INSTRUME'].upper(), self.metadata['DETECTOR'].upper(),
                                       self.metadata['SUBARRAY'])))
-        for filename, jump_file in zip(self.file_list, self.jump_files):
+        for filename in self.file_list:
             model.history.append(filename)
-            model.history.append(jump_file)
 
         # Create output name if necessary
         if self.output_file is None:
