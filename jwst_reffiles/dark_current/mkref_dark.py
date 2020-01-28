@@ -65,7 +65,7 @@ class mkrefclass(mkrefclass_template):
 
         # Call the wrapped module and provide the proper arguments from the
         # self.parameters dictionary.
-        dark_reffile.dark(file_list=self.inputimages,
+        dark_reffile.Dark(file_list=self.inputimages,
                           max_equivalent_groups=self.parameters['max_equivalent_groups'],
                           sigma_threshold=self.parameters['sigma_threshold'],
                           pedigree=self.parameters['pedigree'],
