@@ -33,7 +33,6 @@ Notes
             A set of dark current exposures i.e. Ramps (MIRI)
 
     Algorithm:
-        0. For MIRI, extract and use only the 10th group from each exposure
         1. Create average image from the set of input images, using sigma-clipping
         2. Create smoothed version of the average image (15x15 smoothing)
         3. Divide average image by smoothed image
@@ -136,7 +135,10 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         Maximum normalized signal rate of a pixel that is considered dead
 
     run_dead_flux_check : bool
-        Whether or not to check for dead pixels using an absolute flux value
+        Whether or not to check for dead pixels using an absolute flux value.
+        If True then the mean of the last 4 groups of the uncal files given
+        in 'dead_flux_check_files' is used to check if pixels flagged as dead
+        are really hot pixels and are removed from the dead pixel mask
 
     dead_flux_check_files : list
         List of ramp (uncalibrated) files to use to check the flux of average
@@ -147,7 +149,8 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         Tolerance on average signal in last 4 groups. If dead_flux_check_files is
         a list of uncalibrated files, then the average of the last four groups
         for all the integrations is determined. If this average > flux_check
-        then this pixel is not a dead pixel.
+        then this pixel is not a dead pixel and this pixel is removed from dead pixel
+        mask
 
     max_low_qe_norm_signal: float
         The maximum normalized signal a pixel can have and be considered
@@ -294,12 +297,6 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     h2 = fits.ImageHDU(adjacent_to_open_map)
     hlist = fits.HDUList([h0, h1, h2])
     hlist.writeto(qefile, overwrite=True)
-
-    # Flag MIRI's bad columns
-    # if instrument == 'MIRI':
-    #    miri_bad_col_map = miri_bad_columns(dead_map.shape)
-    # else:
-    #    miri_bad_col_map = np.zeros((ydim, xdim))
 
     # Create a map showing locations of reference pixels
     reference_pix = reference_pixel_map(dead_map.shape, instrument)
@@ -657,34 +654,8 @@ def dead_pixels_zero_signal(groups, dead_zero_signal_fraction=0.9):
     return dead_pix_map.astype(np.int)
 
 
-def extract_10th_group(hdu_list):
-    """Keep only the 10th group from each integration
-
-    Parameters
-    ----------
-    data : numpy.ndarray
-        3D or 4D array of data
-
-    Returns
-    -------
-    data : numpy.ndarray
-        3D array (10th group only)
-    """
-    filename = hdu_list[0].header['FILENAME']
-    dims = hdu_list['SCI'].data.shape
-    if len(dims) == 4:
-        if dims[1] < 10:
-            raise ValueError('Input file {} has fewer than 10 groups.'.format(filename))
-        group10 = hdu_list['SCI'].data[:, 9, :, :]
-    elif len(dims) == 3:
-        if dims[0] < 10:
-            raise ValueError('Input file {} has fewer than 10 groups.'.format(filename))
-        group10 = np.expand_dims(hdu_list['SCI'].data[9, :, :], axis=0)
-    return group10
-
-
 def average_last4groups(hdu_list):
-    """Find the median of all the  group from each integration
+    """Find the mean of all the group from each integration
 
     Parameters
     ----------
@@ -1012,27 +983,6 @@ def mean_stdev_images(data, sigma=3.):
     mean_image = np.nanmean(clipped_cube, axis=0)
     stdev_image = np.nanstd(clipped_cube, axis=0)
     return mean_image, stdev_image
-
-
-def miri_bad_columns(dimensions):
-    """Create a map that flags the shorted columns on the MIRI detector
-
-    Parameters
-    ----------
-    dimensions : tup
-        (y, x) dimensions, in pixels, of the map to create
-
-    Returns
-    -------
-    shorted_map : numpy.ndarray
-        2D map showing the locations of the shorted columns (1)
-    """
-
-    print('*************',dimensions)
-
-    shorted_map = np.zeros(dimensions).astype(np.int)
-    shorted_map[:, 384:386] = 1
-    return shorted_map
 
 
 def none_check(value):
