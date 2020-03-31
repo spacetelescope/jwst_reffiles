@@ -7,8 +7,6 @@ This class is based on that in the
 template file: jwst_reffiles/templates/plugin_template.py
 '''
 
-Need to update this.
-
 import argparse
 import copy
 import os

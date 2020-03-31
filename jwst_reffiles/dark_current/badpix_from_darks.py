@@ -436,6 +436,8 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     print('Multi-extension file with individual types of bad pixels saved to:')
     print(outfile)
 
+    return bad_pixels
+
 
 def add_refpix(array, to_add):
     """Place ``map`` within a larger array that contains the reference

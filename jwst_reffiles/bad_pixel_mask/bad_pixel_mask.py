@@ -1,94 +1,75 @@
 #! /usr/bin/env python
 
-"""This module can be used to create JWST-format bad pixel mask reference
-files for use in the ``dq_init`` step of the JWST calibration pipeline.
-
-Author
-------
-     - Bryan Hilbert
- Use
----
-     This module can be imported and used as such:
-     ::
-         from jwst_reffiles.bad_pixel_mask import bad_pixel_mask
-         bad_pixel_mask.find_bad_pix(arguments)
-
-         or
-
-         command line call here
-
-Notes
------
-    This algorithm is used to identify types of bad pixels that are
-    flagged in the bad pixel mask. This includes the following types:
-    DEAD, LOW_QE, OPEN, ADJ_OPEN
-
-    This is based on discussions within the JWST Reference File Generation
-    Working Group in February 2019. The goal is to produce an algorithm
-    that can be used by all JWST instruments to produce bad pixel mask
-    reference files.
-
-    Overview:
-    Inputs: A set of flatfield countrate images (NIRCam, NIRISS, NIRSpec)
-            A set of dark current exposures i.e. Ramps (MIRI)
-
-    Algorithm:
-        0. For MIRI, extract and use only the 10th group from each exposure
-        1. Create average image from the set of input images, using sigma-clipping
-        2. Create smoothed version of the average image (15x15 smoothing)
-        3. Divide average image by smoothed image
-        4. Calculate sigma-clipped mean and stdev in normalized image
-        5. Find bad pix:
-            NIRCam, NIRISS: DEAD+DO_NOT_USE if signal < (mean-N*stdev)
-            NIRSPec, MIRI: DEAD+DO_NOT_USE if signal < 0.05
-                     LOW_QE if 0.05 < signal < 0.5 and signal in 4 adjacent pixels
-                     are below ADJ_OPEN threshold (1.05)
-
-References
-----------
-    Working group discussion and algorithm details are presented at:
-    https://outerspace.stsci.edu/display/JWSTCC/Algorithm+details%3A+DQ+Init
-
-Dependencies
-------------
-    - jwst
-    - astropy
-    - numpy
+"""Wrapper script that calls badpix_from_flats.py and badpix_from_darks.py.
+The results are combined to create a single bad pixel reference file.
 """
-import argparse
-import copy
-import numpy as np
-import os
 
-from astropy.convolution import convolve, Box2DKernel
-from astropy.io import fits, ascii
-from astropy.stats import sigma_clip
-from scipy.ndimage import median_filter
-from jwst.datamodels import dqflags, util, MaskModel, Level1bModel
-from jwst.dq_init import DQInitStep
+from jwst_reffiles.bad_pixel_mask import badpix_from_flats
+from jwst_reffiles.dark_current import badpix_from_darks
+
+# Flat field-related header keywords
+dead_search_kw = 'BPFDEAD'
+low_qe_search_kw = 'BPFLOWQE'
+dead_search_type_kw = 'BPFSCHTP'
+mean_sig_threshold_kw = 'BPFSIGMA'
+norm_method_kw = 'BPFNORM'
+smooth_box_width_kw = 'BPFSMOTH'
+dead_sig_thresh_kw = 'BPFDEDSG'
+dead_zero_sig_frac_kw = 'BPFZEROF'
+dead_flux_check_kw = 'BPFFXCHK'
+dead_flux_file_kw = 'BPFFXFIL'
+max_dead_sig_kw = 'BPFMXDED'
+manual_flag_kw = 'BPFMANFL'
+flat_do_not_use_kw = 'BPFDONOT'
+max_low_qe_kw = 'BPFMXLQE'
+max_open_adj_kw = 'BPFMXOAD'
+
+# Dark current-related header keywords
+bad_from_dark_kw = 'BPDSERCH'
+dark_clip_sigma_kw = 'BPDCLPSG'
+dark_clip_iters_kw = 'BPDCLPIT'
+dark_noisy_thresh_kw = 'BPDNSETH'
+max_sat_frac_kw = 'BPDMXSAT'
+jump_limit_kw = 'BPDMXJMP'
+jump_ratio_thresh_kw = 'BPDJPRAT'
+cutoff_frac_kw = 'BPDCUTFC'
+pedestal_sig_thresh_kw = 'BPDPEDTH'
+rc_frac_thresh_kw = 'BPDRCTH'
+low_ped_frac_kw = 'BPDLOPFC'
+high_cr_frac_kw = 'BPDCRFC'
+dark_do_not_use_kw = 'BPDDONOT'
+flag_mapping_kw = 'BPDMAPS'
 
 
-def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dead_search_type='sigma_rate',
-                 sigma_threshold=3, normalization_method='smoothed', smoothing_box_width=15,
-                 smoothing_type='Box2D',
-                 dead_sigma_threshold=5.,  max_dead_norm_signal=None,
-                 run_dead_flux_check=False, dead_flux_check_files=None, flux_check=45000,
-                 max_low_qe_norm_signal=0.5, max_open_adj_norm_signal=1.05, manual_flag_file='default',
-                 do_not_use=[], output_file=None, author='jwst_reffiles', description='A bad pix mask',
-                 pedigree='GROUND', useafter='2019-04-01 00:00:00', history='', quality_check=True):
-    """MAIN SCRIPT: Given a set of input files, create dead, low QE, and
-    open pixel maps
+def bad_pixels(flat_slope_files=flat_slope_files, dead_search=True, low_qe_and_open_search=True,
+               dead_search_type='sigma_rate', flat_mean_sigma_threshold=3, flat_mean_normalization_method='smoothed',
+               smoothing_box_width=15, smoothing_type='Box2D', dead_sigma_threshold=5.,  max_dead_norm_signal=None,
+               run_dead_flux_check=False, dead_flux_check_files=None, flux_check=45000, max_low_qe_norm_signal=0.5,
+               max_open_adj_norm_signal=1.05, manual_flag_file='default', flat_do_not_use=[],
+               dark_slope_files=dark_slope_files, dark_stdev_clipping_sigma=5., dark_max_clipping_iters=5,
+               dark_noisy_threshold=5, max_saturated_fraction=0.5, max_jump_limit=10, jump_ratio_threshold=5,
+               early_cutoff_fraction=0.25, pedestal_sigma_threshold=5, rc_fraction_threshold=0.8, low_pedestal_fraction=0.8,
+               high_cr_fraction=0.8,
+               flag_values={'hot': ['HOT'], 'rc': ['RC'], 'low_pedestal': ['OTHER_BAD_PIXEL'], 'high_cr': ["TELEGRAPH"]},
+               dark_do_not_use=['hot', 'rc', 'low_pedestal', 'high_cr'], plot=False,
+               output_file=None, author='jwst_reffiles', description='A bad pix mask',
+               pedigree='GROUND', useafter='2019-04-01 00:00:00', history='', quality_check=True):
+    """
+    Wrapper that calls the two modules for finding bad pixels from input flat
+    field files, and bad pixels from dark current files.
 
     Parameters
     ----------
-    input_files : list
-        Fits files to be used in the search for dead/open pixels
+    flat_slope_files : list
+        List of flat field slope files to be used for the dead pixel search.
+        If None, the search is skipped.
 
     dead_search : bool
-        Whether or not to search for DEAD pixels
+        Whether or not to search for DEAD pixels using the flat field files
 
     low_qe_and_open_search : bool
-        Whether or not to search for LOW_QE, OPEN, and ADJ_OPEN pixels
+        Whether or not to search for LOW_QE, OPEN, and ADJ_OPEN pixels using
+        the flat field files
 
     dead_search_type : str
         Type of search to use when looking for dead pixels. Options are:
@@ -100,11 +81,11 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
                            are defined as those with a rate less than
                            ``max_dead_norm_signal``.
 
-    sigma_threshold : float
+    flat_mean_sigma_threshold : float
         Number of standard deviations to use when sigma-clipping to
         calculate the mean slope image or the mean across the detector
 
-    normalization_method : str
+    flat_mean_normalization_method : str
         Specify how the mean image is normalized prior to searching for
         bad pixels. Options are:
         'smoothed': Mean image will be smoothed using a
@@ -163,9 +144,82 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         the file contained in the ``bad_pixel_mask`` directory of the repo will
         be used.
 
-    do_not_use : list
+    flat_do_not_use : list
         List of bad pixel types where the DO_NOT_USE flag should also be
         applied (e.g. ['DEAD', 'LOW_QE'])
+
+    dark_slope_files : list
+        List of dark current slope files to be used for the noisy pixel search.
+        If None, the search is skipped.
+
+    dark_stdev_clipping_sigma : int
+        Number of sigma to use when sigma-clipping the 2D array of
+        standard deviation values. The sigma-clipped mean and standard
+        deviation are used to locate noisy pixels.
+
+    dark_max_clipping_iters : int
+        Maximum number of iterations to use when sigma clipping to find
+        the mean and standard deviation values that are used when
+        locating noisy pixels.
+
+    dark_noisy_threshold : int
+        Number of sigma above the mean noise (associated with the slope)
+        to use as a threshold for identifying noisy pixels.
+
+    max_saturated_fraction : float
+        When identifying pixels that are fully saturated (in all groups
+        of an integration), this is the fraction of integrations within
+        which a pixel must be fully saturated before flagging it as HOT
+
+    max_jump_limit : int
+        The maximum number of jumps a pixel can have in an integration
+        before it is flagged as a ``high jump`` pixel (which may be
+        flagged as noisy later)
+
+    jump_ratio_threshold : int
+        Cutoff for the ratio of jumps early in the ramp to jumps later in
+        the ramp. Pixels with a ratio greater than this value (and which
+        also have a high total number of jumps) will be flagged as
+        potential (I)RC pixels.
+
+    early_cutoff_fraction : float
+        Fraction of the integration to use when comparing the jump rate
+        early in the integration to that across the entire integration.
+        Must be <= 0.5
+
+    pedestal_sigma_threshold : int
+        Used when searching for RC pixels via the pedestal image. Pixels
+        with pedestal values more than ``pedestal_sigma_threshold`` above
+        the mean are flagged as potential RC pixels
+
+    rc_fraction_threshold : float
+        Used when searching for RC pixels. This is the fraction of input
+        files within which the pixel must be identified as an RC pixel
+        before it will be flagged as a permanent RC pixel
+
+    low_pedestal_fraction : float
+        This is the fraction of input files within which a pixel must be
+        identified as a low pedestal pixel before it will be flagged as
+        a permanent low pedestal pixel
+
+    high_cr_fraction : float
+        This is the fraction of input files within which a pixel must be
+        flagged as having a high number of jumps before it will be flagged
+        as permanently noisy
+
+    flag_values : dict
+        This dictionary maps the types of bad pixels searched for to the
+        flag mnemonics to use when creating the bad pixel file. Keys are
+        the types of bad pixels searched for, and values are lists that
+        include mnemonics recognized by the jwst calibration pipeline
+        e.g. {'hot': ['HOT'], 'rc': ['RC'], 'low_pedestal': ['OTHER_BAD_PIXEL'], 'high_cr': ["TELEGRAPH"]}
+
+    dark_do_not_use : list
+        List of bad pixel types to be flagged as DO_NOT_USE
+        e.g. ['hot', 'rc', 'low_pedestal', 'high_cr']
+
+    plot : bool
+        If True, produce and save intermediate results from noisy pixel search
 
     output_file : str
         Name of the CRDS-formatted bad pixel reference file to save the final
@@ -190,1142 +244,265 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         If True, the pipeline is run using the output reference file to be
         sure the pipeline doens't crash
     """
-    # Inputs listed as None in the config file are read in as strings.
-    # Change these to NoneType objects.
-    max_dead_norm_signal = none_check(max_dead_norm_signal)
-    dead_flux_check_files = none_check(dead_flux_check_files)
-    output_file = none_check(output_file)
+    instrument = None
+    detector = None
+    all_files = []
+    history = [history]
+    hdu = fits.PrimaryHDU()
 
-    crds_input_checks(author, description, pedigree, useafter)
+    if flat_slope_files is not None:
+        all_files = copy.deepcopy(flat_slope_files)
+        instrument, detector = instrument_info(flat_slope_files[0])
 
-    # Read in input files
-    input_exposures, instrument, detector = read_files(input_files, dead_search_type)
-    ydim, xdim = input_exposures.shape[-2:]
+        # Get output filenames
+        if output_file is None:
+            output_file = create_output_filename(instrument, detector)
 
-    # Create mean and stdev images
-    mean_img, stdev_img = mean_stdev_images(input_exposures, sigma=sigma_threshold)
+        flat_output_file = output_file.replace('.fits', '_from_flats.fits')
 
-    # Exclude reference pixels
-    mean_img = science_pixels(mean_img, instrument)
-    stdev_img = science_pixels(stdev_img, instrument)
+        # Get bad pixels from the flats
+        flatmask = badpix_from_flats.find_bad_pix(flat_slope_files, dead_search=dead_search,
+                                                  low_qe_and_open_search=low_qe_and_open_search,
+                                                  dead_search_type=dead_search_type,
+                                                  sigma_threshold=flat_mean_sigma_threshold,
+                                                  normalization_method=flat_mean_normalization_method,
+                                                  smoothing_box_width=smoothing_box_width,
+                                                  dead_sigma_threshold=dead_sigma_threshold,
+                                                  dead_zero_signal_fraction=dead_zero_signal_fraction,
+                                                  run_dead_flux_check=run_dead_flux_check,
+                                                  dead_flux_check_files=dead_flux_check_files,
+                                                  max_dead_norm_signal=max_dead_norm_signal,
+                                                  maual_flag_file=manual_flag_file,
+                                                  max_low_qe_norm_signal=max_low_qe_norm_signal,
+                                                  max_open_adj_norm_signal=max_open_adj_norm_signal,
+                                                  do_not_use=flat_do_not_use,
+                                                  output_file=flat_output_file,
+                                                  author=author,
+                                                  description=description,
+                                                  pedigree=pedigree,
+                                                  useafter=useafter,
+                                                  history=history,
+                                                  quality_check=quality_check)
 
-    # Create smoothed version of mean image
-    if normalization_method.lower() == 'smoothed':
-        smoothed_image = smooth(mean_img, box_width=smoothing_box_width, type=smoothing_type)
-    elif normalization_method.lower() == 'mean':
-        img_mean, img_dev = image_stats(mean_img, sigma=3.)
-        smoothed_image = np.zeros(mean_img.shape) + img_mean
-    elif normalization_method.lower() == 'none':
-        smoothed_image = np.ones(mean_img.shape)
-    else:
-        raise ValueError('Unknown smoothing option: {}.'.format(normalization_method))
+        # Convert the do not use list to a string to add to the header
+        if len(flat_do_not_use) > 0:
+            flat_do_not_use_string = ', '.join(flat_do_not_use)
+        else:
+            flat_do_not_use_string = 'None'
+        flat_do_not_use_string = '{}: {}'.format('Bad pixel types from flat to which DO_NOT_USE is applied: ', flat_do_not_use_string)
 
-    # Normalize
-    normalized = mean_img / smoothed_image
+        # Add the do not use string to the list of history entries to add,
+        # since it may end up being longer than 8 characters
+        history.append(flat_do_not_use_string)
 
-    # Save mean file for testing
-    mean_file = os.path.join(os.path.split(output_file)[0], 'mean_smoothed_normalized_images.fits')
-    mean_img_wref = pad_with_refpix(mean_img, instrument)
-    dev_img_wref = pad_with_refpix(stdev_img, instrument)
-    smooth_wref = pad_with_refpix(smoothed_image, instrument)
-    norm_wref = pad_with_refpix(normalized, instrument)
-    h0 = fits.PrimaryHDU(mean_img_wref)
-    h1 = fits.ImageHDU(dev_img_wref)
-    h2 = fits.ImageHDU(smooth_wref)
-    h3 = fits.ImageHDU(norm_wref)
-    hdulist = fits.HDUList([h0, h1, h2, h3])
-    hdulist.writeto(mean_file, overwrite=True)
-
-    # Sigma-clipped mean and stdev
-    norm_mean, norm_dev = image_stats(normalized, sigma=sigma_threshold)
-
-    # Find dead pixels
-    if dead_search:
-        if dead_search_type == 'sigma_rate':
-            dead_map = dead_pixels_sigma_rate(normalized, norm_mean, norm_dev, sigma=dead_sigma_threshold)
-        elif dead_search_type == 'absolute_rate':
-            if max_dead_norm_signal is None:
-                max_dead_norm_signal = get_max_dead_norm_signal_default(instrument=instrument,
-                                                                        detector=detector,
-                                                                        normalization_method=normalization_method.lower())
-            dead_map = dead_pixels_absolute_rate(normalized, max_dead_signal=max_dead_norm_signal)
-
-        # If flux_check then check pixels flagged as dead piels to see if they are hot pixels that
-        # saturate quickly and produce a rate value close to zero.
-        if run_dead_flux_check and dead_flux_check_files is not None:
-            dead_search_type = 'saturation_check'
-            input_ramps, instrument, detector = read_files(dead_flux_check_files, dead_search_type)
-            dead_map = dead_pixels_flux_check(dead_map, science_pixels(input_ramps, instrument),
-                                              flux_check)
-
-        dead_map = pad_with_refpix(dead_map, instrument)
-
-        # Save dead map for testing
-        deadfile = os.path.join(os.path.split(output_file)[0], 'dead_map_{}.fits'.format(dead_search_type))
-        h0 = fits.PrimaryHDU(dead_map)
-        hlist = fits.HDUList([h0])
-        hlist.writeto(deadfile, overwrite=True)
+        # Define the non-standard fits header keywords by placing them in a
+        # fits HDU List
+        hdu.header[dead_search_kw] = dead_search
+        hdu.header[low_qe_search_kw] = low_qe_and_open_search
+        hdu.header[dead_search_type_kw] = dead_search_type
+        hdu.header[mean_sig_threshold_kw] = flat_mean_sigma_threshold
+        hdu.header[norm_method_kw] = flat_mean_normalization_method
+        hdu.header[smooth_box_width_kw] = smoothing_box_width
+        hdu.header[dead_sig_thresh_kw] = dead_sigma_threshold
+        hdu.header[dead_zero_sig_frac_kw] = dead_zero_signal_fraction
+        hdu.header[dead_flux_check_kw] = run_dead_flux_check
+        hdu.header[dead_flux_file_kw] = dead_flux_check_files
+        hdu.header[max_dead_sig_kw] = max_dead_norm_signal
+        hdu.header[manual_flag_kw] = manual_flag_file
+        hdu.header[max_low_qe_kw] = max_low_qe_norm_signal
+        hdu.header[max_open_adj_kw] = max_open_adj_norm_signal
 
     else:
-        dead_map = np.zeros((ydim, xdim))
+        flatmask = 0
+        hdu.header[dead_search_kw] = False
+        hdu.header[low_qe_search_kw] = False
 
-    # Find low qe and open pixels
-    if low_qe_and_open_search:
-        if max_dead_norm_signal is None:
-            max_dead_norm_signal = get_max_dead_norm_signal_default(instrument=instrument,
-                                                                    detector=detector,
-                                                                    normalization_method=normalization_method.lower())
-        lowqe_map, open_map, adjacent_to_open_map = find_open_and_low_qe_pixels(normalized,
-                                                                                max_dead_signal=max_dead_norm_signal,
-                                                                                max_low_qe=max_low_qe_norm_signal,
-                                                                                max_adj_open=max_open_adj_norm_signal)
-        lowqe_map = pad_with_refpix(lowqe_map, instrument)
-        open_map = pad_with_refpix(open_map, instrument)
-        adjacent_to_open_map = pad_with_refpix(adjacent_to_open_map, instrument)
+    if dark_slope_files is not None:
+        if len all_files == 0:
+            all_files = copy.deepcopy(flat_slope_files)
+            instrument, detector = instrument_info(dark_slope_files[0])
+        else:
+            all_files = all_files + dark_slope_files
+
+        # Get output filenames
+        if output_file is None:
+            output_file = create_output_filename(instrument, detector)
+
+        dark_output_file = output_file.replace('.fits', '_from_darks.fits')
+
+        # Get bad pixels from the darks
+        darkmask = badpix_from_darks.find_bad_pix(dark_slope_files, clipping_sigma=dark_stdev_clipping_sigma,
+                                                  max_clipping_iters=dark_max_clipping_iters,
+                                                  noisy_threshold=dark_noisy_threshold,
+                                                  max_saturated_fraction=max_saturated_fraction,
+                                                  max_jump_limit=max_jump_limit,
+                                                  jump_ratio_threshold=jump_ratio_threshold,
+                                                  early_cutoff_fraction=early_cutoff_fraction,
+                                                  pedestal_sigma_threshold=pedestal_sigma_threshold,
+                                                  rc_fraction_threshold=rc_fraction_threshold,
+                                                  low_pedestal_fraction=low_pedestal_fraction,
+                                                  high_cr_fraction=high_cr_fraction,
+                                                  flag_values=flag_values,
+                                                  do_not_use=dark_do_not_use,
+                                                  outfile=dark_output_file, plot=False)
+
+        # Convert the do not use list to a string to add to the header
+        if len(dark_do_not_use) > 0:
+            dark_do_not_use_string = ', '.join(dark_do_not_use)
+        else:
+            dark_do_not_use_string = 'None'
+        dark_do_not_use_string = '{}: {}'.format('Bad pixel types from dark to which DO_NOT_USE is applied: ', dark_do_not_use_string)
+
+        # Add the do not use string to the list of history entries to add,
+        # since it may end up being longer than 8 characters
+        history.append(dark_do_not_use_string)
+
+        # Convert the bad pixel type mapping into a string so it can be
+        # added to the output header
+        if len(flag_values) > 0:
+            for key in flag_values:
+                substr = '{}: {},'.format(key, flag_values[key])
+                mapping_str = mapping_str + substr
+        else:
+            mapping_str = 'None'
+        mapping_str = '{}: {}'.format('Mapping of jwst_reffiles bad pixel types to jwst cal bad pixel flags: ', mapping_str)
+
+        # Add the do not use string to the list of history entries to add,
+        # since it may end up being longer than 8 characters
+        history.append(mapping_str)
+
+        # Define the non-standard fits header keywords by placing them in a
+        # fits HDU List
+        hdu.header[bad_from_dark_kw] = True
+        hdu.header[dark_clip_sigma_kw] = dark_stdev_clipping_sigma
+        hdu.header[dark_clip_iters_kw] = dark_max_clipping_iters
+        hdu.header[dark_noisy_thresh_kw] = dark_noisy_threshold
+        hdu.header[max_sat_frac_kw] = max_saturated_fraction
+        hdu.header[jump_limit_kw] = max_jump_limit
+        hdu.header[jump_ratio_thresh_kw] = jump_ratio_threshold
+        hdu.header[cutoff_frac_kw] = early_cutoff_fraction
+        hdu.header[pedestal_sig_thresh_kw ] = pedestal_sigma_threshold
+        hdu.header[rc_frac_thresh_kw ] = rc_fraction_threshold
+        hdu.header[low_ped_frac_kw] = low_pedestal_fraction
+        hdu.header[high_cr_frac_kw] = high_cr_fraction
+
     else:
-        lowqe_map = np.zeros((ydim, xdim))
-        open_map = np.zeros((ydim, xdim))
-        adjacent_to_open_map = np.zeros((ydim, xdim))
+        darkmask = 0.
+        hdu.header[bad_from_dark_kw] = False
 
-    # Save low QE map for testing
-    qefile = os.path.join(os.path.split(output_file)[0], 'low_qe_open_adjopen_maps.fits')
-    h0 = fits.PrimaryHDU(lowqe_map)
-    h1 = fits.ImageHDU(open_map)
-    h2 = fits.ImageHDU(adjacent_to_open_map)
-    hlist = fits.HDUList([h0, h1, h2])
-    hlist.writeto(qefile, overwrite=True)
+    # Combine the two masks
+    final_mask = flatmask + darkmask
 
-    # Flag MIRI's bad columns
-    # if instrument == 'MIRI':
-    #    miri_bad_col_map = miri_bad_columns(dead_map.shape)
-    # else:
-    #    miri_bad_col_map = np.zeros((ydim, xdim))
-
-    # Create a map showing locations of reference pixels
-    reference_pix = reference_pixel_map(dead_map.shape, instrument)
-
-    # Save reference pixels map for testing
-    reffile = os.path.join(os.path.split(output_file)[0], 'refpix_map.fits')
-    h0 = fits.PrimaryHDU(reference_pix)
-    hlist = fits.HDUList([h0])
-    hlist.writeto(reffile, overwrite=True)
-
-    # Wrap up all of the individual bad pixel maps into a dictionary
-    stack_of_maps = {'DEAD': dead_map, 'LOW_QE': lowqe_map, 'OPEN': open_map,
-                     'ADJ_OPEN': adjacent_to_open_map, 'REFERENCE_PIXEL': reference_pix}
-    # 'UNRELIABLE_SLOPE': miri_bad_col_map}
-
-    # Check that all flag types to be specified DO_NOT_USE are recognized
-    # types.
-    do_not_use = flag_type_check(do_not_use)
-
-    # Combine the individual maps into a final bad pixel map
-    final_map = combine_individual_maps(stack_of_maps, do_not_use)
-
-    # If requested, create a map containing all the manually added flags
-    # and add to the final map.
-    # If 'default' is input, use the appropriate file from the repo
-    if manual_flag_file == 'default':
-        manual_flag_file = determine_manual_file(instrument, detector)
-        print('Using default manual bad pixel file: {}'.format(manual_flag_file))
-
-    if manual_flag_file != '':
-        manual_flag_map = manual_flags(manual_flag_file, dead_map.shape, do_not_use)
-        final_map = np.bitwise_or(final_map, manual_flag_map)
-
-    # Save the bad pixel map in DMS format
-    if output_file is None:
-        output_file = os.path.join(os.getcwd(), '{}_{}_mask.fits'.format(instrument, detector))
-    save_final_map(final_map, instrument, detector, input_files, author, description, pedigree, useafter,
-                   history, sigma_threshold, smoothing_box_width, dead_sigma_threshold, max_dead_norm_signal,
-                   max_low_qe_norm_signal, max_open_adj_norm_signal, do_not_use, output_file)
-
-    # Basic compatibility check: run the pipeline on a dummy file using
-    # this reference file. Make sure the pipeline doesn't crash
-    if quality_check:
-        pipeline_check(output_file, input_files[0])
+    # Save mask in reference file
+    hdu_list = fits.HDUList([hdu])
+    save_final_map(final_mask, instrument, detector, hdu_list, all_files, author, description,
+                   pedigree, useafter, history, output_file)
 
 
-def combine_individual_maps(bad_maps, do_not_use_flags):
-    """Given multiple separate bad pixel maps, combine using bit
-    values matching those defined in the JWST calibraiton pipeline
-
-    Parameters
-    ----------
-    bad_maps : dict
-        Dictionary containing the various individual bad pixel maps to be
-        combined. Format is (e.g.) {'DEAD': dead_map, 'LOW_QE': low_qe_map}
-
-    Returns
-    -------
-    final_map : numpy.ndarray
-        2D array containing the combined bad pixel map
-
-
-    """
-    # The official bit definitions for bad pixel flavors
-    dq_defs = dqflags.pixel
-
-    # Temporary fix to get around pipeline bug (which will be fixed in
-    # the next release)
-    dq_defs['REFERENCE_PIXEL'] = 128
-    dq_defs['RESERVED_4'] = 2147483648
-
-    # Convert each type of bad pixel input to have the proper value,
-    # and add to the final map
-    do_not_use_map = np.zeros((bad_maps['DEAD'].shape)).astype(np.int)
-    use_map = np.zeros((bad_maps['DEAD'].shape)).astype(np.int)
-    for pix_type in do_not_use_flags:
-        if pix_type in dq_defs.keys():
-            if pix_type in bad_maps.keys():
-                ind_map = bad_maps[pix_type]
-                flagged = ind_map != 0
-                value = dq_defs[pix_type]
-                do_not_use_map[flagged] += value
-        else:
-            raise ValueError('Unrecognized bad pixel type in do_not_use_list: {}'.format(pix_type))
-    do_not_use_map[do_not_use_map != 0] += dq_defs['DO_NOT_USE']
-
-    for pix_type in bad_maps:
-        if pix_type in dq_defs.keys():
-            if pix_type not in do_not_use_flags:
-                ind_map = bad_maps[pix_type]
-                flagged = ind_map != 0
-                value = dq_defs[pix_type]
-                use_map[flagged] += value
-        else:
-            raise ValueError('Unrecognized bad pixel type: {}'.format(pix_type))
-
-    final_map = do_not_use_map + use_map
-    return final_map
-
-
-def create_dqdef():
-    """Create the DQ definition data needed to populate the final bad pixel
-    reference file
-
-    Returns
-    -------
-    definitions : list
-        Bad pixel bit definitions
-    """
-    definitions = []
-    standard_defs = dqflags.pixel
-    for bitname in standard_defs:
-        bitvalue = standard_defs[bitname]
-        if bitvalue != 0:
-            bitnumber = np.uint8(np.log(bitvalue)/np.log(2))
-        else:
-            bitnumber = 0
-        newrow = (bitnumber, bitvalue, bitname, '')
-        definitions.append(newrow)
-    return definitions
-
-
-def determine_manual_file(inst_name, detector_name):
-    """Find the default manual bad pixel file for the given instrument
-    and detector
+def create_output_filename(inst_name, det_name):
+    """Create a default output filename for the bad pixel mask given
+    instrument and detector names
 
     Parameters
     ----------
     inst_name : str
-        Name of JWST instrument
+        Instrument name
 
-    detector_name : str
-        Name of detector
-
-    Returns
-    -------
-    filename : str
-        Full path and filename of the bad pixel file
-    """
-    basename = '{}_{}_manual_flags.txt'.format(inst_name.lower(), detector_name.lower())
-    filename = os.path.join(os.path.split(__file__)[0], basename)
-    return filename
-
-
-def flag_type_check(flags):
-    """Check that the flags in the input list are valid JWST bad pixel types
-
-    Parameters
-    ----------
-    flag : list
-        List of flag types (e.g. ['DEAD', 'LOW_QE'])
+    det_name : str
+        Detector name
 
     Returns
     -------
-    flag : list
-        Modified list (all flags made uppercase)
+    outfile : str
+        Default bad pixel mask filename
     """
-    possible_flags = dqflags.pixel
-    flags = [entry.upper() for entry in flags]
-    for flag in flags:
-        if flag not in possible_flags:
-            raise ValueError('Unrecognized flag type: {}'.format(flag))
-    return flags
+    # Add in timestamp as a way to prevent overwriting past runs
+    current_time = datetime.datetime.now()
 
+    # Use the current working directory
+    outfile = '{}_{}_{}_badpix_mask.fits'.format(inst_name, det_name, current_time)
+    outfile = os.path.join(os.getcwd(), outfile)
+    return outfile
 
-def crds_input_checks(author_name, descrip, pedigree, use_after):
-    """Perform some basic checks on the input values to be placed in the
-    header of the reference file. These check against CRDS requirements
 
-    Parameters
-    ----------
-
-    Results
-    -------
-    """
-    if len(descrip) > 65:
-        raise ValueError('Description cannot exceed 65 characters.')
-
-    allowed_pedigrees = ['GROUND']
-    if pedigree not in allowed_pedigrees:
-        raise ValueError('Pedigree must be one of: {}'.format(allowed_pedigrees))
-
-
-def create_dummy_hdu_list(sigma_threshold, smoothing_width, dead_sigma_threshold, dead_max_rate,
-                          low_qe_max_rate, open_adj_max_rate):
-    """Create a fits HDU List to contain the "extra" fits header keywords
-    that specific to this module and not included in the datamodels. This
-    will be used to initialize the datamodel when creating the reference
-    file
-
-    Parameters
-    ----------
-    sigma_threshold : float
-        Number of standard deviations to use when sigma-clipping to
-        calculate the mean slope image or the mean across the detector
-
-    smoothing_width : float
-        Width in pixels of the box kernel to use to compute the smoothed
-        mean image
-
-    dead_sigma_threshold : float
-        Number of standard deviations below the mean at which a pixel is
-        considered dead.
-
-    dead_max_rate : float
-        Maximum normalized signal rate of a pixel that is considered dead
-
-    low_qe_max_rate: float
-        The maximum normalized signal a pixel can have and be considered
-        low QE.
-
-    open_adj_max_rate: float
-        The maximum normalized signal a pixel adjacent to a low QE pixel can have
-        in order for the low QE pixel to be reclassified as OPEN
-
-
-    Returns
-    -------
-    hdu_list : astropy.io.fits.HDUList
-        HDU List containing a header with just the extra keywords specific
-        to this module
-    """
-    sig_thresh_keyword = 'BPMSIGMA'
-    smooth_keyword = 'BPMSMOTH'
-    dead_sigma_keyword = 'BPMDEDSG'
-    max_dead_keyword = 'BPMMXDED'
-    max_low_qe_keyword = 'BPMMXLQE'
-    max_open_adj_keyword = 'BPMMXOAD'
-    hdu = fits.PrimaryHDU()
-    hdu[0].header[sig_thresh_keyword] = sigma_threshold
-    hdu[0].header[smooth_keyword] = smoothing_width
-    hdu[0].header[dead_sigma_keyword] = dead_sigma_threshold
-    hdu[0].header[max_dead_keyword] = dead_max_rate
-    hdu[0].header[max_low_qe_keyword] = low_qe_max_rate
-    hdu[0].header[max_open_adj_keyword] = open_adj_max_rate
-    hdu_list = fits.HDUList([hdu])
-    return hdu_list
-
-
-def dead_pixels_sigma_rate(rate_image, mean_rate, stdev_rate, sigma=5.):
-    """Create a map of dead pixels given a normalized rate image. In this
-    case pixels are flagged as dead if their normalized signal rate is
-    less than ``sigma`` standard deviations below the mean
-
-    Parameters
-    ----------
-    rate_image : numpy.ndarray
-        2D normalized rate image
-
-    mean_rate : float
-        Sigma-clipped mean value of the ``rate_image``
-
-    stdev_rate : float
-        Sigma-clipped standard deviation of the ``rate_image``
-
-    sigma : float
-        Number of standard deviations below the mean at which a pixel is
-        considered dead.
-
-    Returns
-    -------
-    dead_pix_map : numpy.ndarray
-        2D map showing DEAD pixels. Good pixels have a value of 0.
-    """
-    dead_pix_map = (rate_image < (mean_rate - sigma * stdev_rate)).astype(np.int)
-    return dead_pix_map.astype(np.int)
-
-
-def dead_pixels_absolute_rate(rate_image, max_dead_signal=0.05):
-    """Create a map of dead pixels given a normalized rate image. In this
-    case pixels are flagged as dead if their normalized signal rate is
-    less than ``max_dead_signal``.
-
-    Parameters
-    ----------
-    rate_image : numpy.ndarray
-        2D normalized rate image
-
-    max_dead_signal : float
-        Maximum normalized signal rate of a pixel that is considered dead
-
-    Returns
-    -------
-    dead_pix_map : numpy.ndarray
-        2D map showing DEAD pixels. Good pixels have a value of 0.
-    """
-    dead_pix_map = (rate_image < max_dead_signal).astype(np.int)
-    return dead_pix_map.astype(np.int)
-
-
-def dead_pixels_flux_check(dead_pix_map, ave_group, flux_check):
-    """Check the dead_pix_map with the average_rate of the last 4 groups.
-    We want to remove cases where a pixel was flagged as dead because
-    it is a hot pixel that saturates on the first group causing  the
-    rate for this pixel to be close to 0.
-
-    Parameters
-    ----------
-    dead_pix_map : numpy.ndarray
-        2D map showing DEAD pixels. Good pixels have a value of 0.
-
-    ave_group : numpy.ndaarray
-        2D array of the average signal in the last 4 groups from
-        an average of all integrations and exposures.
-
-    flux_check : float
-        if pixel have a ave_group > flux_check this is not a dead pixel
-
-    Returns
-    -------
-    clean_dead_pix_map : numpy.ndarray
-        2D map showing DEAD pixels. Good pixels have a value of 0.
-        Clean up dead pixel map removing saturated pixels from dead
-        flag.
-    """
-
-    final_ave_group = np.mean(ave_group, axis=0)
-    index = np.where(dead_pix_map == 1)
-
-    ibad = len(index[0])
-
-    updated_pix_map = np.logical_and(dead_pix_map == 1, final_ave_group < flux_check).astype(np.int)
-    index = np.where(updated_pix_map == 1)
-
-    iupdated = len(index[0])
-    print('Number of pixels removed from dead pixel mask after flux check', ibad - iupdated)
-    return updated_pix_map.astype(np.int)
-
-
-def dead_pixels_zero_signal(groups, dead_zero_signal_fraction=0.9):
-    """Create a map of dead pixels given a set of individual groups
-    from multiple integrations. In this case pixels are only flagged
-    as deas if they have zero signal in more than ``dead_zero_signal_fraction``
-    of the input groups.
-
-    Parameters
-    ----------
-    groups : numpy.ndarray
-        3D stack of group images
-
-    dead_zero_signal_fraction : float
-        Threshold for the fraction of groups in which a pixel can have
-        zero signal and not be considered dead.
-
-    Returns
-    -------
-    dead_pix_map : numpy.ndarray
-        2D map showing DEAD pixels. Good pixels have a value of 0.
-    """
-    num_groups, ydim, xdim = groups.shape
-    zero_signal = (groups == 0.).astype(np.int)
-    total_zeros = np.sum(zero_signal, axis=0)
-    total_fraction = total_zeros / num_groups
-    dead_pix_map = (total_fraction >= dead_zero_signal_fraction).astype(np.int)
-    return dead_pix_map.astype(np.int)
-
-
-def extract_10th_group(hdu_list):
-    """Keep only the 10th group from each integration
-
-    Parameters
-    ----------
-    data : numpy.ndarray
-        3D or 4D array of data
-
-    Returns
-    -------
-    data : numpy.ndarray
-        3D array (10th group only)
-    """
-    filename = hdu_list[0].header['FILENAME']
-    dims = hdu_list['SCI'].data.shape
-    if len(dims) == 4:
-        if dims[1] < 10:
-            raise ValueError('Input file {} has fewer than 10 groups.'.format(filename))
-        group10 = hdu_list['SCI'].data[:, 9, :, :]
-    elif len(dims) == 3:
-        if dims[0] < 10:
-            raise ValueError('Input file {} has fewer than 10 groups.'.format(filename))
-        group10 = np.expand_dims(hdu_list['SCI'].data[9, :, :], axis=0)
-    return group10
-
-
-def average_last4groups(hdu_list):
-    """Find the median of all the  group from each integration
-
-    Parameters
-    ----------
-    data : numpy.ndarray
-        3D or 4D array of data
-
-    Returns
-    -------
-    data : numpy.ndarray
-        3D array (10th group only)
-    """
-    filename = hdu_list[0].header['FILENAME']
-    dims = hdu_list['SCI'].data.shape
-    dims = hdu_list['SCI'].data.shape
-    dims = hdu_list['SCI'].data.shape
-    group4 = np.zeros((4, dims[-2], dims[-1]))
-
-    # for multiple integrations
-    if len(dims) == 4:
-        # dims[0] = number of ints
-        # dims[1] = number of groups
-        if dims[1] < 4:
-            raise ValueError('Input file {} has fewer than 4 groups.'.format(filename))
-        group4[0, :, :] = np.mean(hdu_list['SCI'].data[:, 0, :, :], axis=0)
-        group4[1, :, :] = np.mean(hdu_list['SCI'].data[:, 1, :, :], axis=0)
-        group4[2, :, :] = np.mean(hdu_list['SCI'].data[:, 2, :, :], axis=0)
-        group4[3, :, :] = np.mean(hdu_list['SCI'].data[:, 3, :, :], axis=0)
-        ave_group = np.mean(group4, axis=0)
-
-    elif len(dims) == 3:
-        if dims[0] < 4:
-            raise ValueError('Input file {} has fewer than 10 groups.'.format(filename))
-        group4[0, :, :] = hdu_list['SCI'].data[0, :, :]
-        group4[1, :, :] = hdu_list['SCI'].data[1, :, :]
-        group4[2, :, :] = hdu_list['SCI'].data[2, :, :]
-        group4[3, :, :] = hdu_list['SCI'].data[3, :, :]
-        ave_group = np.mean(group4, axis=0)
-
-    # change format so it is 3 dim
-    ave_group = np.expand_dims(ave_group, axis=0)
-    return ave_group
-
-
-def find_open_and_low_qe_pixels(rate_image, max_dead_signal=0.05, max_low_qe=0.5, max_adj_open=1.05):
-    """Create maps of open (and adjacent to open) and low QE pixels given a
-    normalized rate image
-
-    Parameters
-    ----------
-    rate_image : numpy.ndarray
-        2D normalized rate image
-
-    mean_rate : float
-        Sigma-clipped mean value of the ``rate_image``
-
-    stdev_rate : float
-        Sigma-clipped standard deviation of the ``rate_image``
-
-    max_dead_signal : float
-        The maximum normalized signal a pixel can have and be considered dead
-
-    max_low_qe : float
-        The maximum normalized signal a pixel can have and be considered
-        low QE.
-
-    max_adj_open : float
-        The maximum normalized signal a pixel adjacent to a low QE pixel can have
-        in order for the low QE pixel to be reclassified as OPEN
-
-    Returns
-    -------
-    low_qe_map : numpy.ndarray
-        2D map showing LOW QE pixels. Good pixels have a value of 0.
-
-    open_pix_map : numpy.ndarray
-        2D map showing OPEN pixels. Good pixels have a value of 0.
-
-    adj_pix_map : numpy.ndarray
-        2D map showing ADJ_OPEN pixels. Good pixels have a value of 0.
-    """
-    ydim, xdim = rate_image.shape
-
-    low_qe_map = np.zeros((ydim, xdim)).astype(np.int)
-    open_pix_map = np.zeros((ydim, xdim)).astype(np.int)
-    adj_pix_map = np.zeros((ydim, xdim)).astype(np.int)
-    low_sig_y, low_sig_x = np.where((rate_image >= max_dead_signal) & (rate_image < max_low_qe))
-
-    for x, y in zip(low_sig_x, low_sig_y):
-        adj_pix_x, adj_pix_y = get_adjacent_pixels(x, y, xdim, ydim)
-        adj_pix = rate_image[adj_pix_y, adj_pix_x]
-        adj_check = (adj_pix > max_adj_open)
-        if all(adj_check):
-            adj_pix_map[y-1:y+2, x-1:x+2] = 1
-            adj_pix_map[y, x] = 0
-            open_pix_map[y, x] = 1
-        else:
-            low_qe_map[y, x] = 1
-    return low_qe_map, open_pix_map, adj_pix_map
-
-
-def get_adjacent_pixels(x_val, y_val, x_dim, y_dim):
-    """Return coordinates of the pixels immediately adjacent to the input
-    pixel coordinate
-
-    Parameters
-    ----------
-    x_val : int
-        x coordinate of central pixel
-
-    y_val : int
-        y coordinate of central pixel
-
-    x_dim : int
-        Size of the array in the x dimension
-
-    y_dim : int
-        Size of the array in the y dimension
-
-    Returns
-    -------
-    adj_x : numpy.ndarray
-        x coordinates of adjacent pixel coordinates
-
-    adj_y : numpy.ndarray
-        y coordinates of adjacent pixel coordinates
-    """
-    if ((x_val > 0) and (x_val < (x_dim-1))):
-        if ((y_val > 0) and (y_val < y_dim-1)):
-            adj_x = np.array([x_val, x_val+1, x_val, x_val-1])
-            adj_y = np.array([y_val+1, y_val, y_val-1, y_val])
-        elif y_val == 0:
-            adj_x = np.array([x_val, x_val+1, x_val-1])
-            adj_y = np.array([y_val+1, y_val, y_val])
-        elif y_val == (y_dim-1):
-            adj_x = np.array([x_val+1, x_val, x_val-1])
-            adj_y = np.array([y_val, y_val-1, y_val])
-    elif x_val == 0:
-        if ((y_val > 0) and (y_val < y_dim-1)):
-            adj_x = np.array([x_val, x_val+1, x_val])
-            adj_y = np.array([y_val+1, y_val, y_val-1])
-        elif y_val == 0:
-            adj_x = np.array([x_val, x_val+1])
-            adj_y = np.array([y_val+1, y_val])
-        elif y_val == (y_dim-1):
-            adj_x = np.array([x_val+1, x_val])
-            adj_y = np.array([y_val, y_val-1])
-    elif x_val == (x_dim-1):
-        if ((y_val > 0) and (y_val < y_dim-1)):
-            adj_x = np.array([x_val, x_val, x_val-1])
-            adj_y = np.array([y_val+1, y_val-1, y_val])
-        elif y_val == 0:
-            adj_x = np.array([x_val, x_val-1])
-            adj_y = np.array([y_val+1, y_val])
-        elif y_val == (y_dim-1):
-            adj_x = np.array([x_val, x_val-1])
-            adj_y = np.array([y_val-1, y_val])
-    return adj_x, adj_y
-
-
-def get_fastaxis(filename):
-    """Get the fastaxis and slowaxis values from the input file
+def instrument_info(filename):
+    """Get the instrument and detector name from the header of the
+    input file
 
     Parameters
     ----------
     filename : str
-        Name of fits file to get values from
+        Name of fits file
 
     Returns
     -------
-    fastaxis : int
-        Value of FASTAXIOS keyword
+    inst : str
+        Instrument name
 
-    slowaxis : int
-        Value of SLOWAXIS keyword
+    det : str
+        Detector name
     """
-    with fits.open(filename) as hdu_list:
+    with fits.open(filename) as hdulist:
         try:
-            fastaxis = hdu_list[0].header['FASTAXIS']
-            slowaxis = hdu_list[0].header['SLOWAXIS']
-        except (KeyError, FileNotFoundError) as e:
-            print(e)
-    return fastaxis, slowaxis
-
-
-def get_max_dead_norm_signal_default(instrument, detector, normalization_method):
-    """
-    Finds the default max_dead_norm_signal value to use for the
-    absolute_rate dead pixel search type.
-
-    Parameters
-    ----------
-    instrument : str
-        The name of the instrument
-
-    detector : str
-        The name of the detector
-
-    normalization_method : str
-        Specify how the mean image is normalized prior to searching for
-        bad pixels. Options are:
-        'smoothed': Mean image will be smoothed using a
-                    ``smoothing_box_width`` x ``smoothing_box_width``
-                    box kernel. The mean image is then normalized by
-                    this smoothed image.
-        'none': No normalization is done. Mean slope image is used as is
-        'mean': Mean image is normalized by its sigma-clipped mean
-
-    Returns
-    -------
-    default_value : float
-        The default max_dead_norm_signal value
-    """
-    if (instrument == 'NIRCAM') & (normalization_method == 'none'):
-        detectors = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCALONG',
-                     'NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCBLONG']
-        defaults = [25.0, 25.0, 30.0, 30.0, 40.0,
-                    25.0, 25.0, 25.0, 25.0, 50.0]
-        default_value = defaults[detectors == detector]
-    else:
-        default_value = 0.05
-
-    return default_value
-
-
-def image_stats(image, sigma=3.):
-    """Calculate the sigma-clipped mean and standard deviation across the
-    given image
-
-    Parameters
-    ----------
-    image : numpy.ndarray
-        2D image
-
-    sigma : float
-        Sigma threshold to use for sigma-clipping
-
-    Returns
-    -------
-    mean_val : float
-        Sigma-clipped mean value
-
-    stdev_val : float
-        Sigma-clipped standard deviation
-    """
-    clipped_image = sigma_clip(image, sigma=sigma, masked=False)
-    mean_val = np.nanmean(clipped_image)
-    stdev_val = np.nanstd(clipped_image)
-    return mean_val, stdev_val
-
-
-def manual_flags(filename, map_shape, no_use):
-    """Create a bad pixel mask from an input ascii file containing pixel
-    indicies and flag types
-
-    Parameters
-    ----------
-    filename : str
-        Name of ascii file containing flags
-
-    map_shape : tup
-        Shape of the bad pixel mask to create (y, x)
-
-    no_use : list
-        List of mnemonics to flag as DO_NOT_USE
-
-    Returns
-    -------
-    mask : numpy.ndarray
-        2D array of bad pixels, with bit values equal to the standard
-        JWST values
-    """
-    # Read in bad pixel file
-    tab = ascii.read(filename)
-
-    # Create empty mask
-    mask = np.zeros(map_shape).astype(np.int)
-
-    # Pixel index columns can have string or integer data.
-    # If we have strings, convert to integer, watching for
-    # entries conveying ranges
-    for row in tab:
-        xvals = range_format(row['x'], map_shape[1])
-        yvals = range_format(row['y'], map_shape[0])
-
-        bad_type = row['flag'].upper()
-        try:
-            bit_value = dqflags.pixel[bad_type]
+            inst = hdulist[0].header['INSTRUME'].lower()
         except KeyError:
-            print('Unrecognized bad pixel type: {}. Ignoring and moving on.'
-                  .format(row['flag']))
-            continue
+            raise KeyError("ERROR: expecting instrument name in main header of {}".format(filename))
 
-        # If the type of bad pixel is on the Do Not Use list, then
-        # add the first bit to the value to use.
-        if bad_type in no_use:
-            bit_value += 1
-
-        # Apply the flag. Be careful not to flag as DO_NOT_USE twice.
-        mask[yvals[0]:yvals[1], xvals[0]:xvals[1]] = np.bitwise_or(mask[yvals[0]:yvals[1], xvals[0]:xvals[1]],
-                                                                   bit_value)
-    return mask
+        try:
+            det = hdulist[0].header['DETECTOR'].lower()
+        except KeyError:
+            raise KeyError("ERROR: expecting detector name in main header of {}".format(filename))
+    return inst, det
 
 
-def mean_stdev_images(data, sigma=3.):
-    """Calculate the sigma-clipped mean and stdev images from a stack of
-    input images
-
-    Parameters
-    ----------
-    data : numpy.ndarray
-        Stack of 2D images (i.e 3D array)
-
-    sigma : float
-        Threshold value to use for sigma clipping.
-
-    Returns
-    -------
-    mean_image : numpy.ndarray
-        2D array of the mean image
-
-    stdev_image : numpy.ndarray
-        2D array of the stdev image
-    """
-    clipped_cube = sigma_clip(data, sigma=sigma, axis=0, masked=False)
-    mean_image = np.nanmean(clipped_cube, axis=0)
-    stdev_image = np.nanstd(clipped_cube, axis=0)
-    return mean_image, stdev_image
-
-
-def miri_bad_columns(dimensions):
-    """Create a map that flags the shorted columns on the MIRI detector
-
-    Parameters
-    ----------
-    dimensions : tup
-        (y, x) dimensions, in pixels, of the map to create
-
-    Returns
-    -------
-    shorted_map : numpy.ndarray
-        2D map showing the locations of the shorted columns (1)
-    """
-
-    print('*************',dimensions)
-
-    shorted_map = np.zeros(dimensions).astype(np.int)
-    shorted_map[:, 384:386] = 1
-    return shorted_map
-
-
-def none_check(value):
-    """If value is a string containing 'none', then change it to a
-    NoneType object
-
-    Parameters
-    ----------
-    value : str or NoneType
-
-    Returns
-    -------
-    new_value : NoneType
-    """
-    if isinstance(value, str):
-        if 'none' in value.lower():
-            new_value = None
-        else:
-            new_value = value
-    else:
-        new_value = value
-    return new_value
-
-
-def fit_surface(data, deg):
-    """Fit the rate image with a 2-D surface plot
-
-    Parameters
-    ----------
-    data : numpy.ndarray
-        2D image
-
-    deg: degree of polynomial fit
-
-    Returns
-    -------
-    surface_image : numpy.ndarray
-       2D image of polynomial fit
-
-    """
-
-    from astropy.modeling import models, fitting
-    iy, ix = data.shape
-    y, x = np.mgrid[:iy, :ix]
-    p_init = models.Polynomial2D(degree=deg)
-    fit_p = fitting.LevMarLSQFitter()
-    surface = fit_p(p_init, x, y, data)
-    surface_image = surface(x, y)
-    return surface_image
-
-
-def pad_with_refpix(data, instrument_name):
-    """Pad the given image with an outer 4 rows and columns of (zeroed out)
-    reference pixels.
-
-    Parameters
-    ----------
-    data : numpy.ndarray
-        2D image
-
-    instrument_name : str
-        Name of the JWST instrument associated with the data
-
-    Returns
-    -------
-    padded : numpy.ndarray
-        2D image with 4 rows and columns of reference pixels added
-    """
-    ydim, xdim = data.shape
-    if instrument_name.lower() != 'miri':
-        padded = np.zeros((ydim+8, xdim+8))
-        padded[4:-4, 4:-4] = data
-    else:
-        padded = np.zeros((ydim, xdim+8))
-        padded[:, 4:-4] = data
-    return padded
-
-
-def pipeline_check(reference_filename, filename):
-    """Run the dq_init step using the provided file, to check that the
-    pipeline runs successfully
-
-    Parameters
-    ----------
-    reference_filename : str
-        Name of the bad pixel mask reference filename
-
-    filename : str
-        Name of the fit exposure on which to test the reference file
-    """
-    model = DQInitStep.call(filename, override_mask=reference_filename)
-
-
-def read_files(filenames, dead_search_type):
-    """Read the data in the input files. Perform basic sanity checks
-    to be sure data are consistent (same instrument, aperture, etc)
-
-    Parameters
-    ----------
-    filenames : list
-        List of fits filenames to be opened
-
-    dead_search_type : str
-        Type of search to use when looking for dead pixels. Options are:
-        ``sigma_rate``: Using a normalized signal rate image, dead pixels
-                        are defined as those with a rate smaller than
-                        ``dead_sigma_threshold`` standard deviations below
-                        the mean.
-        ``absolute_rate``: Using a normalized signal rate image, dead pixels
-                           are defined as those with a rate less than
-                           ``max_dead_norm_signal``.
-         ``saturation_check``: this option is set by the program if ``dead_flux_check_files``
-                               is a list of ramp files. The average of the last four
-                               groups is determined to test if pixel is close to saturation.
-
-    Returns
-    -------
-    data : numpy.ndarray
-        3D stack of data
-    """
-    for i, filename in enumerate(filenames):
-        with fits.open(filename) as hdu_list:
-            # Get some basic metadata
-            instrument = hdu_list[0].header['INSTRUME'].upper()
-            detector = hdu_list[0].header['DETECTOR'].upper()
-            aperture = hdu_list[0].header['SUBARRAY'].upper()
-            try:
-                rampfit = hdu_list[0].header['S_RAMP']
-            except KeyError:
-                rampfit = 'NOT RUN'
-
-            # For the sigma-based and absolute-signal-based dead pixel
-            # searches, the data must be slope images
-            if dead_search_type == 'sigma_rate' or dead_search_type == 'absolute_rate':
-                if rampfit != 'COMPLETE':
-                    raise ValueError(('File {} has not had the ramp-fitting pipeline step run. '
-                                      'The inputs for the "sigma-rate" and "absolute_rate" dead '
-                                      'pixel search must be slope images.')
-                                     .format(os.path.basename(filename)))
-                else:
-                    exposure = hdu_list['SCI'].data
-                    # Make 3D if it's not already
-                    dims = exposure.shape
-                    ndims = len(dims)
-                    if ndims == 2:
-                        exposure = np.expand_dims(exposure, axis=0)
-
-            elif dead_search_type == 'saturation_check':
-                if rampfit == 'COMPLETE':
-                    raise ValueError(('File {} has had the ramp-fitting pipeline step run. '
-                                      'The inputs for the "zero_signal" dead pixel search '
-                                      'cannot be slope images.').format(os.path.basename(filename)))
-                else:
-                    exposure = average_last4groups(hdu_list)
-            else:
-                raise ValueError('Unknown dead sarch type option: {}.'.format(dead_search_type))
-
-        # Create the comparison cases and output array if we are
-        # working on the first file
-        if i == 0:
-            comparison_instrument = copy.deepcopy(instrument)
-            comparison_detector = copy.deepcopy(detector)
-            comparison_aperture = copy.deepcopy(aperture)
-            integrations = copy.deepcopy(exposure)
-
-        # Consistency checks
-        if instrument != comparison_instrument:
-            raise ValueError('Inconsistent instruments in input data!')
-        if detector != comparison_detector:
-            raise ValueError('Inconsistent detectors in input data!')
-        if aperture != comparison_aperture:
-            raise ValueError('Inconsistent apertures in input data!')
-
-        # Stack the new integrations onto the outuput
-        integrations = np.concatenate((integrations, exposure), axis=0)
-    return integrations, comparison_instrument, comparison_detector
-
-
-def read_manual_flag_file(filename):
-    """Read in the text file containing the list of pixels to be flagged
-    manually.
-
-    Parameters
-    ----------
-    filename : str
-        Name of ascii file to be read in
-
-    Returns
-    -------
-    bad_table : astropy.table.Table
-        Table of bad pixels
-    """
-    bad_table = ascii.read(filename)
-
-
-def reference_pixel_map(dimensions, instrument_name):
-    """Create a map that flags all reference pixels as such
-
-    Parameters
-    ----------
-    dimensions : tup
-        (y, x) dimensions, in pixels, of the map to create
-
-    instrument_name : str
-        Name of JWST instrument associated with the data
-
-    Returns
-    -------
-    ref_map : numpy.ndarray
-        2D map showing the locations of reference pixels (1)
-
-    """
-    yd, xd = dimensions
-    ref_map = np.zeros(dimensions).astype(np.int)
-
-    ref_map[:, 0:4] = 1
-    ref_map[:, xd-4:xd] = 1
-
-    if instrument_name.lower() != 'miri':
-        ref_map[0:4, :] = 1
-        ref_map[yd-4:yd, :] = 1
-
-    return ref_map
-
-
-def range_format(table_cell, total_dimension):
-    """Turn a string containing a possible shorthand list of indexes
-    into an array of the specified indexes. Support the notation that
-    if no beginning or ending index is given that the range will be to
-    the start or end of ``total_dimension``. Note that this function
-    assumes that the input strings do not follow the python convention
-    of using a maximum index value of one beyond the index you really
-    want. (e.g. it assumes that '0:3' means columns 0 through 3 inclusive
-    are what you are interested in (meaning indexing in python would
-    need to use [0:4] to get all the values.))
-
-    Parameters
-    ----------
-    table_cell : str or int
-        Value to process (e.g. '34:36' or 93)
-
-    total_dimension : int
-        The maximum index number to be returned
-    """
-    try:
-        value = np.int(table_cell)
-        vals = [value, value+1]
-    except ValueError:
-        vals = table_cell.split(':')
-        if vals[0] == '':
-            vals[0] = 0
-        if vals[1] == '':
-            vals[1] = total_dimension - 1
-        vals = [np.int(val) for val in vals]
-        vals[1] += 1
-    return vals
-
-
-def save_final_map(bad_pix_map, instrument, detector, files, author, description, pedigree, useafter,
-                   history_text, sigma_thresh, smooth_width, dead_sigma_thresh, max_dead_rate,
-                   max_low_qe_rate, max_open_adj_rate, do_not_use_list, outfile):
+def save_final_map(bad_pix_map, instrument, detector, hdulist, files, author, description, pedigree, useafter,
+                   history_text, outfile):
     """Save a bad pixel map into a CRDS-formatted reference file
 
     Parameters
     ----------
+    bad_pix_map : numpy.ndarray
+        2D bad pixel array
 
+    instrument : str
+        Name of instrument associated with the bad pixel array
+
+    detector : str
+        Name of detector associated with the bad pixel array
+
+    hdulist : astropy.fits.HDUList
+        HDUList containing "extra" fits keywords
+
+    files : list
+        List of files used to create ``bad_pix_map``
+
+    author : str
+        Author of the bad pixel mask reference file
+
+    description : str
+        CRDS description to use in the final bad pixel file
+
+    pedigree : str
+        CRDS pedigree to use in the final bad pixel file
+
+    useafter : str
+        CRDS useafter string for the bad pixel file
+
+    history_text : list
+        List of strings to add as HISTORY entries to the bad pixel file
+
+    outfile : str
+        Name of the output bad pixel file
     """
-    # Define the non-standard fits header keywords by placing them in a
-    # fits HDU List
-    sig_thresh_keyword = 'BPMSIGMA'
-    smooth_keyword = 'BPMSMOTH'
-    dead_sigma_keyword = 'BPMDEDSG'
-    max_dead_keyword = 'BPMMXDED'
-    max_low_qe_keyword = 'BPMMXLQE'
-    max_open_adj_keyword = 'BPMMXOAD'
-    hdu = fits.PrimaryHDU()
-    hdu.header[sig_thresh_keyword] = sigma_thresh
-    hdu.header[smooth_keyword] = smooth_width
-    hdu.header[dead_sigma_keyword] = dead_sigma_thresh
-    hdu.header[max_dead_keyword] = max_dead_rate
-    hdu.header[max_low_qe_keyword] = max_low_qe_rate
-    hdu.header[max_open_adj_keyword] = max_open_adj_rate
-    hdu_list = fits.HDUList([hdu])
-
     yd, xd = bad_pix_map.shape
 
     # Initialize the MaskModel using the hdu_list, so the new keywords will
     # be populated
-    model = MaskModel(hdu_list)
+    model = MaskModel(hdulist)
     model.dq = bad_pix_map
 
     # Create dq_def data
-    dq_def = create_dqdef()
+    dq_def = badpix_from_flats.create_dqdef()
     model.dq_def = dq_def
     model.meta.reftype = 'MASK'
     model.meta.subarray.name = 'FULL'
@@ -1337,7 +514,7 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
     model.meta.instrument.detector = detector
 
     # Get the fast and slow axis directions from one of the input files
-    fastaxis, slowaxis = get_fastaxis(files[0])
+    fastaxis, slowaxis = badpix_from_flats.get_fastaxis(files[0])
     model.meta.subarray.fastaxis = fastaxis
     model.meta.subarray.slowaxis = slowaxis
 
@@ -1346,48 +523,134 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
     model.meta.pedigree = pedigree
     model.meta.useafter = useafter
 
-    # Populate "extra" header keywords that will contain parameters used
-    # in this module
-
+    # Add information about parameters used
+    # Parameters from badpix_from_flats
     package_note = ('This file was created using the bad_pixel_mask.py module within the '
                     'jwst_reffiles package.')
 
-    software_dict = {'name': 'jwst_reffiles.bad_pixel_mask.py', 'author': 'STScI',
+    software_dict = {'name': 'jwst_reffiles.bad_pixel_mask.bad_pixel_mask.py', 'author': 'STScI',
                      'homepage': 'https://github.com/spacetelescope/jwst_reffiles',
                      'version': '0.0.0'}
     entry = util.create_history_entry(package_note, software=software_dict)
     model.history.append(entry)
 
     model.history.append(util.create_history_entry('Parameter values and descriptions:'))
-    sigma_descrip = ('sigma_thresh: Number of standard deviations to use when sigma-clipping to '
+    dead_search_descrip = ('dead_search: Boolean, whether or not to run the dead pixel search '
+                           'using flat field files. The value is stored in the {} keyword.'.format(dead_search_kw))
+    model.history.append(util.create_history_entry(dead_search_descrip))
+
+    low_qe_search_descrip = ('low_qe_and_open_search: Boolean, whether or not to run the low QE '
+                             'and open pixel search using flat field files. The value is stored in the {} '
+                             'keyword.'.format(low_qe_search_kw))
+    model.history.append(util.create_history_entry(low_qe_search_descrip))
+
+    dead_type_descrip = ('dead_search_type: Method used to identify dead pixels. The value is stored in the '
+                         '{} keyword.'.format(dead_search_type_kw))
+    model.history.append(util.create_history_entry(dead_type_descrip))
+
+    sigma_descrip = ('flat_mean_sigma_threshold: Number of standard deviations to use when sigma-clipping to '
                      'calculate the mean slope image or the mean across the detector. The value '
-                     'used is stored in the {} keyword.'.format(sig_thresh_keyword))
+                     'used is stored in the {} keyword.'.format(mean_sig_threshold_kw))
     model.history.append(util.create_history_entry(sigma_descrip))
 
+    norm_descrip = ('flat_mean_normalization_method: Specify how the mean image is normalized prior to searching '
+        'for bad pixels. The value used is stored in the {} keyword.'.format(norm_method_kw))
+    model.history.append(util.create_history_entry(norm_descrip))
+
     smooth_descrip = ('smoothing_box_width: Width in pixels of the box kernel to use to compute the '
-                      'smoothed mean image. The value used is stored in the {} keyword.'.format(smooth_keyword))
+                      'smoothed mean image. The value used is stored in the {} keyword.'.format(smooth_box_width_kw))
     model.history.append(util.create_history_entry(smooth_descrip))
 
+    smooth_type_descrip = ('smoothing_type: Type of smoothing to do: Box2D or median filtering. The value used '
+                           'is stored in the {} keyword.'.format(smoothing_type)
+
     dead_sig_descrip = ('Number of standard deviations below the mean at which a pixel is considered dead. '
-                        'The value used is stored in the {} keyword.'.format(dead_sigma_keyword))
+                        'The value used is stored in the {} keyword.'.format(dead_sig_thresh_kw))
     model.history.append(util.create_history_entry(dead_sig_descrip))
 
     max_dead_descrip = ('Maximum normalized signal rate of a pixel that is considered dead. The value '
-                        'used is stored in the {} keyword.'.format(max_dead_keyword))
+                        'used is stored in the {} keyword.'.format(max_dead_sig_kw))
     model.history.append(util.create_history_entry(max_dead_descrip))
 
+    run_dead_flux_descrip = ('run_dead_flux_check: Boolean, if True, search for pixels erroneously flagged '
+                             'as dead because they are saturated in all groups. The value used is stored '
+                             'in the {} keyword.'.format(dead_flux_check_kw))
+    model.history.append(util.create_history_entry(run_dead_flux_descrip))
+
+    dead_flux_limit_descrip = ('Signal limit in raw data above which the pixel is considered not dead. The '
+                               'value used is stored in the {} keyword.'.format(max_dead_sig_kw))
+    model.history.append(util.create_history_entry(dead_flux_limit_descrip))
+
     max_low_qe_descrip = ('The maximum normalized signal a pixel can have and be considered low QE. The '
-                          'value used is stored in the {} keyword.'.format(max_low_qe_keyword))
+                          'value used is stored in the {} keyword.'.format(max_low_qe_kw))
     model.history.append(util.create_history_entry(max_low_qe_descrip))
 
     max_open_adj_descrip = ('The maximum normalized signal a pixel adjacent to a low QE pixel can have '
                             'in order for the low QE pixel to be reclassified as OPEN. The value used '
-                            'is stored in the {} keyword.'.format(max_open_adj_keyword))
+                            'is stored in the {} keyword.'.format(max_open_adj_kw))
     model.history.append(util.create_history_entry(max_open_adj_descrip))
 
-    do_not_use_descrip = ('List of bad pixel types where the DO_NOT_USE flag is also applied. '
-                          'Values used are: {}'.format(do_not_use_list))
-    model.history.append(util.create_history_entry(do_not_use_descrip))
+    flat_do_not_use_descrip = ('List of bad pixel types (from flats) where the DO_NOT_USE flag is also applied. '
+                          'The values used are stored in the {} keyword.'.format(flat_do_not_use_kw))
+    model.history.append(util.create_history_entry(flat_do_not_use_descrip))
+
+    manual_file_descrip = ('Name of the ascii file containing a list of pixels to be added manually. The '
+                           'value used is stored in the {} keyword.'.format(manual_flag_file))
+    model.history.append(util.create_history_entry(manual_file_descrip))
+
+    # Parameters from badpix_from_darks
+    bad_from_dark_descrip = ('badpix_from_dark: Boolean, whether or not the bad pixel from dark search  '
+                             'has been run. The value is stored in the {} keyword.'.format(bad_from_dark_kw))
+    model.history.append(util.create_history_entry(bad_from_dark_descrip))
+
+    dark_clip_sig_descrip = ('Number of sigma to use when sigma-clipping 2D stdev image. The value used '
+                             'is stored in the {} keyword.'.format(dark_clip_sigma_kw))
+    model.history.append(util.create_history_entry(dark_clip_sig_descrip))
+
+    dark_clip_iter_descrip = ('Max number of iterations to use when sigma clipping mean and stdev values. '
+                             'The value used is stored in the {} keyword.'.format(dark_clip_iters_kw))
+    model.history.append(util.create_history_entry(dark_clip_iter_descrip))
+
+    dark_noisy_thresh_descrip = ('Number of sigma above mean noise for noisy pix threshold. The value '
+                                 'used is stored in the {} keyword.'.format(dark_noisy_thresh_kw))
+    model.history.append(util.create_history_entry(dark_noisy_thresh_descrip))
+
+    max_sat_frac_descrip = ('Fraction of integrations within which a pixel must be fully saturated before '
+                            'flagging it as HOT. The value used is stored in the {} keyword.'.format(max_sat_frac_kw))
+    model.history.append(util.create_history_entry(max_sat_frac_descrip))
+
+    jump_limit_descrip = ('Maximum number of jumps a pixel can have in an integration before it is flagged as a '
+                          '"high jump" pixel. The value used is stored in the {} keyword.'.format(jump_limit_kw))
+    model.history.append(util.create_history_entry(jump_limit_descrip))
+
+    jump_ratio_descrip = ('Cutoff for the ratio of jumps early in the ramp to jumps later in the ramp when '
+                          'looking for RC pixels. The value used is stored in the {} keyword.'.format(jump_ratio_thresh_kw))
+    model.history.append(util.create_history_entry(jump_ratio_descrip))
+
+    cutoff_frac_descrip = ('Fraction of the integration to use when comparing the jump rate early in the integration to '
+                           'that across the entire integration. The value used is stored in the {} keyword.'.format(cutoff_frac_kw))
+    model.history.append(util.create_history_entry(cutoff_frac_descrip))
+
+    ped_sigma_descrip = ('Pixels with pedestal values more than this limit above the mean are flagged as RC. '
+                         'The value used is stored in the {} keyword.'.format(pedestal_sig_thresh_kw))
+    model.history.append(util.create_history_entry(ped_sigma_descrip))
+
+    rc_thresh_descrip = ('Fraction of input files within which a pixel must be identified as an RC pixel before '
+                         'it will be flagged as a permanent RC pixel. The value used is stored in the {} '
+                         'keyword.'.format(rc_frac_thresh_kw))
+    model.history.append(util.create_history_entry(rc_thresh_descrip))
+
+    low_ped_descrip = ('Fraction of input files within which a pixel must be identified as a low pedestal '
+                       'pixel before it will be flagged as a permanent low pedestal pixel. The value used '
+                       'is stored in the {} keyword.'.format(low_ped_frac_kw))
+    model.history.append(util.create_history_entry(low_ped_descrip))
+
+    high_cr_descrip = ('Fraction of input files within which a pixel must be flagged as having a high number '
+                       'of jumps before it will be flagged as permanently noisy. The value used '
+                       'is stored in the {} keyword.'.format(high_cr_frac_kw))
+    dark_do_not_use_descrip = ('List of bad pixel types (from darks) where the DO_NOT_USE flag is also applied. '
+                          'The values used are stored in the {} keyword.'.format(dark_do_not_use_kw))
+    model.history.append(util.create_history_entry(dark_do_not_use_descrip))
 
     # Add the list of input files used to create the map
     model.history.append('DATA USED:')
@@ -1400,105 +663,10 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
             else:
                 model.history.append(util.create_history_entry(file[val:]))
 
-    if history_text != '':
+    # Add the do not use lists, pixel flag mappings, and user-provided
+    # history text
+    for history_entry in history_text:
         model.history.append(util.create_history_entry(history_text))
 
     model.save(outfile, overwrite=True)
     print('Final bad pixel mask reference file save to: {}'.format(outfile))
-
-
-def science_pixels(data, instrument_name):
-    """Given a full frame image, strip off the reference pixels and return
-    only the science pixels. At the moment, assume 4 rows and columns of
-    reference pixels
-
-    Parameters
-    ----------
-    data : numpy.ndarray
-        2D image
-
-    instrument_name : str
-        Name of JWST instrument associated wit the data
-
-    Returns
-    -------
-    data : numpy.ndarray
-        2D image with outer 4 rows and columns removed
-    """
-    dims = data.shape
-    if len(dims) == 2:
-        if instrument_name.lower() != 'miri':
-            return data[4:-4, 4:-4]
-        else:
-            return data[:, 4:-4]
-    elif len(dims) == 3:
-        if instrument_name.lower() != 'miri':
-            return data[:, 4:-4, 4:-4]
-        else:
-            return data[:, :, 4:-4]
-
-
-def smooth(data, box_width=15, type='Box2D'):
-    """Create a smoothed version of the 2D input data
-
-    Parameters
-    ----------
-    data : numpy.ndarray
-        2D array of data to be smoothed
-
-    box_width : int
-        Width of the smoothing box, in pixels
-
-    sigma: float
-        value to use for sigma clipping
-
-    Returns
-    -------
-    smoothed : numpy.ndarray
-        A smoothed version of ``data``
-    """
-
-    if type == 'Median':
-        smoothed = median_filter(data, box_width)
-    else:
-        smoothing_kernel = Box2DKernel(box_width)
-        smoothed = convolve(data, smoothing_kernel, boundary='fill', fill_value=np.nanmedian(data),
-                        nan_treatment='interpolate')
-    return smoothed
-
-
-if __name__ == '__main__':
-    usagestring = ('USAGE: bad_pixel_mask.py input_files sigma_threshold=3 smoothing_box_width=15 '
-                   'dead_sigma_threshold=5. max_dead_norm_signal=0.05, max_low_qe_norm_signal=0.5, '
-                   'max_open_adj_norm_signal=1.05, do_not_use=[], output_file=None')
-
-    gainim = gainimclass()
-    parser = gainim.add_options(usage=usagestring)
-    gainim.options, args = parser.parse_args()
-    gainim.doit()
-
-
-def split_row(line, colname):
-    """Convert the indicies in a given row of the manual bad pixel ascii
-    file into integers
-
-    Parameters
-    ----------
-    line : astropy.table.row.Row
-        Row containing x, y, and flag values
-
-    colname : str
-        Column name to examine
-
-    Returns
-    -------
-    values : list
-        If the input is an integer, the list will simply be [value]. If
-        a range is given (e.g. 200:210), then values will be [200, 210].
-    """
-    try:
-        val = np.int(line[colname])
-        values = [val]
-    except ValueError:
-        values = [np.int(e) for e in line[colname].split(':')]
-    return values
