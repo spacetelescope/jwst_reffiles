@@ -186,6 +186,9 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         CRDS-required date of earliest data with which this referece file
         should be used. (e.g. '2019-04-01 00:00:00')
 
+    history : str
+        Text to be added to the HISOTRY section of the output bad pixel file
+
     quality_check : bool
         If True, the pipeline is run using the output reference file to be
         sure the pipeline doens't crash
@@ -1350,7 +1353,6 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
 
     # Populate "extra" header keywords that will contain parameters used
     # in this module
-
     package_note = ('This file was created using the bad_pixel_mask.py module within the '
                     'jwst_reffiles package.')
 
@@ -1394,13 +1396,14 @@ def save_final_map(bad_pix_map, instrument, detector, files, author, description
     # Add the list of input files used to create the map
     model.history.append('DATA USED:')
     for file in files:
-        totlen = len(file)
-        div = np.arange(0, totlen, 60)
-        for val in div:
-            if totlen > (val+60):
-                model.history.append(util.create_history_entry(file[val:val+60]))
-            else:
-                model.history.append(util.create_history_entry(file[val:]))
+        if file != '':
+            totlen = len(file)
+            div = np.arange(0, totlen, 60)
+            for val in div:
+                if totlen > (val+60):
+                    model.history.append(util.create_history_entry(file[val:val+60]))
+                else:
+                    model.history.append(util.create_history_entry(file[val:]))
 
     if history_text != '':
         model.history.append(util.create_history_entry(history_text))

@@ -1,14 +1,11 @@
 #!/usr/bin/env python
-'''
+"""
 Plug-in script for the bad pixel mask creation module:
 bad_pixel_mask.py, which uses the bad pxiel mask geneartion algorithms
 decided upon by the JWST reference file generation working group.
 This class is based on that in the
 template file: jwst_reffiles/templates/plugin_template.py
-'''
-
-Need to update this.
-
+"""
 import argparse
 import copy
 import os
@@ -45,11 +42,11 @@ class mkrefclass(mkrefclass_template):
         parser.add_argument('--dead_search_type', help=('Type of search to use when looking for dead pixels. '
                                                       'Options are: sigma_rate, absolute_rate, and '
                                                       'zero_signal'))
-        parser.add_argument('--sigma_threshold', help=('Number of standard deviations to use when sigma-'
-                                                     'clipping to calculate the mean slope image or the mean '
-                                                     'across the detector'))
-        parser.add_argument('--normalization_method', help=('Specify how the mean image is normalized prior '
-                                                            'to searching for bad pixels.'))
+        parser.add_argument('--flat_mean_sigma_threshold', help=('Number of standard deviations to use when sigma-'
+                                                                'clipping to calculate the mean slope image or the mean '
+                                                                'across the detector'))
+        parser.add_argument('--flat_mean_normalization_method', help=('Specify how the mean image is normalized prior '
+                                                                      'to searching for bad pixels.'))
         parser.add_argument('--smoothing_box_width', help=('Width in pixels of the box kernel to use to '
                                                          'compute the smoothed mean image'))
         parser.add_argument('--smoothing_type', help='Type of smoothing to do ``Box2D `` or ``median`` filtering')
@@ -72,19 +69,76 @@ class mkrefclass(mkrefclass_template):
                                                               'for the low QE pixel to be reclassified as '
                                                               'OPEN'))
         parser.add_argument('--manual_flag_file', help=(('Name of file containing list of pixels to be added manually')))
-        parser.add_argument('--do_not_use', help=('List of bad pixel types where the DO_NOT_USE flag should '
-                                                  'also be applied (e.g. ["DEAD", "LOW_QE"])'))
+        parser.add_argument('--flat_do_not_use', help=('List of bad pixel types where the DO_NOT_USE flag should '
+                                                  'also be applied (e.g. "["DEAD", "LOW_QE"]")'))
+
+        parser.add_argument('--dark_stdev_clipping_sigma', help=('Number of sigma to use when sigma-clipping the 2D array of '
+                                                                 'standard deviation values.'))
+
+        parser.add_argument('--dark_max_clipping_iters', type=int, help=('Maximum number of iterations to use when sigma '
+                                                                         'clipping to find the mean and standard deviation '
+                                                                         'values used when locating noisy pixels.'))
+
+        parser.add_argument('--dark_noisy_threshold', help=('Number of sigma above the mean noise (associated with the slope) '
+                                                            'to use as a threshold for identifying noisy pixels.'))
+
+        parser.add_argument('--max_saturated_fraction', help=('Fraction of integrations within which a pixel must be fully '
+                                                              'saturated before flagging it as HOT.'))
+
+        parser.add_argument('--max_jump_limit', type=int, help=('Maximum number of jumps a pixel can have in an integration '
+                                                                'before it is flagged as a ``high jump`` pixel (which may be '
+                                                                'flagged as noisy later).'))
+
+        parser.add_argument('--jump_ratio_threshold', help=('Cutoff for the ratio of jumps early in the ramp to jumps later in '
+                                                            'the ramp. Pixels with a ratio greater than this value (and which '
+                                                            'also have a high total number of jumps) will be flagged as potential '
+                                                            '(I)RC pixels.'))
+
+        parser.add_argument('--early_cutoff_fraction', help=('Fraction of the integration to use when comparing the jump rate '
+                                                             'early in the integration to that across the entire integration. '
+                                                             'Must be <= 0.5'))
+
+        parser.add_argument('--pedestal_sigma_threshold', help=('Used when searching for RC pixels via the pedestal image. Pixels '
+                                                                'with pedestal values more than ``pedestal_sigma_threshold`` above '
+                                                                'the mean are flagged as potential RC pixels.'))
+
+        parser.add_argument('--rc_fraction_threshold', help=('Fraction of input files within which the pixel must be identified as '
+                                                             'an RC pixel before it will be flagged as a permanent RC pixel.'))
+
+        parser.add_argument('--low_pedestal_fraction', help=('Fraction of input files within which a pixel must be identified as '
+                                                             'a low pedestal pixel before it will be flagged as a permanent low '
+                                                             'pedestal pixel.'))
+
+        parser.add_argument('--high_cr_fraction', help=('Fraction of input files within which a pixel must be flagged as having a '
+                                                        'high number of jumps before it will be flagged as permanently noisy.'))
+
+        parser.add_argument('--flag_values', help=('Dictionary mapping the types of bad pixels searched for to the flag mnemonics '
+                                                   'to use when creating the bad pixel file. Keys are the types of bad pixels searched '
+                                                   'for, and values are lists that include mnemonics recognized by the jwst calibration '
+                                                    'pipeline e.g. {'hot': ['HOT'], 'rc': ['RC'], 'low_pedestal': ['OTHER_BAD_PIXEL'], 'high_cr': ["TELEGRAPH"]}'))
+
+        parser.add_argument('--dark_do_not_use', help=('List of bad pixel types to be flagged as DO_NOT_USE e.g. ["hot", "rc", "low_pedestal", "high_cr"]'))
+
+        parser.add_argument('--plot', help=('If True, produce and save intermediate results from noisy pixel search'))
+
+        parser.add_argument('--output_file', help=('Name of the CRDS-formatted bad pixel reference file to save the final bad pixel map into'))
+
         parser.add_argument('--author', help=('CRDS-required name of the reference file author, to be placed '
-                                            'in the referece file header'))
+                                              'in the referece file header'))
         parser.add_argument('--description', help=('CRDS-required description of the reference file, to be '
-                                                 'placed in the reference file header'))
+                                                   'placed in the reference file header'))
         parser.add_argument('--pedigree', help=('CRDS-required pedigree of the data used to create the '
-                                              'reference file'))
+                                                'reference file'))
         parser.add_argument('--useafter', help=('CRDS-required date of earliest data with which this reference '
-                                              'file should be used. (e.g. "2019-04-01 00:00:00"'))
+                                                'file should be used. (e.g. "2019-04-01 00:00:00"'))
         parser.add_argument('--history', help='Text to be placed in the HISTORY keyword of the output reference file')
         parser.add_argument('--quality_check', help=("If True, the pipeline is run using the output reference "
-                                                   "file to be sure the pipeline doens't crash"))
+                                                     "file to be sure the pipeline doens't crash"))
+
+
+
+
+
         return(0)
 
     def callalgorithm(self):
@@ -97,6 +151,20 @@ class mkrefclass(mkrefclass_template):
         contained in self.inputimages['imtype']. From this, you can specify
         the appropriate file names in the call to your module.
         """
+        # Organize the input files into a group of darks and a group of
+        # flats
+        flatfiles = []
+        darkfiles = []
+        for row in self.inputimagestable:
+            if row['imlabel'] == 'D':
+                darkfiles.append(row['fitsfile'])
+            elif row['imlabel'] == 'F':
+                flatfiles.append(row['fitsfile'])
+
+        For badpix from flats we need the slope image, optional slope fit file, uncal file and jump file.
+        We assume those are in the same directory as the slope file in the table?
+
+
         # Call the wrapped module and provide the proper arguments from the
         # self.parameters dictionary.
 
@@ -107,7 +175,9 @@ class mkrefclass(mkrefclass_template):
             if self.parameters['dead_flux_check_files'] is None:
                 self.parameters['dead_flux_check_files'] = 'none'
 
-            input_file_directory, input_file_name = os.path.split(self.inputimagetable['fitsfile'][0])
+
+
+            input_file_directory, input_file_name = os.path.split(self.inputimagestable['fitsfile'][0])
 
             if isinstance(self.parameters['dead_flux_check_files'], str):
                 possible_suffixes = copy.deepcopy(PIPE_STEPS)

@@ -39,12 +39,13 @@ from os import path
 import matplotlib.pyplot as plt
 from scipy.stats import sigmaclip
 import matplotlib.cm as cm
-from jwst_reffiles.bad_pixel_mask.bad_pixel_mask import create_dqdef
+from jwst_reffiles.bad_pixel_mask.badpix_from_flats import create_dqdef
 from jwst_reffiles.utils import dq_flags
 from jwst_reffiles.utils.constants import RATE_FILE_SUFFIXES
 
 
-def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_threshold=5,
+def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_filenames=None,
+                 clipping_sigma=5., max_clipping_iters=5, noisy_threshold=5,
                  max_saturated_fraction=0.5,
                  max_jump_limit=10, jump_ratio_threshold=5, early_cutoff_fraction=0.25,
                  pedestal_sigma_threshold=5, rc_fraction_threshold=0.8, low_pedestal_fraction=0.8,
@@ -56,7 +57,31 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     Parameters
     ----------
     filenames : list
-        List of dark current files. These should be slope images.
+        List of dark current slope files. These should be slope images.
+
+    uncal_filenames : list
+        List of uncal files. Should have a 1-to-1 correspondence to the
+        files in ``filenames``. If None, the scipt will look in the same
+        directory containing ``filenames``, and assume that the only
+        difference in filename is that rate.fits is replaced with
+        uncal.fits. Uncal files are only used when working with MIRI
+        data.
+
+    jump_filenames : list
+        List of exposures output from the jump step of the pipeline.
+        Should have a 1-to-1 correspondence to the
+        files in ``filenames``. If None, the scipt will look in the same
+        directory containing ``filenames``, and assume that the only
+        difference in filename is that rate.fits is replaced with
+        jump.fits
+
+    fitopt_filenames : list
+        List of exposures from the optional output from the ramp_fitting
+        step of the pipeline. Should have a 1-to-1 correspondence to the
+        files in ``filenames``. If None, the scipt will look in the same
+        directory containing ``filenames``, and assume that the only
+        difference in filename is that rate.fits is replaced with
+        fitopt.fits
 
     clipping_sigma : int
         Number of sigma to use when sigma-clipping the 2D array of
@@ -206,14 +231,16 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     for i, filename in enumerate(filenames):
 
         # Read in the ramp and get the data and dq arrays
-        jump_file = None
-        for suffix in RATE_FILE_SUFFIXES:
-            if suffix in filename:
-                slope_suffix = '{}.fits'.format(suffix)
-                jump_file = filename.replace(slope_suffix, '_jump.fits')
-                break
-        if jump_file is None:
-            raise ValueError("ERROR: Unrecognized slope filename suffix.")
+        if jump_filenames is not None:
+            jump_file = jump_filenames[i]
+        else:
+            for suffix in RATE_FILE_SUFFIXES:
+                if suffix in filename:
+                    slope_suffix = '{}.fits'.format(suffix)
+                    jump_file = filename.replace(slope_suffix, '_jump.fits')
+                    break
+            if jump_file is None:
+                raise ValueError("ERROR: Unrecognized slope filename suffix.")
         if not os.path.isfile(jump_file):
             raise FileNotFoundError("ERROR: Jump file {} not found.".format(jump_file))
 
@@ -227,18 +254,24 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
         # Read in the fitops file associated with the exposure and get
         # the pedestal array (y-intercept)
-        pedestal_file = filename.replace(slope_suffix, '_fitopt.fits')
-        if not os.path.isfile(pedestal_file):
-            raise FileNotFoundError("ERROR: Pedestal file {} not found.".format(pedestal_file))
+        if fitopt_filenames is not None:
+            pedestal_file = fitopt_filenames[i]
+        else:
+            pedestal_file = filename.replace(slope_suffix, '_fitopt.fits')
+            if not os.path.isfile(pedestal_file):
+                raise FileNotFoundError("ERROR: Pedestal file {} not found.".format(pedestal_file))
         print('Opening Pedestal File {}'.format(pedestal_file))
         pedestal = read_pedestal_data(pedestal_file, refpix_additions)
 
         # for MIRI the zero point of the ramp drifts with time. Adjust the
         # pedestal to be a relative pedestal wrt to group 2
         if instrument == 'MIRI':
-            uncal_file = filename.replace(slope_suffix, '_uncal.fits')
-            if not os.path.isfile(uncal_file):
-                raise FileNotFoundError("ERROR: Uncal file {} not found.".format(uncal_file))
+            if uncal_filenames is not None:
+                uncal_file = uncal_filenames[i]
+            else:
+                uncal_file = filename.replace(slope_suffix, '_uncal.fits')
+                if not os.path.isfile(uncal_file):
+                    raise FileNotFoundError("ERROR: Uncal file {} not found.".format(uncal_file))
             group2 = extract_group2(uncal_file, refpix_additions)
             pedestal_org = copy.deepcopy(pedestal)
             pedestal = np.fabs(group2 - pedestal)
@@ -354,7 +387,6 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
     # Look through the stack of saturated pixels and keep those saturated
     # more than N% of the time
-
     fully_saturated = np.sum(saturated, axis=0) / total_ints
     fully_saturated[fully_saturated < max_saturated_fraction] = 0
     fully_saturated = np.ceil(fully_saturated).astype(np.int)

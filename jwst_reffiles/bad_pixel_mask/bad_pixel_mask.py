@@ -3,6 +3,12 @@
 """Wrapper script that calls badpix_from_flats.py and badpix_from_darks.py.
 The results are combined to create a single bad pixel reference file.
 """
+import copy
+import datetime
+import os
+
+from astropy.io import fits
+from jwst.datamodels import MaskModel, util
 
 from jwst_reffiles.bad_pixel_mask import badpix_from_flats
 from jwst_reffiles.dark_current import badpix_from_darks
@@ -41,19 +47,20 @@ dark_do_not_use_kw = 'BPDDONOT'
 flag_mapping_kw = 'BPDMAPS'
 
 
-def bad_pixels(flat_slope_files=flat_slope_files, dead_search=True, low_qe_and_open_search=True,
+def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=True,
                dead_search_type='sigma_rate', flat_mean_sigma_threshold=3, flat_mean_normalization_method='smoothed',
                smoothing_box_width=15, smoothing_type='Box2D', dead_sigma_threshold=5.,  max_dead_norm_signal=None,
                run_dead_flux_check=False, dead_flux_check_files=None, flux_check=45000, max_low_qe_norm_signal=0.5,
                max_open_adj_norm_signal=1.05, manual_flag_file='default', flat_do_not_use=[],
-               dark_slope_files=dark_slope_files, dark_stdev_clipping_sigma=5., dark_max_clipping_iters=5,
+               dark_slope_files=None, dark_uncal_files=None, dark_jump_files=None, dark_fitopt_files=None,
+               dark_stdev_clipping_sigma=5., dark_max_clipping_iters=5,
                dark_noisy_threshold=5, max_saturated_fraction=0.5, max_jump_limit=10, jump_ratio_threshold=5,
                early_cutoff_fraction=0.25, pedestal_sigma_threshold=5, rc_fraction_threshold=0.8, low_pedestal_fraction=0.8,
                high_cr_fraction=0.8,
                flag_values={'hot': ['HOT'], 'rc': ['RC'], 'low_pedestal': ['OTHER_BAD_PIXEL'], 'high_cr': ["TELEGRAPH"]},
                dark_do_not_use=['hot', 'rc', 'low_pedestal', 'high_cr'], plot=False,
                output_file=None, author='jwst_reffiles', description='A bad pix mask',
-               pedigree='GROUND', useafter='2019-04-01 00:00:00', history='', quality_check=True):
+               pedigree='GROUND', useafter='2019-04-01 00:00:00', history='', quality_check=False):
     """
     Wrapper that calls the two modules for finding bad pixels from input flat
     field files, and bad pixels from dark current files.
@@ -152,6 +159,24 @@ def bad_pixels(flat_slope_files=flat_slope_files, dead_search=True, low_qe_and_o
         List of dark current slope files to be used for the noisy pixel search.
         If None, the search is skipped.
 
+    dark_uncal_files : list
+        List of uncalibrated dark current ramp files. These should correspond
+        1-to-1 with the files listed in ``dark_slope_files``. If None,
+        the code assumes the files are in the same location as the slope
+        files and have names ending in uncal.fits
+
+    dark_jump_files : list
+        List of dark current ramp files output from the jump step of the pipeline.
+        These should correspond 1-to-1 with the files listed in ``dark_slope_files``.
+        If None, the code assumes the files are in the same location as the slope
+        files and have names ending in jump.fits
+
+    dark_fitopt_files : list
+        List of optional output files produced by the ramp-fitting step of the
+        pipeline. These should correspond 1-to-1 with the files listed in
+        ``dark_slope_files``. If None, the code assumes the files are in the
+        same location as the slope files and have names ending in fitopt.fits
+
     dark_stdev_clipping_sigma : int
         Number of sigma to use when sigma-clipping the 2D array of
         standard deviation values. The sigma-clipped mean and standard
@@ -240,6 +265,9 @@ def bad_pixels(flat_slope_files=flat_slope_files, dead_search=True, low_qe_and_o
         CRDS-required date of earliest data with which this referece file
         should be used. (e.g. '2019-04-01 00:00:00')
 
+    history : str
+        Text to be added to the HISOTRY section of the output bad pixel file
+
     quality_check : bool
         If True, the pipeline is run using the output reference file to be
         sure the pipeline doens't crash
@@ -266,13 +294,14 @@ def bad_pixels(flat_slope_files=flat_slope_files, dead_search=True, low_qe_and_o
                                                   dead_search_type=dead_search_type,
                                                   sigma_threshold=flat_mean_sigma_threshold,
                                                   normalization_method=flat_mean_normalization_method,
+                                                  smoothing_type=smoothing_type,
                                                   smoothing_box_width=smoothing_box_width,
                                                   dead_sigma_threshold=dead_sigma_threshold,
-                                                  dead_zero_signal_fraction=dead_zero_signal_fraction,
+                                                  #dead_zero_signal_fraction=dead_zero_signal_fraction,
                                                   run_dead_flux_check=run_dead_flux_check,
                                                   dead_flux_check_files=dead_flux_check_files,
                                                   max_dead_norm_signal=max_dead_norm_signal,
-                                                  maual_flag_file=manual_flag_file,
+                                                  manual_flag_file=manual_flag_file,
                                                   max_low_qe_norm_signal=max_low_qe_norm_signal,
                                                   max_open_adj_norm_signal=max_open_adj_norm_signal,
                                                   do_not_use=flat_do_not_use,
@@ -281,7 +310,7 @@ def bad_pixels(flat_slope_files=flat_slope_files, dead_search=True, low_qe_and_o
                                                   description=description,
                                                   pedigree=pedigree,
                                                   useafter=useafter,
-                                                  history=history,
+                                                  history=history[0],
                                                   quality_check=quality_check)
 
         # Convert the do not use list to a string to add to the header
@@ -304,7 +333,7 @@ def bad_pixels(flat_slope_files=flat_slope_files, dead_search=True, low_qe_and_o
         hdu.header[norm_method_kw] = flat_mean_normalization_method
         hdu.header[smooth_box_width_kw] = smoothing_box_width
         hdu.header[dead_sig_thresh_kw] = dead_sigma_threshold
-        hdu.header[dead_zero_sig_frac_kw] = dead_zero_signal_fraction
+        #hdu.header[dead_zero_sig_frac_kw] = dead_zero_signal_fraction
         hdu.header[dead_flux_check_kw] = run_dead_flux_check
         hdu.header[dead_flux_file_kw] = dead_flux_check_files
         hdu.header[max_dead_sig_kw] = max_dead_norm_signal
@@ -318,7 +347,7 @@ def bad_pixels(flat_slope_files=flat_slope_files, dead_search=True, low_qe_and_o
         hdu.header[low_qe_search_kw] = False
 
     if dark_slope_files is not None:
-        if len all_files == 0:
+        if len(all_files) == 0:
             all_files = copy.deepcopy(flat_slope_files)
             instrument, detector = instrument_info(dark_slope_files[0])
         else:
@@ -331,7 +360,10 @@ def bad_pixels(flat_slope_files=flat_slope_files, dead_search=True, low_qe_and_o
         dark_output_file = output_file.replace('.fits', '_from_darks.fits')
 
         # Get bad pixels from the darks
-        darkmask = badpix_from_darks.find_bad_pix(dark_slope_files, clipping_sigma=dark_stdev_clipping_sigma,
+        darkmask = badpix_from_darks.find_bad_pix(dark_slope_files, uncal_filenames=dark_uncal_files,
+                                                  jump_filenames=dark_jump_files,
+                                                  fitopt_filenames=dark_fitopt_files,
+                                                  clipping_sigma=dark_stdev_clipping_sigma,
                                                   max_clipping_iters=dark_max_clipping_iters,
                                                   noisy_threshold=dark_noisy_threshold,
                                                   max_saturated_fraction=max_saturated_fraction,
@@ -360,6 +392,7 @@ def bad_pixels(flat_slope_files=flat_slope_files, dead_search=True, low_qe_and_o
         # Convert the bad pixel type mapping into a string so it can be
         # added to the output header
         if len(flag_values) > 0:
+            mapping_str = ''
             for key in flag_values:
                 substr = '{}: {},'.format(key, flag_values[key])
                 mapping_str = mapping_str + substr
@@ -395,7 +428,7 @@ def bad_pixels(flat_slope_files=flat_slope_files, dead_search=True, low_qe_and_o
 
     # Save mask in reference file
     hdu_list = fits.HDUList([hdu])
-    save_final_map(final_mask, instrument, detector, hdu_list, all_files, author, description,
+    save_final_map(final_mask, instrument.upper(), detector.upper(), hdu_list, all_files, author, description,
                    pedigree, useafter, history, output_file)
 
 
@@ -562,7 +595,7 @@ def save_final_map(bad_pix_map, instrument, detector, hdulist, files, author, de
     model.history.append(util.create_history_entry(smooth_descrip))
 
     smooth_type_descrip = ('smoothing_type: Type of smoothing to do: Box2D or median filtering. The value used '
-                           'is stored in the {} keyword.'.format(smoothing_type)
+                           'is stored in the {} keyword.'.format(smoothing_type))
 
     dead_sig_descrip = ('Number of standard deviations below the mean at which a pixel is considered dead. '
                         'The value used is stored in the {} keyword.'.format(dead_sig_thresh_kw))
