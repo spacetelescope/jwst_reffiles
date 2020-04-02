@@ -113,9 +113,6 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
                     this smoothed image.
         'none': No normalization is done. Mean slope image is used as is
         'mean': Mean image is normalized by its sigma-clipped mean
-        'fit2d': Mean image will be normalized by a fit of 2-D surface to
-                 mean image. The degree of the fit is controlled by the
-                 ``fit_degree`` parameters
 
     smoothing_box_width : float
         Width in pixels of the box kernel to use to compute the smoothed
@@ -632,34 +629,6 @@ def dead_pixels_flux_check(dead_pix_map, ave_group, flux_check):
     iupdated = len(index[0])
     print('Number of pixels removed from dead pixel mask after flux check', ibad - iupdated)
     return updated_pix_map.astype(np.int)
-
-
-def dead_pixels_zero_signal(groups, dead_zero_signal_fraction=0.9):
-    """Create a map of dead pixels given a set of individual groups
-    from multiple integrations. In this case pixels are only flagged
-    as deas if they have zero signal in more than ``dead_zero_signal_fraction``
-    of the input groups.
-
-    Parameters
-    ----------
-    groups : numpy.ndarray
-        3D stack of group images
-
-    dead_zero_signal_fraction : float
-        Threshold for the fraction of groups in which a pixel can have
-        zero signal and not be considered dead.
-
-    Returns
-    -------
-    dead_pix_map : numpy.ndarray
-        2D map showing DEAD pixels. Good pixels have a value of 0.
-    """
-    num_groups, ydim, xdim = groups.shape
-    zero_signal = (groups == 0.).astype(np.int)
-    total_zeros = np.sum(zero_signal, axis=0)
-    total_fraction = total_zeros / num_groups
-    dead_pix_map = (total_fraction >= dead_zero_signal_fraction).astype(np.int)
-    return dead_pix_map.astype(np.int)
 
 
 def extract_10th_group(hdu_list):
@@ -1188,7 +1157,7 @@ def read_files(filenames, dead_search_type):
             elif dead_search_type == 'saturation_check':
                 if rampfit == 'COMPLETE':
                     raise ValueError(('File {} has had the ramp-fitting pipeline step run. '
-                                      'The inputs for the "zero_signal" dead pixel search '
+                                      'The inputs for the saturation check '
                                       'cannot be slope images.').format(os.path.basename(filename)))
                 else:
                     exposure = average_last4groups(hdu_list)

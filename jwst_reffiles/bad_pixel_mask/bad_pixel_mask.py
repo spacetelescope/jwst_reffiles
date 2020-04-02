@@ -9,6 +9,7 @@ import os
 
 from astropy.io import fits
 from jwst.datamodels import MaskModel, util
+import numpy as np
 
 from jwst_reffiles.bad_pixel_mask import badpix_from_flats
 from jwst_reffiles.dark_current import badpix_from_darks
@@ -20,6 +21,7 @@ dead_search_type_kw = 'BPFSCHTP'
 mean_sig_threshold_kw = 'BPFSIGMA'
 norm_method_kw = 'BPFNORM'
 smooth_box_width_kw = 'BPFSMOTH'
+smoothing_type_kw = 'BPFSMTYP'
 dead_sig_thresh_kw = 'BPFDEDSG'
 dead_zero_sig_frac_kw = 'BPFZEROF'
 dead_flux_check_kw = 'BPFFXCHK'
@@ -318,7 +320,7 @@ def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=T
             flat_do_not_use_string = ', '.join(flat_do_not_use)
         else:
             flat_do_not_use_string = 'None'
-        flat_do_not_use_string = '{}: {}'.format('Bad pixel types from flat to which DO_NOT_USE is applied: ', flat_do_not_use_string)
+        flat_do_not_use_string = '{} {}'.format('Bad pixel types from flat to which DO_NOT_USE is applied: ', flat_do_not_use_string)
 
         # Add the do not use string to the list of history entries to add,
         # since it may end up being longer than 8 characters
@@ -383,7 +385,7 @@ def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=T
             dark_do_not_use_string = ', '.join(dark_do_not_use)
         else:
             dark_do_not_use_string = 'None'
-        dark_do_not_use_string = '{}: {}'.format('Bad pixel types from dark to which DO_NOT_USE is applied: ', dark_do_not_use_string)
+        dark_do_not_use_string = '{} {}'.format('Bad pixel types from dark to which DO_NOT_USE is applied: ', dark_do_not_use_string)
 
         # Add the do not use string to the list of history entries to add,
         # since it may end up being longer than 8 characters
@@ -394,11 +396,11 @@ def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=T
         if len(flag_values) > 0:
             mapping_str = ''
             for key in flag_values:
-                substr = '{}: {},'.format(key, flag_values[key])
+                substr = '{}: {}, '.format(key, flag_values[key])
                 mapping_str = mapping_str + substr
         else:
             mapping_str = 'None'
-        mapping_str = '{}: {}'.format('Mapping of jwst_reffiles bad pixel types to jwst cal bad pixel flags: ', mapping_str)
+        mapping_str = '{} {}'.format('Mapping of jwst_reffiles bad pixel types to jwst cal bad pixel flags: ', mapping_str)
 
         # Add the do not use string to the list of history entries to add,
         # since it may end up being longer than 8 characters
@@ -595,7 +597,8 @@ def save_final_map(bad_pix_map, instrument, detector, hdulist, files, author, de
     model.history.append(util.create_history_entry(smooth_descrip))
 
     smooth_type_descrip = ('smoothing_type: Type of smoothing to do: Box2D or median filtering. The value used '
-                           'is stored in the {} keyword.'.format(smoothing_type))
+                           'is stored in the {} keyword.'.format(smoothing_type_kw))
+    model.history.append(util.create_history_entry(smooth_type_descrip))
 
     dead_sig_descrip = ('Number of standard deviations below the mean at which a pixel is considered dead. '
                         'The value used is stored in the {} keyword.'.format(dead_sig_thresh_kw))
@@ -628,7 +631,7 @@ def save_final_map(bad_pix_map, instrument, detector, hdulist, files, author, de
     model.history.append(util.create_history_entry(flat_do_not_use_descrip))
 
     manual_file_descrip = ('Name of the ascii file containing a list of pixels to be added manually. The '
-                           'value used is stored in the {} keyword.'.format(manual_flag_file))
+                           'value used is stored in the {} keyword.'.format(manual_flag_kw))
     model.history.append(util.create_history_entry(manual_file_descrip))
 
     # Parameters from badpix_from_darks
@@ -699,7 +702,8 @@ def save_final_map(bad_pix_map, instrument, detector, hdulist, files, author, de
     # Add the do not use lists, pixel flag mappings, and user-provided
     # history text
     for history_entry in history_text:
-        model.history.append(util.create_history_entry(history_text))
+        if history_entry != '':
+            model.history.append(util.create_history_entry(history_entry))
 
     model.save(outfile, overwrite=True)
     print('Final bad pixel mask reference file save to: {}'.format(outfile))

@@ -152,6 +152,14 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     outfile : str
         Name of fits file to save the resulting bad pixel mask to
     """
+    # Currently the code stipulates that 5 good values of the slope are
+    # needed in each pixel in order to determine a good stdev value. So
+    # let's check the number of input files here and quit if there are
+    # fewer than 5.
+    if len(filenames) < 5:
+        print(filenames)
+        raise ValueError("ERROR: >5 input files are required to find bad pixels from darks.")
+
     # Add DO_NOT_USE to all requested types of bad pixels
     do_not_use = [element.lower() for element in do_not_use]
     for key in flag_values:
@@ -173,9 +181,8 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
 #    instrument,slopes, refpix_additions = read_slope_files(filenames)
 
     instrument, slopes, indexes, refpix_additions = read_slope_integrations(filenames)
-
     shape_slope = slopes.shape
-    print('Number of integrations used to flag bad pixels', shape_slope[0])
+
     # Calculate the mean and standard deviation through the stack for
     # each pixel. Assuming that we are looking for noisy pixels, we don't
     # want to do any sigma clipping on the inputs here, right?
@@ -709,7 +716,6 @@ def combine_clean_slopes(slope_stack, islope_stack):
         A list of of 1 or 0 for each integration. A 1 is a good slope and 0 is slope
         with cosmic ray
     """
-
     slopes = np.array(slope_stack)
     islopes = np.array(islope_stack)
 
@@ -719,7 +725,7 @@ def combine_clean_slopes(slope_stack, islope_stack):
     # picked the value of 5 at random - should this be a parameter to program ?
     few_values = num_good_array < 5
     nfew_values = np.where(few_values)
-    print('Number pixels with less than 5 pixel slopes to determine standard deviation',
+    print('Number of pixels with less than 5 pixel slopes to determine standard deviation: ',
           len(nfew_values[0]))
     std_slope[few_values] = np.nan
 
