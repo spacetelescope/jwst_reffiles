@@ -85,8 +85,9 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
 
     clipping_sigma : int
         Number of sigma to use when sigma-clipping the 2D array of
-        standard deviation values. The sigma-clipped mean and standard
-        deviation are used to locate noisy pixels.
+        standard deviation values from the dark current slope files.
+        The sigma-clipped mean and standard deviation are used to locate
+        noisy pixels.
 
     max_clipping_iters : int
         Maximum number of iterations to use when sigma clipping to find
@@ -148,6 +149,9 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     do_not_use : list
         List of bad pixel types to be flagged as DO_NOT_USE
         e.g. ['hot', 'rc', 'low_pedestal', 'high_cr']
+
+    plot : bool
+        If True, produce plots of intermediate results.
 
     outfile : str
         Name of fits file to save the resulting bad pixel mask to

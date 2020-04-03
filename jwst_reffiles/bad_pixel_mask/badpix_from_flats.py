@@ -6,16 +6,13 @@ files for use in the ``dq_init`` step of the JWST calibration pipeline.
 Author
 ------
      - Bryan Hilbert
- Use
+
+Use
 ---
      This module can be imported and used as such:
      ::
          from jwst_reffiles.bad_pixel_mask import badpix_from_flats
          badpix_from_flats.find_bad_pix(arguments)
-
-         or
-
-         command line call here
 
 Notes
 -----
@@ -595,7 +592,7 @@ def dead_pixels_absolute_rate(rate_image, max_dead_signal=0.05):
 def dead_pixels_flux_check(dead_pix_map, ave_group, flux_check):
     """Check the dead_pix_map with the average_rate of the last 4 groups.
     We want to remove cases where a pixel was flagged as dead because
-    it is a hot pixel that saturates on the first group causing  the
+    it is a hot pixel that saturates on the first group causing the
     rate for this pixel to be close to 0.
 
     Parameters
@@ -617,7 +614,6 @@ def dead_pixels_flux_check(dead_pix_map, ave_group, flux_check):
         Clean up dead pixel map removing saturated pixels from dead
         flag.
     """
-
     final_ave_group = np.mean(ave_group, axis=0)
     index = np.where(dead_pix_map == 1)
 
