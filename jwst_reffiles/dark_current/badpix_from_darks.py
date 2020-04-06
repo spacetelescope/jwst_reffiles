@@ -508,7 +508,7 @@ def add_refpix(array, to_add):
     full_array = np.zeros((ydim, xdim))
 
     full_array[bottom_rows: bottom_rows+y_array, left_cols: left_cols+x_array] = array
-    return array
+    return full_array
 
 
 def apply_flags(pixmap, flag_list):
@@ -532,13 +532,14 @@ def apply_flags(pixmap, flag_list):
     pixmap : numpy.ndarray
         Map updated with proper bad pixel values
     """
+    value = 0
     for mnemonic in flag_list:
         if mnemonic in dqflags.pixel.keys():
-            value = dqflags.pixel[mnemonic.upper()]
-            pixmap[pixmap != 0] += value
+            value += dqflags.pixel[mnemonic.upper()]
         else:
             raise ValueError("ERROR: unrecognized DQ mnemonic: {}".format(mnemonic))
-    pixmap = pixmap.astype(np.uint8)
+    pixmap[pixmap != 0] = value
+    pixmap = pixmap.astype(np.uint32)
     return pixmap
 
 
@@ -678,7 +679,7 @@ def find_pix_with_many_jumps(jump_map, max_jump_limit=10, jump_ratio_threshold=5
 
 
 def slopes_not_cr(slope, number_of_jumps):
-    """ Create an array of pixel slopes which are clean and have not detected cosmic rays
+    """ Create an array of pixel slopes which are clean and have no detected cosmic rays
 
     Parameters
     ----------
@@ -695,7 +696,7 @@ def slopes_not_cr(slope, number_of_jumps):
          slopes for a pixel ramp that have a cosmic ray detected are set to nan
     iclean_slope: numpy.ndarray
          an array of that holds if a good slope was detected. A value of 1 is
-         assigned to array element
+         assigned to array elements where there are no CRs
     """
 
     good = number_of_jumps == 0
@@ -716,6 +717,7 @@ def combine_clean_slopes(slope_stack, islope_stack):
     ----------
     slope_stack : list
         A list of slopes for full array stacked for each integration
+
     islope_stack: list
         A list of of 1 or 0 for each integration. A 1 is a good slope and 0 is slope
         with cosmic ray
@@ -757,8 +759,8 @@ def pedestal_stats(pedestal_array, threshold=5):
     median_pedestal = np.median(pedestal_array)
     stdev_pedestal = np.std(pedestal_array)
 
-    suspicious_pedestal = ((pedestal_array > (median_pedestal + stdev_pedestal*threshold)) or
-                           (pedestal_array < (median_pedestal - stdev_pedestal*threshold)))
+    suspicious_pedestal = (pedestal_array > (median_pedestal + stdev_pedestal*threshold)) | \
+                           (pedestal_array < (median_pedestal - stdev_pedestal*threshold))
     return suspicious_pedestal
 
 
@@ -1039,14 +1041,15 @@ def saturated_in_all_groups(pedestal_array, first_group_sat):
     Parameters
     ----------
     pedestal_array : numpy.ndarray
-        3D array of pedestal values (signal extrapolated to time=0)
+        2D array of pedestal values (signal extrapolated to time=0)
+
     first_group_sat: numpy.ndarray
         2D array of the first group DQ containing either 0 = not saturated or 2 = saturated.
 
     Returns
     -------
-    full_saturation : tup
-        Tuple of (y, x) coordinate lists (output from np.where)
+    full_saturation : numpy.ndarray
+        Boolean array describing which pixels are saturated in all reads
     """
     full_saturation_ped0 = pedestal_array == 0
     # to be marked as saturated first_group_sat = 2 (saturated) and ped = 0
@@ -1061,10 +1064,13 @@ def plot_image(image, image_max, outdir, titleplot, fileout):
     ----------
     image : numpy.ndarray
          2D image to plot
+
     image_max :  float
          maximum of image to use for scaling the image
+
     titleplot : string
          title of the plot
+
     fileout : string
          output file of the plot
 
