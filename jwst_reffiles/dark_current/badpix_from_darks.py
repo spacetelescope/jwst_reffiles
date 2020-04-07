@@ -39,12 +39,13 @@ from os import path
 import matplotlib.pyplot as plt
 from scipy.stats import sigmaclip
 import matplotlib.cm as cm
-from jwst_reffiles.bad_pixel_mask.bad_pixel_mask import create_dqdef
+from jwst_reffiles.bad_pixel_mask.badpix_from_flats import create_dqdef
 from jwst_reffiles.utils import dq_flags
 from jwst_reffiles.utils.constants import RATE_FILE_SUFFIXES
 
 
-def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_threshold=5,
+def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_filenames=None,
+                 clipping_sigma=5., max_clipping_iters=5, noisy_threshold=5,
                  max_saturated_fraction=0.5,
                  max_jump_limit=10, jump_ratio_threshold=5, early_cutoff_fraction=0.25,
                  pedestal_sigma_threshold=5, rc_fraction_threshold=0.8, low_pedestal_fraction=0.8,
@@ -56,12 +57,37 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     Parameters
     ----------
     filenames : list
-        List of dark current files. These should be slope images.
+        List of dark current slope files. These should be slope images.
+
+    uncal_filenames : list
+        List of uncal files. Should have a 1-to-1 correspondence to the
+        files in ``filenames``. If None, the scipt will look in the same
+        directory containing ``filenames``, and assume that the only
+        difference in filename is that rate.fits is replaced with
+        uncal.fits. Uncal files are only used when working with MIRI
+        data.
+
+    jump_filenames : list
+        List of exposures output from the jump step of the pipeline.
+        Should have a 1-to-1 correspondence to the
+        files in ``filenames``. If None, the scipt will look in the same
+        directory containing ``filenames``, and assume that the only
+        difference in filename is that rate.fits is replaced with
+        jump.fits
+
+    fitopt_filenames : list
+        List of exposures from the optional output from the ramp_fitting
+        step of the pipeline. Should have a 1-to-1 correspondence to the
+        files in ``filenames``. If None, the scipt will look in the same
+        directory containing ``filenames``, and assume that the only
+        difference in filename is that rate.fits is replaced with
+        fitopt.fits
 
     clipping_sigma : int
         Number of sigma to use when sigma-clipping the 2D array of
-        standard deviation values. The sigma-clipped mean and standard
-        deviation are used to locate noisy pixels.
+        standard deviation values from the dark current slope files.
+        The sigma-clipped mean and standard deviation are used to locate
+        noisy pixels.
 
     max_clipping_iters : int
         Maximum number of iterations to use when sigma clipping to find
@@ -124,9 +150,20 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
         List of bad pixel types to be flagged as DO_NOT_USE
         e.g. ['hot', 'rc', 'low_pedestal', 'high_cr']
 
+    plot : bool
+        If True, produce plots of intermediate results.
+
     outfile : str
         Name of fits file to save the resulting bad pixel mask to
     """
+    # Currently the code stipulates that 5 good values of the slope are
+    # needed in each pixel in order to determine a good stdev value. So
+    # let's check the number of input files here and quit if there are
+    # fewer than 5.
+    if len(filenames) < 5:
+        print(filenames)
+        raise ValueError("ERROR: >5 input files are required to find bad pixels from darks.")
+
     # Add DO_NOT_USE to all requested types of bad pixels
     do_not_use = [element.lower() for element in do_not_use]
     for key in flag_values:
@@ -148,9 +185,8 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 #    instrument,slopes, refpix_additions = read_slope_files(filenames)
 
     instrument, slopes, indexes, refpix_additions = read_slope_integrations(filenames)
-
     shape_slope = slopes.shape
-    print('Number of integrations used to flag bad pixels', shape_slope[0])
+
     # Calculate the mean and standard deviation through the stack for
     # each pixel. Assuming that we are looking for noisy pixels, we don't
     # want to do any sigma clipping on the inputs here, right?
@@ -206,14 +242,16 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     for i, filename in enumerate(filenames):
 
         # Read in the ramp and get the data and dq arrays
-        jump_file = None
-        for suffix in RATE_FILE_SUFFIXES:
-            if suffix in filename:
-                slope_suffix = '{}.fits'.format(suffix)
-                jump_file = filename.replace(slope_suffix, '_jump.fits')
-                break
-        if jump_file is None:
-            raise ValueError("ERROR: Unrecognized slope filename suffix.")
+        if jump_filenames is not None:
+            jump_file = jump_filenames[i]
+        else:
+            for suffix in RATE_FILE_SUFFIXES:
+                if suffix in filename:
+                    slope_suffix = '{}.fits'.format(suffix)
+                    jump_file = filename.replace(slope_suffix, '_jump.fits')
+                    break
+            if jump_file is None:
+                raise ValueError("ERROR: Unrecognized slope filename suffix.")
         if not os.path.isfile(jump_file):
             raise FileNotFoundError("ERROR: Jump file {} not found.".format(jump_file))
 
@@ -227,18 +265,24 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
         # Read in the fitops file associated with the exposure and get
         # the pedestal array (y-intercept)
-        pedestal_file = filename.replace(slope_suffix, '_fitopt.fits')
-        if not os.path.isfile(pedestal_file):
-            raise FileNotFoundError("ERROR: Pedestal file {} not found.".format(pedestal_file))
+        if fitopt_filenames is not None:
+            pedestal_file = fitopt_filenames[i]
+        else:
+            pedestal_file = filename.replace(slope_suffix, '_fitopt.fits')
+            if not os.path.isfile(pedestal_file):
+                raise FileNotFoundError("ERROR: Pedestal file {} not found.".format(pedestal_file))
         print('Opening Pedestal File {}'.format(pedestal_file))
         pedestal = read_pedestal_data(pedestal_file, refpix_additions)
 
         # for MIRI the zero point of the ramp drifts with time. Adjust the
         # pedestal to be a relative pedestal wrt to group 2
         if instrument == 'MIRI':
-            uncal_file = filename.replace(slope_suffix, '_uncal.fits')
-            if not os.path.isfile(uncal_file):
-                raise FileNotFoundError("ERROR: Uncal file {} not found.".format(uncal_file))
+            if uncal_filenames is not None:
+                uncal_file = uncal_filenames[i]
+            else:
+                uncal_file = filename.replace(slope_suffix, '_uncal.fits')
+                if not os.path.isfile(uncal_file):
+                    raise FileNotFoundError("ERROR: Uncal file {} not found.".format(uncal_file))
             group2 = extract_group2(uncal_file, refpix_additions)
             pedestal_org = copy.deepcopy(pedestal)
             pedestal = np.fabs(group2 - pedestal)
@@ -354,7 +398,6 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
 
     # Look through the stack of saturated pixels and keep those saturated
     # more than N% of the time
-
     fully_saturated = np.sum(saturated, axis=0) / total_ints
     fully_saturated[fully_saturated < max_saturated_fraction] = 0
     fully_saturated = np.ceil(fully_saturated).astype(np.int)
@@ -436,6 +479,8 @@ def find_bad_pix(filenames, clipping_sigma=5., max_clipping_iters=5, noisy_thres
     print('Multi-extension file with individual types of bad pixels saved to:')
     print(outfile)
 
+    return bad_pixels
+
 
 def add_refpix(array, to_add):
     """Place ``map`` within a larger array that contains the reference
@@ -463,7 +508,7 @@ def add_refpix(array, to_add):
     full_array = np.zeros((ydim, xdim))
 
     full_array[bottom_rows: bottom_rows+y_array, left_cols: left_cols+x_array] = array
-    return array
+    return full_array
 
 
 def apply_flags(pixmap, flag_list):
@@ -487,13 +532,14 @@ def apply_flags(pixmap, flag_list):
     pixmap : numpy.ndarray
         Map updated with proper bad pixel values
     """
+    value = 0
     for mnemonic in flag_list:
         if mnemonic in dqflags.pixel.keys():
-            value = dqflags.pixel[mnemonic.upper()]
-            pixmap[pixmap != 0] += value
+            value += dqflags.pixel[mnemonic.upper()]
         else:
             raise ValueError("ERROR: unrecognized DQ mnemonic: {}".format(mnemonic))
-    pixmap = pixmap.astype(np.uint8)
+    pixmap[pixmap != 0] = value
+    pixmap = pixmap.astype(np.uint32)
     return pixmap
 
 
@@ -633,7 +679,7 @@ def find_pix_with_many_jumps(jump_map, max_jump_limit=10, jump_ratio_threshold=5
 
 
 def slopes_not_cr(slope, number_of_jumps):
-    """ Create an array of pixel slopes which are clean and have not detected cosmic rays
+    """ Create an array of pixel slopes which are clean and have no detected cosmic rays
 
     Parameters
     ----------
@@ -650,7 +696,7 @@ def slopes_not_cr(slope, number_of_jumps):
          slopes for a pixel ramp that have a cosmic ray detected are set to nan
     iclean_slope: numpy.ndarray
          an array of that holds if a good slope was detected. A value of 1 is
-         assigned to array element
+         assigned to array elements where there are no CRs
     """
 
     good = number_of_jumps == 0
@@ -671,11 +717,11 @@ def combine_clean_slopes(slope_stack, islope_stack):
     ----------
     slope_stack : list
         A list of slopes for full array stacked for each integration
+
     islope_stack: list
         A list of of 1 or 0 for each integration. A 1 is a good slope and 0 is slope
         with cosmic ray
     """
-
     slopes = np.array(slope_stack)
     islopes = np.array(islope_stack)
 
@@ -685,7 +731,7 @@ def combine_clean_slopes(slope_stack, islope_stack):
     # picked the value of 5 at random - should this be a parameter to program ?
     few_values = num_good_array < 5
     nfew_values = np.where(few_values)
-    print('Number pixels with less than 5 pixel slopes to determine standard deviation',
+    print('Number of pixels with less than 5 pixel slopes to determine standard deviation: ',
           len(nfew_values[0]))
     std_slope[few_values] = np.nan
 
@@ -713,8 +759,8 @@ def pedestal_stats(pedestal_array, threshold=5):
     median_pedestal = np.median(pedestal_array)
     stdev_pedestal = np.std(pedestal_array)
 
-    suspicious_pedestal = ((pedestal_array > (median_pedestal + stdev_pedestal*threshold)) or
-                           (pedestal_array < (median_pedestal - stdev_pedestal*threshold)))
+    suspicious_pedestal = (pedestal_array > (median_pedestal + stdev_pedestal*threshold)) | \
+                           (pedestal_array < (median_pedestal - stdev_pedestal*threshold))
     return suspicious_pedestal
 
 
@@ -995,14 +1041,15 @@ def saturated_in_all_groups(pedestal_array, first_group_sat):
     Parameters
     ----------
     pedestal_array : numpy.ndarray
-        3D array of pedestal values (signal extrapolated to time=0)
+        2D array of pedestal values (signal extrapolated to time=0)
+
     first_group_sat: numpy.ndarray
         2D array of the first group DQ containing either 0 = not saturated or 2 = saturated.
 
     Returns
     -------
-    full_saturation : tup
-        Tuple of (y, x) coordinate lists (output from np.where)
+    full_saturation : numpy.ndarray
+        Boolean array describing which pixels are saturated in all reads
     """
     full_saturation_ped0 = pedestal_array == 0
     # to be marked as saturated first_group_sat = 2 (saturated) and ped = 0
@@ -1017,10 +1064,13 @@ def plot_image(image, image_max, outdir, titleplot, fileout):
     ----------
     image : numpy.ndarray
          2D image to plot
+
     image_max :  float
          maximum of image to use for scaling the image
+
     titleplot : string
          title of the plot
+
     fileout : string
          output file of the plot
 

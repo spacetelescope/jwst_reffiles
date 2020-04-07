@@ -6,7 +6,7 @@ from astropy.io import fits
 import numpy as np
 from jwst.datamodels import dqflags
 
-from jwst_reffiles.bad_pixel_mask import bad_pixel_mask as bpm
+from jwst_reffiles.bad_pixel_mask import badpix_from_flats as bpm
 
 
 def test_combine_individual_maps():
@@ -111,22 +111,6 @@ def test_dead_pixels_sigma_rate():
 
     manual = (test < (mean_val - dev_val * sigma_val)).astype(np.int)
     assert np.all(dead == manual)
-
-
-def test_dead_pixels_zero_signal():
-    """Make sure that dead pixels defined by having no signal are found
-    correctly"""
-
-    test = np.ones((10, 10, 10)) * 5000.
-    test[:, 2, 2] = 0.
-    test[1:, 3, 3] = 0.
-    test[2:, 4, 4] = 0
-    dead = bpm.dead_pixels_zero_signal(test, dead_zero_signal_fraction=0.9)
-
-    comparison = np.zeros((10, 10))
-    comparison[2, 2] = 1
-    comparison[3, 3] = 1
-    assert np.all(dead == comparison)
 
 
 def test_extract_10th_group():
