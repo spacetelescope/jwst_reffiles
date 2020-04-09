@@ -25,7 +25,7 @@ smoothing_type_kw = 'BPFSMTYP'
 dead_sig_thresh_kw = 'BPFDEDSG'
 dead_zero_sig_frac_kw = 'BPFZEROF'
 dead_flux_check_kw = 'BPFFXCHK'
-dead_flux_file_kw = 'BPFFXFIL'
+#dead_flux_file_kw = 'BPFFXFIL'
 max_dead_sig_kw = 'BPFMXDED'
 manual_flag_kw = 'BPFMANFL'
 flat_do_not_use_kw = 'BPFDONOT'
@@ -337,7 +337,7 @@ def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=T
         hdu.header[dead_sig_thresh_kw] = dead_sigma_threshold
         #hdu.header[dead_zero_sig_frac_kw] = dead_zero_signal_fraction
         hdu.header[dead_flux_check_kw] = run_dead_flux_check
-        hdu.header[dead_flux_file_kw] = dead_flux_check_files
+        #hdu.header[dead_flux_file_kw] = dead_flux_check_files
         hdu.header[max_dead_sig_kw] = max_dead_norm_signal
         hdu.header[manual_flag_kw] = manual_flag_file
         hdu.header[max_low_qe_kw] = max_low_qe_norm_signal
