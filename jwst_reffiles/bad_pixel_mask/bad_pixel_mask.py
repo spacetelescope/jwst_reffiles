@@ -350,7 +350,7 @@ def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=T
 
     if dark_slope_files is not None:
         if len(all_files) == 0:
-            all_files = copy.deepcopy(flat_slope_files)
+            all_files = copy.deepcopy(dark_slope_files)
             instrument, detector = instrument_info(dark_slope_files[0])
         else:
             all_files = all_files + dark_slope_files
