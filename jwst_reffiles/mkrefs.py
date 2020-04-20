@@ -12,7 +12,6 @@ from logging.handlers import RotatingFileHandler
 
 import astropy.io.fits as fits
 from astropy.io import ascii
-from astropy.table import vstack
 import astropy
 import numpy as np
 import scipy
@@ -824,15 +823,13 @@ class mkrefsclass(astrotableclass):
         D.t['D1index'] = dindex4detector
         D.t['D1imID'] = self.imtable.t['imID'][dindex4detector]
         D.t['D1index', 'D1imID'].format = '%d'
-        #print D.t
-        #sys.exit(0)
         return(D, ('D1',))
 
     def getDDlist(self, detector, max_Delta_MJD=None):
         '''
         returns list of Dark-Dark pair indeces,  where the indices refer to the self.imtable table
         '''
-        #logger.debug('# Getting DD list')
+        self.logger.debug('# Getting DD list')
         #self.imtable.t['skip'][7]=True
         #print  self.imtable.t[6:11]
 
@@ -841,33 +838,32 @@ class mkrefsclass(astrotableclass):
         # indices for detector and not skipped
         dindex4detector = dindex[np.where(np.logical_and(self.imtable.t['DETECTOR'][dindex] == detector,
                                                          np.logical_not(self.imtable.t['skip'][dindex])))]
-        #logger.info('Possible %d Darks for detector %s' % (len(dindex4detector), detector))
-        #logger.info(self.imtable.t[dindex4detector])
+        self.logger.info('Possible %d Darks for detector %s' % (len(dindex4detector), detector))
+        self.logger.info(self.imtable.t[dindex4detector])
 
         DD = astrotableclass(names=('D1index', 'D2index', 'D1imID', 'D2imID'), dtype=('i4', 'i4', 'i4', 'i4'))
         i = 0
         while i < len(dindex4detector)-1:
             if max_Delta_MJD is not None:
-                #logger.info('Checking if imID={} and {} can be DD'.format(self.imtable.t['imID'][dindex4detector[i]],
-                #                                                           self.imtable.t['imID'][dindex4detector[i+1]]))
+                self.logger.info('Checking if imID={} and {} can be DD'.format(self.imtable.t['imID'][dindex4detector[i]],
+                                                                               self.imtable.t['imID'][dindex4detector[i+1]]))
                 dMJD = self.imtable.t['MJD'][dindex4detector[i+1]]-self.imtable.t['MJD'][dindex4detector[i]]
-                #logger.debug('dMJD:', dMJD)
+                self.logger.debug('dMJD:', dMJD)
                 if dMJD > max_Delta_MJD:
-                    #logger.info(('Skipping imID={} (MJD={}) since imID={} is not within timelimit (Delta '
-                    #              'MJD = {}>{})!'.format(self.imtable.t['imID'][dindex4detector[i]],
-                    #                                     self.imtable.t['MJD'][i],
-                    #                                     self.imtable.t['imID'][dindex4detector[i+1]],
-                    #                                     dMJD, max_Delta_MJD)))
+                    self.logger.info(('Skipping imID={} (MJD={}) since imID={} is not within timelimit (Delta '
+                                      'MJD = {}>{})!'.format(self.imtable.t['imID'][dindex4detector[i]],
+                                                             self.imtable.t['MJD'][i],
+                                                             self.imtable.t['imID'][dindex4detector[i+1]],
+                                                             dMJD, max_Delta_MJD)))
                     i += 1
                     continue
-            #logger.info('Adding DD pair with imID={} and {}'.format(self.imtable.t['imID'][dindex4detector[i]],
-            #                                                         self.imtable.t['imID'][dindex4detector[i+1]]))
+            self.logger.info('Adding DD pair with imID={} and {}'.format(self.imtable.t['imID'][dindex4detector[i]],
+                                                                         self.imtable.t['imID'][dindex4detector[i+1]]))
             DD.t.add_row({'D1index': dindex4detector[i], 'D2index': dindex4detector[i+1],
                           'D1imID': self.imtable.t['imID'][dindex4detector[i]],
                           'D2imID': self.imtable.t['imID'][dindex4detector[i+1]]})
             i += 2
 
-        #logger.debug(DD.t)
         return(DD, ('D1', 'D2'))
 
     def getDpluslist(self, detector, max_Delta_MJD=None):
@@ -1025,40 +1021,39 @@ class mkrefsclass(astrotableclass):
         '''
         returns list of Flat-Flat pair indeces, where the indices refer to the self.imtable table
         '''
-        #self.logger.info('# Getting FF list')
+        self.logger.info('# Getting FF list')
 
         # indices for dark frames
         findex, = np.where(self.imtable.t['imtype'] == 'flat')
         # indices for detector and not skipped
         findex4detector = findex[np.where(np.logical_and(self.imtable.t['DETECTOR'][findex] == detector,
                                                          np.logical_not(self.imtable.t['skip'][findex])))]
-        #self.logger.info('Possible {} Flats for detector {}'.format(len(findex4detector), detector))
-        #self.logger.info(self.imtable.t[findex4detector])
+        self.logger.info('Possible {} Flats for detector {}'.format(len(findex4detector), detector))
+        self.logger.info(self.imtable.t[findex4detector])
 
         FF = astrotableclass(names=('F1index', 'F2index', 'F1imID', 'F2imID'), dtype=('i4', 'i4', 'i4', 'i4'))
         i = 0
         while i < len(findex4detector)-1:
             if max_Delta_MJD is not None:
-                #self.logger.info('Checking if imID={} and {} can be FF'.format(self.imtable.t['imID'][findex4detector[i]],
-                #                                                           self.imtable.t['imID'][findex4detector[i+1]]))
+                self.logger.info('Checking if imID={} and {} can be FF'.format(self.imtable.t['imID'][findex4detector[i]],
+                                                                               self.imtable.t['imID'][findex4detector[i+1]]))
                 dMJD = self.imtable.t['MJD'][findex4detector[i+1]]-self.imtable.t['MJD'][findex4detector[i]]
-                #self.logger.debug('dMJD:', dMJD)
+                self.logger.debug('dMJD:', dMJD)
                 if dMJD > max_Delta_MJD:
-                    #self.logger.info(('Skipping imID={} (MJD={}) since imID={} is not within '
-                    #              'timelimit (Delta MJD = {}>{})!').format(self.imtable.t['imID'][findex4detector[i]],
-                    #                                                       self.imtable.t['MJD'][i],
-                    #                                                       self.imtable.t['imID'][findex4detector[i+1]],
-                    #                                                       dMJD, max_Delta_MJD))
+                    self.logger.info(('Skipping imID={} (MJD={}) since imID={} is not within '
+                                      'timelimit (Delta MJD = {}>{})!').format(self.imtable.t['imID'][findex4detector[i]],
+                                                                               self.imtable.t['MJD'][i],
+                                                                               self.imtable.t['imID'][findex4detector[i+1]],
+                                                                               dMJD, max_Delta_MJD))
                     i += 1
                     continue
-            #self.logger.info('Adding FF pair with imID={} and {}'.format(self.imtable.t['imID'][findex4detector[i]],
-            #                                                         self.imtable.t['imID'][findex4detector[i+1]]))
+            self.logger.info('Adding FF pair with imID={} and {}'.format(self.imtable.t['imID'][findex4detector[i]],
+                                                                         self.imtable.t['imID'][findex4detector[i+1]]))
             FF.t.add_row({'F1index': findex4detector[i], 'F2index': findex4detector[i+1],
                           'F1imID': self.imtable.t['imID'][findex4detector[i]],
                           'F2imID': self.imtable.t['imID'][findex4detector[i+1]]})
             i += 2
 
-        #self.logger.debug(FF.t)
         return(FF, ('F1', 'F2'))
 
     def getDDFFlist(self, detector, DD_max_Delta_MJD=None, FF_max_Delta_MJD=None, DDFF_max_Delta_MJD=None):

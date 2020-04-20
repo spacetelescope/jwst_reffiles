@@ -744,7 +744,7 @@ class CalibPrep:
         self.inputs.add_column(indexcol, index=0)
 
         # Turn the table into a series of strun commands
-        self.strun = self.strun_command(realcol, toruncol, outcol, tosavecol)  # ,reffiles=??)
+        self.strun = self.strun_command(realcol, toruncol, outcol, tosavecol)
 
         # Add the list of strun commands to the input table
         cmds = Column(data=self.strun, name='strun_command')
