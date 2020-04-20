@@ -17,7 +17,7 @@ import types
 from jwst_reffiles.plugin_wrapper import mkrefclass_template
 
 # import the bad pixel mask script
-from jwst_reffiles.bad_pixel_mask import bad_pixel_mask as bpm
+from jwst_reffiles.bad_pixel_mask.badpix_from_flats import find_bad_pix as bpm
 from jwst_reffiles.utils.definitions import PIPE_STEPS
 
 
@@ -26,7 +26,7 @@ class mkrefclass(mkrefclass_template):
         mkrefclass_template.__init__(self, *args, **kwargs)
 
         # Set the reflabel as the name of the imported module
-        self.reflabel = 'bad_pixel_mask'
+        self.reflabel = 'badpix_from_flats'
 
         # Set the reftype
         self.reftype = 'bpm'
