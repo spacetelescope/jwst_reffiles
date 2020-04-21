@@ -155,28 +155,37 @@ def strun_command_test(cp_object):
     torun1 = 'saturation,superbias,dark_current,jump'
     torun2 = 'dq_init,superbias,refpix'
     torun3 = 'dark_current,linearity,rate'
+    tosave1 = 'superbias,dark_current'
+    tosave2 = 'dq_init'
+    tosave3 = 'linearity'
     steps_to_run = Column(data=[torun1, torun2, torun3])
+    steps_to_save = Column(data=[tosave1, tosave2, tosave3])
     out_names = ['dummy_sat_superbias_dark_jump', 'dummy_dq_init_superbias_refpix',
                  'dummy_dark_linearity_rate']
     suffixes = ['sat_superbias_dark_jump', 'dq_init_superbias_refpix', 'dark_linearity_rate']
     output_filename = Column(data=out_names)
-    constructed_commands = cp_object.strun_command(input_names, steps_to_run, output_filename, testing=True)
+    constructed_commands = cp_object.strun_command(input_names, steps_to_run, output_filename, steps_to_save, testing=True)
     pipeline_cfg_file = os.path.join(cp_object.output_dir, 'calwebb_detector1.cfg')
     truth1 = ('strun {} {} --steps.group_scale.skip=True --steps.dq_init.skip=True --steps.ipc.skip=True '
               '--steps.refpix.skip=True --steps.linearity.skip=True --steps.persistence.skip=True '
               '--steps.ramp_fit.skip=True --steps.jump.output_file={} --steps.jump.save_results=True '
-              '--output_dir={} --save_results=False --steps.jump.rejection_threshold=100 --steps.refpix.odd_even_rows=False'
+              '--output_dir={} --steps.superbias.save_results=True --steps.dark_current.save_results=True '
+              '--steps.superbias.output_file=/dummy/output/dir/dummy_saturation_superbias.fits '
+              '--steps.dark_current.output_file=/dummy/output/dir/dummy_saturation_superbias_dark_current.fits '
+              '--save_results=False --steps.jump.rejection_threshold=100 --steps.refpix.odd_even_rows=False'
               .format(pipeline_cfg_file, in_names[0], out_names[0], cp_object.output_dir))
     truth2 = ('strun {} {} --steps.group_scale.skip=True --steps.saturation.skip=True --steps.ipc.skip=True '
               '--steps.linearity.skip=True --steps.persistence.skip=True --steps.dark_current.skip=True '
               '--steps.jump.skip=True --steps.ramp_fit.skip=True --steps.refpix.output_file={} '
-              '--steps.refpix.save_results=True --output_dir={} --save_results=False '
+              '--steps.refpix.save_results=True --output_dir={} --steps.dq_init.save_results=True '
+              '--steps.dq_init.output_file=/dummy/output/dir/dummy_dq_init.fits --save_results=False '
               '--steps.jump.rejection_threshold=100 --steps.refpix.odd_even_rows=False'
               .format(pipeline_cfg_file, in_names[1], out_names[1], cp_object.output_dir))
     truth3 = ('strun {} {} --steps.group_scale.skip=True --steps.dq_init.skip=True --steps.saturation.skip=True '
               '--steps.ipc.skip=True --steps.superbias.skip=True --steps.refpix.skip=True '
               '--steps.persistence.skip=True --steps.jump.skip=True --steps.ramp_fit.output_file={} '
-              '--steps.ramp_fit.save_results=True --output_dir={} --save_results=False '
+              '--steps.ramp_fit.save_results=True --output_dir={} --steps.linearity.save_results=True '
+              '--steps.linearity.output_file=/dummy/output/dir/dummy_linearity_dark_current.fits --save_results=False '
               '--steps.jump.rejection_threshold=100 --steps.refpix.odd_even_rows=False'
               .format(pipeline_cfg_file, in_names[2], out_names[2], cp_object.output_dir))
     truths = [truth1, truth2, truth3]
@@ -184,8 +193,12 @@ def strun_command_test(cp_object):
 
     print('')
     print(constructed_commands[0])
+    print(constructed_commands[1])
+    print(constructed_commands[2])
     print('')
     print(truth1)
+    print(truth2)
+    print(truth3)
     print('')
 
 
