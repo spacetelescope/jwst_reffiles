@@ -31,8 +31,6 @@ from jwst_reffiles.utils.tools import makepath, executecommand, append2file, rmf
 #                     '%s/badpix_map' % rootdir])
 #else:
 #rootdir = os.path.dirname(os.path.realpath(__file__))
-
-
 class cmdsclass(astrotableclass):
     def __init__(self, cmdtype, *args, verbose=0, debug=False, manual_log=None, **kwargs):
         #self.loginfo.append(('info', "Creating cmdsclass instance with cmdtype {}".format(cmdtype)))
