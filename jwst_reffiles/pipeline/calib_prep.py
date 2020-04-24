@@ -116,10 +116,10 @@ class CalibPrep:
         self.output_dir = ''
         #self.pipe_step_dict = OrderedDict(PIPE_STEPS)
 
-        instrument = instrument.lower()
-        if instrument not in INSTRUMENTS:
-            raise ValueError("WARNING: {} is not a valid instrument name.".format(instrument))
-        self.pipe_step_list = get_pipeline_steps(instrument)
+        self.instrument = instrument.lower()
+        if self.instrument not in INSTRUMENTS:
+            raise ValueError("WARNING: {} is not a valid instrument name.".format(self.instrument))
+        self.pipe_step_list = get_pipeline_steps(self.instrument)
 
     def activate_encompassing_entries(self):
         """Once the search for ssb commands contained within other ssb commands has
@@ -310,16 +310,30 @@ class CalibPrep:
 
                 self.logger.debug('matching rows:{}'.format(matching_rows))
 
-                # Strip all whitespace from the list of ssb steps. Use this as
-                # a comparison to see if there are repeats among those with matching
+                # Strip all whitespace from the list of ssb steps and the list of
+                # intermediate pipeline outputs to be saved. Use these as
+                # comparisons to see if there are repeats among those with matching
                 # filenames.
                 row_ssb = re.sub(r'\s+', '', row['steps_to_run'])
+                if row['ssb_save_steps'] is not None:
+                    row_ssb_save = [elem.strip() for elem in row['ssb_save_steps'].split(',')]
+                else:
+                    row_ssb_save = []
                 outname = row['output_name']
                 for matching_row in matching_rows:
                     ssbsteps = re.sub(r'\s+', '', matching_row['steps_to_run'])
+                    if matching_row['ssb_save_steps'] is not None:
+                        ssbsavesteps = [elem.strip() for elem in matching_row['ssb_save_steps'].split(',')]
+                        # Check to see if the requested list of steps where output
+                        # files are needed is contained within the list of output
+                        # steps in the comparison row
+                        inside = [True if comp in row_ssb_save else False for comp in ssbsavesteps]
+                    else:
+                        ssbsavesteps = []
+                        inside = [True]
                     row_index = matching_row['index']
 
-                    if ssbsteps in row_ssb:
+                    if ssbsteps in row_ssb and all(inside):
                         # If the list of ssb steps is contained within the list of
                         # steps from the comparison file, then this entry is duplicate.
                         # Save the output name from this row if it is different from the
@@ -398,7 +412,7 @@ class CalibPrep:
         """
         full_filename = os.path.join(self.output_dir, filename)
         if not os.path.isfile(full_filename):
-            print('INFO: {} file does not exist in {}. Creating.'.format(filename,
+            self.logger.info('INFO: {} file does not exist in {}. Creating.'.format(filename,
                                                                          self.output_dir))
             cfg_reference = os.path.join(os.path.dirname(__file__), 'config_files/{}'.format(filename))
             if not testing:
@@ -615,15 +629,17 @@ class CalibPrep:
         self.strun = []
         realinput = []
         all_to_run = []
+        all_to_save = []
 
         # Create generators of files in self.search_dir, to be searched later for
         # matching filenames
         self.search_dir_decompose()
         search_generator = self.build_search_generator()
 
+        # Loop over rows of the input table and get information that will be
+        # used to construct strun calls.
         for line in self.inputs:
             file = line['fitsfile']
-
             req_steps = self.step_dict(line['ssbsteps'])
 
             self.logger.info("File: {}".format(file))
@@ -656,8 +672,7 @@ class CalibPrep:
             if not self.use_only_given:
                 # for now I replace this with glob. BRYAN: PLEASE CHECK THIS!
                 #files = self.file_search(true_base, search_generator)
-                tmpdummydir = '%s/%s*fits'% (self.search_dir,true_base)
-                print('Looking into tmpdummydir:',tmpdummydir)
+                tmpdummydir = os.path.join(self.search_dir, '{}*fits'.format(true_base))
                 files = glob(tmpdummydir)
             else:
                 files = [os.path.join(self.search_dir, file)]
@@ -706,6 +721,13 @@ class CalibPrep:
 
             self.logger.info("Steps that need to be run: {}".format(to_run))
 
+            # Keep track of the pipeline steps whose output needs to be saved
+            if line['ssb_save_steps'] is not None:
+                row_save_steps = re.sub(r'\s+', '', line['ssb_save_steps'])
+            else:
+                row_save_steps = ''
+            all_to_save.append(row_save_steps)
+
         # Add the output filename column to the input table
         realcol = Column(data=realinput, name='real_input_file')
         self.inputs.add_column(realcol)
@@ -713,6 +735,8 @@ class CalibPrep:
         self.inputs.add_column(outcol)
         toruncol = Column(all_to_run, name='steps_to_run')
         self.inputs.add_column(toruncol)
+        tosavecol = Column(all_to_save, name='steps_to_save')
+        self.inputs.add_column(tosavecol)
 
         # Add an overall index column (to be used as a reference when flagging
         # repeated rows)
@@ -720,7 +744,7 @@ class CalibPrep:
         self.inputs.add_column(indexcol, index=0)
 
         # Turn the table into a series of strun commands
-        self.strun = self.strun_command(realcol, toruncol, outcol)  # ,reffiles=??)
+        self.strun = self.strun_command(realcol, toruncol, outcol, tosavecol)
 
         # Add the list of strun commands to the input table
         cmds = Column(data=self.strun, name='strun_command')
@@ -771,7 +795,7 @@ class CalibPrep:
         stepslist = [element.strip() for element in stepstr.split(',')]
         for ele in stepslist:
             if ele not in self.pipe_step_list:
-                self.logging.error(("WARNING: unrecognized pipeline step: {}"
+                self.logger.error(("WARNING: unrecognized pipeline step: {}"
                                     .format(ele)))
                 raise ValueError(("WARNING: unrecognized pipeline step: {}"
                                   .format(ele)))
@@ -818,8 +842,8 @@ class CalibPrep:
                                      "be. Need a new input file.".format(infile, key)))
         return torun
 
-    def strun_command(self, input_files, steps_to_run, outfile_name, overrides=[], instrument='nircam',
-                      testing=False):
+    def strun_command(self, input_files, steps_to_run, outfile_name, steps_to_save, overrides=[],
+                      instrument='nircam', testing=False):
         '''Create the necessary strun command to run the
         appropriate JWST calibration pipeline steps
 
@@ -834,6 +858,10 @@ class CalibPrep:
 
         outfile_name : astropy.table.Column
             astropy table column object listing pipeline ouput fits file name
+
+        steps_to_save : astropy.table.Column
+            astropy table column object giving a comma-separated list of pipeline
+            steps whose output should be saved
 
         instrument : str
             Name of instrument. Used to collect the appropriate pipeline steps
@@ -873,7 +901,7 @@ class CalibPrep:
 
         # Create the strun command
         initial = 'strun {} '.format(pipeline_cfg_file)
-        for infile, steps, outfile in zip(input_files, steps_to_run, outfile_name):
+        for infile, steps, outfile, save_steps in zip(input_files, steps_to_run, outfile_name, steps_to_save):
             with_file = initial + infile
 
             if steps == 'None':
@@ -881,14 +909,41 @@ class CalibPrep:
             else:
                 skip_text = ''
                 out_text = ''
+                save_text = ''
                 for key in step_names:
 
                     # Add skip statements for the steps to be skipped
                     if key not in steps:
                         skip_text += ' --steps.{}.skip=True'.format(step_names[key])
 
+                    # Save outputs from requested steps
+                    if key in save_steps:
+                        save_text += ' --steps.{}.save_results=True'.format(step_names[key])
+
                     # Add override reference files
-                    print("Add ability to override reference files here")
+                    # print("Add ability to override reference files here")
+
+                # Generate the output names for any intermediate output products
+                save_steps_list = [elem.strip() for elem in save_steps.split(',')]
+                for stepname in save_steps_list:
+
+                    # Get a list of steps to be done up to stepname
+                    step_loc = steps.find(stepname)
+                    if step_loc != -1:
+                        tmp_list = steps[0: step_loc + len(stepname)]
+
+                        tmp_dict = self.step_dict(tmp_list)
+                        tmp_basename = self.get_file_basename(infile)
+
+                        # Generate the output name expected for these steps, and
+                        # add to the strun command
+                        tmp_outname, true_base = self.create_output(tmp_basename, tmp_dict)
+                        save_text += ' --steps.{}.output_file={}'.format(stepname, tmp_outname)
+
+                # If the optional "fitopt" ramp-fitting product is requested, add that
+                # to the strun command
+                if 'fitopt' in save_steps:
+                    save_text += ' --steps.ramp_fit.save_opt=True'
 
                 # Get the suffix from the difference between the input and output names
                 infile_base = os.path.split(infile)[1]
@@ -915,8 +970,8 @@ class CalibPrep:
                 # does not strip off any suffix pieces.
                 if outfile_base[-11:] == '_0_ramp_fit':
                     outfile_base = outfile_base.replace('_0_ramp_fit', '')
-                    final_suffix = outfile_base.split('_')[-1]
-                    outfile_base = outfile_base + '_{}'.format(final_suffix)
+                    #final_suffix = outfile_base.split('_')[-1]
+                    #outfile_base = outfile_base + '_{}'.format(final_suffix)
 
                 # Add step-specific options for saving
                 finstep = steps.split(',')[-1]
@@ -930,7 +985,7 @@ class CalibPrep:
                 out_dir = ' --output_dir={}'.format(self.output_dir)
 
                 # Put the whole command together
-                cmd = with_file + skip_text + out_text + out_dir
+                cmd = with_file + skip_text + out_text + out_dir + save_text
 
                 # Since we are getting the output from the final step directly
                 # we can turn off the output from the pipeline

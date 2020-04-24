@@ -15,8 +15,8 @@ import types
 
 from jwst_reffiles.plugin_wrapper import mkrefclass_template
 
-# import the bad pixel mask script
 from jwst_reffiles.bad_pixel_mask import bad_pixel_mask as bpm
+from jwst_reffiles.utils.constants import RATE_FILE_SUFFIXES
 from jwst_reffiles.utils.definitions import PIPE_STEPS
 
 
@@ -115,7 +115,7 @@ class mkrefclass(mkrefclass_template):
         parser.add_argument('--flag_values', help=('Dictionary mapping the types of bad pixels searched for to the flag mnemonics '
                                                    'to use when creating the bad pixel file. Keys are the types of bad pixels searched '
                                                    'for, and values are lists that include mnemonics recognized by the jwst calibration '
-                                                    'pipeline e.g. {'hot': ['HOT'], 'rc': ['RC'], 'low_pedestal': ['OTHER_BAD_PIXEL'], 'high_cr': ["TELEGRAPH"]}'))
+                                                   'pipeline e.g. {"hot": ["HOT"], "rc": ["RC"], "low_pedestal": ["OTHER_BAD_PIXEL"], "high_cr": ["TELEGRAPH"]}'))
 
         parser.add_argument('--dark_do_not_use', help=('List of bad pixel types to be flagged as DO_NOT_USE e.g. ["hot", "rc", "low_pedestal", "high_cr"]'))
 
@@ -161,65 +161,130 @@ class mkrefclass(mkrefclass_template):
             elif row['imlabel'] == 'F':
                 flatfiles.append(row['fitsfile'])
 
-        For badpix from flats we need the slope image, optional slope fit file, uncal file and jump file.
-        We assume those are in the same directory as the slope file in the table?
+        # Since this module is called after calib_prep, all of the requested
+        # outputs from the various pipeline steps should be present in the
+        # output directory. Create lists of these files. The files listed in
+        # self.inputimagestable['fitsfile'] should all be the same in terms
+        # of their calibration state. So we should only have to check one in
+        # order to know what state all of them are.
+        dark_slope_files = []
+        dark_uncal_files = []
+        dark_jump_files = []
+        dark_fitopt_files = []
+
+        directory, filename = os.path.split(darkfiles[0])
+
+        # Get the suffix of the input file so we know the calibration state
+        suffix = None
+        for ramp_suffix in RATE_FILE_SUFFIXES:
+            if ramp_suffix in filename:
+                dark_slope_files = copy.deepcopy(darkfiles)
+                suffix = ramp_suffix
+        if suffix is None:
+            suffix = filename.split('_')[-1]
+            suffix = suffix.replace('.fits', '')
+            if suffix == 'uncal':
+                dark_uncal_files = copy.deepcopy(darkfiles)
+            elif suffix == 'jump':
+                dark_jump_files = copy.deepcopy(darkfiles)
+            else:
+                raise ValueError('Unexpected suffixes for input dark files.')
+
+        # Create lists of the needed calibration state files
+        if len(dark_slope_files) > 0:
+            dark_uncal_files = [elem.replace(suffix, '_uncal') for elem in dark_slope_files]
+            dark_jump_files = [elem.replace(suffix, '_jump') for elem in dark_slope_files]
+            dark_fitopt_files = [elem.replace(suffix, '_fitopt') for elem in dark_slope_files]
+        elif len(dark_uncal_files) > 0:
+            dark_slope_files = [elem.replace(suffix, '_1_ramp_fit') for elem in dark_uncal_files]
+            dark_jump_files = [elem.replace(suffix, '_jump') for elem in dark_uncal_files]
+            dark_fitopt_files = [elem.replace(suffix, '_fitopt') for elem in dark_uncal_files]
+        elif len(dark_jump_files) > 0:
+            dark_uncal_files = [elem.replace(suffix, '_uncal') for elem in dark_jump_files]
+            dark_slope_files = [elem.replace(suffix, '_1_ramp_fit') for elem in dark_jump_files]
+            dark_fitopt_files = [elem.replace(suffix, '_fitopt') for elem in dark_jump_files]
+
+        # Repeat for flat field files
+        flat_slope_files = []
+        flat_uncal_files = []
+
+        directory, filename = os.path.split(flatfiles[0])
+
+        # Get the suffix of the input file so we know the calibration state
+        suffix = None
+        for ramp_suffix in RATE_FILE_SUFFIXES:
+            if ramp_suffix in filename:
+                flat_slope_files = copy.deepcopy(flatfiles)
+                suffix = ramp_suffix
+        if suffix is None:
+            suffix = filename.split('_')[-1]
+            suffix = suffix.replace('.fits', '')
+            if suffix == 'uncal':
+                flat_uncal_files = copy.deepcopy(flatfiles)
+            else:
+                raise ValueError('Unexpected suffixes for input flat field files.')
+
+        # Create lists of the needed calibration state files
+        if len(flat_slope_files) > 0:
+            flat_uncal_files = [elem.replace(suffix, '_uncal') for elem in flat_slope_files]
+        elif len(flat_uncal_files) > 0:
+            flat_slope_files = [elem.replace(suffix, '_1_ramp_fit') for elem in flat_uncal_files]
+
+
+        # The bad pixel mask module needs to use the file with the individual
+        # slopes (_1_ramp_fit.fits), rather than the mean slope (_0_ramp_fit.fits),
+        # for exposures with more than one integration per exposure. But for
+        # exposures with only one integration, only the _0_ramp_fit file will be
+        # produced. So go through the lists of slope files and check to see
+        # which versions are present, and adjust the lists accordingly.
+
+
 
 
         # Call the wrapped module and provide the proper arguments from the
         # self.parameters dictionary.
-
-        # A set of uncal files is needed in the case that ``run_dead_flux_check``
-        # is True. If dead_flux_check_files is None or 'none' then a list of uncal
-        # files is generated from the input list of rate files.
-        if self.parameters['run_dead_flux_check']:
-            if self.parameters['dead_flux_check_files'] is None:
-                self.parameters['dead_flux_check_files'] = 'none'
-
-
-
-            input_file_directory, input_file_name = os.path.split(self.inputimagestable['fitsfile'][0])
-
-            if isinstance(self.parameters['dead_flux_check_files'], str):
-                possible_suffixes = copy.deepcopy(PIPE_STEPS)
-                possible_suffixes.extend(['0_ramp_fit', '1_ramp_fit'])
-                uncal_files = []
-                for filename in self.inputimages:
-                    directory, file = os.path.split(filename)
-                    for suffix in possible_suffixes:
-                        if suffix in file:
-                            file = file.replace('_{}'.format(suffix), '')
-                    uncal_files.append(os.path.join(input_file_directory, file.replace('.fits', '_uncal.fits')))
-            elif isinstance(self.parameters['dead_flux_check_files'], list):
-                uncal_files = self.parameters['dead_flux_check_files']
-            else:
-                raise ValueError('ERROR: dead_flux_check must be either a list, None, or "none"')
-        else:
-            uncal_files = self.parameters['dead_flux_check_files']
-
-        bpm.find_bad_pix(self.inputimages,
-                         dead_search=self.parameters['dead_search'],
-                         low_qe_and_open_search=self.parameters['low_qe_and_open_search'],
-                         dead_search_type=self.parameters['dead_search_type'],
-                         sigma_threshold=self.parameters['sigma_threshold'],
-                         normalization_method=self.parameters['normalization_method'],
-                         smoothing_box_width=self.parameters['smoothing_box_width'],
-                         smoothing_type=self.parameters['smoothing_type'],
-                         dead_sigma_threshold=self.parameters['dead_sigma_threshold'],
-                         max_dead_norm_signal=self.parameters['max_dead_norm_signal'],
-                         run_dead_flux_check=self.parameters['run_dead_flux_check'],
-                         dead_flux_check_files=uncal_files,
-                         flux_check=self.parameters['flux_check'],
-                         max_low_qe_norm_signal=self.parameters['max_low_qe_norm_signal'],
-                         max_open_adj_norm_signal=self.parameters['max_open_adj_norm_signal'],
-                         manual_flag_file=self.parameters['manual_flag_file'],
-                         do_not_use=self.parameters['do_not_use'],
-                         output_file=self.args.outputreffilename,
-                         author=self.parameters['author'],
-                         description=self.parameters['description'],
-                         pedigree=self.parameters['pedigree'],
-                         useafter=self.parameters['useafter'],
-                         history=self.parameters['history'],
-                         quality_check=self.parameters['quality_check'])
+        bpm.bad_pixels(flat_slope_files=flat_slope_files,
+                       dead_search=self.parameters['dead_search'],
+                       low_qe_and_open_search=self.parameters['low_qe_and_open_search'],
+                       dead_search_type=self.parameters['dead_search_type'],
+                       flat_mean_sigma_threshold=self.parameters['flat_mean_sigma_threshold'],
+                       flat_mean_normalization_method=self.parameters['flat_mean_normalization_method'],
+                       smoothing_box_width=self.parameters['smoothing_box_width'],
+                       smoothing_type=self.parameters['smoothing_type'],
+                       dead_sigma_threshold=self.parameters['dead_sigma_threshold'],
+                       max_dead_norm_signal=self.parameters['max_dead_norm_signal'],
+                       run_dead_flux_check=self.parameters['run_dead_flux_check'],
+                       dead_flux_check_files=flat_uncal_files,
+                       flux_check=self.parameters['flux_check'],
+                       max_low_qe_norm_signal=self.parameters['max_low_qe_norm_signal'],
+                       max_open_adj_norm_signal=self.parameters['max_open_adj_norm_signal'],
+                       manual_flag_file=self.parameters['manual_flag_file'],
+                       flat_do_not_use=self.parameters['flat_do_not_use'],
+                       dark_slope_files=dark_slope_files,
+                       dark_uncal_files=dark_uncal_files,
+                       dark_jump_files=dark_jump_files,
+                       dark_fitopt_files=dark_fitopt_files,
+                       dark_stdev_clipping_sigma=self.parameters['dark_stdev_clipping_sigma'],
+                       dark_max_clipping_iters=self.parameters['dark_max_clipping_iters'],
+                       dark_noisy_threshold=self.parameters['dark_noisy_threshold'],
+                       max_saturated_fraction=self.parameters['max_saturated_fraction'],
+                       max_jump_limit=self.parameters['max_jump_limit'],
+                       jump_ratio_threshold=self.parameters['jump_ratio_threshold'],
+                       early_cutoff_fraction=self.parameters['early_cutoff_fraction'],
+                       pedestal_sigma_threshold=self.parameters['pedestal_sigma_threshold'],
+                       rc_fraction_threshold=self.parameters['rc_fraction_threshold'],
+                       low_pedestal_fraction=self.parameters['low_pedestal_fraction'],
+                       high_cr_fraction=self.parameters['high_cr_fraction'],
+                       flag_values=self.parameters['flag_values'],
+                       dark_do_not_use=self.parameters['dark_do_not_use'],
+                       plot=self.parameters['plot'],
+                       output_file=self.args.outputreffilename,
+                       author=self.parameters['author'],
+                       description=self.parameters['description'],
+                       pedigree=self.parameters['pedigree'],
+                       useafter=self.parameters['useafter'],
+                       history=self.parameters['history'],
+                       quality_check=self.parameters['quality_check'])
         return(0)
 
 
