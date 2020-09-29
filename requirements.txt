@@ -1,5 +1,5 @@
 pip==20.2.3
-setuptools==40.8.0
+setuptools==50.3.0
 numpy>=1.13
 sphinx>=1.4
 ipykernel
