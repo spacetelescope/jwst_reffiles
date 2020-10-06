@@ -7,15 +7,6 @@ jobs:
   include:
     - name: Linux tests
 
-    - name: MacOS tests
-      os: osx
-      osx_image: xcode12
-      language: shell
-      addons:
-        homebrew:
-          packages:
-            - python@3.8
-
     - name: Documentation build
       install:
         - pip install .[docs]

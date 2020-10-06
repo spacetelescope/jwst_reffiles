@@ -34,7 +34,7 @@ setup(
     extras_require=dict(
         docs=[
             "nbsphinx",
-            "pandoc",
+            "ipykernel",
             "sphinx",
             "sphinx_rtd_theme",
         ],
