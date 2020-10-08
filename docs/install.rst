@@ -8,7 +8,7 @@ Installation for Users
 
 If you are not planning on doing any development work for jwst_reffiles but only to use it, then installation can be done by (optionally) creating a new environment, activating it, and then using pip to install jwst_reffiles.
 
-1 (optional): conda create -n jwst-reffiles python
+1. (optional) conda create -n jwst-reffiles python
 2. conda activate jwst-reffiles
 3. pip install git+https://github.com/spacetelescope/jwst_reffiles.git
 

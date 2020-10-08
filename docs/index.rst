@@ -13,7 +13,6 @@ JWST_REFFILES: Reference File Generator Tool
    configuration_files.rst
    official_algorithms.rst
    official_bad_pixel_mask.rst
-   quickstart.ipynb
    api.rst
 
 The **jwst_reffiles** package contains a framework to organize and automate the creation of calibration reference files for JWST instruments. These reference files are used by the `JWST calibration pipeline <https://jwst-pipeline.readthedocs.io/en/stable/>`_ for data calibration.
