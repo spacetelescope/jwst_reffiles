@@ -8,17 +8,7 @@ and should be immediately useable in the pipeline.
 
 ## Installation
 
-To install `jwst_reffiles`, first clone the repository:
-`git clone https://github.com/spacetelescope/jwst_reffiles.git`
-
-Then, install the package:
-```
-cd jwst_reffiles
-pip install .
-```
-or
-
-```python setup.py install```
+See the [Installation](https://jwst-reffiles.readthedocs.io/en/latest/install.html) page of the documentation for detailed installation instructions.
 
 ## Documentation
 
