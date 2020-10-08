@@ -668,8 +668,6 @@ def average_last4groups(hdu_list):
     """
     filename = hdu_list[0].header['FILENAME']
     dims = hdu_list['SCI'].data.shape
-    dims = hdu_list['SCI'].data.shape
-    dims = hdu_list['SCI'].data.shape
     group4 = np.zeros((4, dims[-2], dims[-1]))
 
     # for multiple integrations
@@ -678,19 +676,19 @@ def average_last4groups(hdu_list):
         # dims[1] = number of groups
         if dims[1] < 4:
             raise ValueError('Input file {} has fewer than 4 groups.'.format(filename))
-        group4[0, :, :] = np.mean(hdu_list['SCI'].data[:, 0, :, :], axis=0)
-        group4[1, :, :] = np.mean(hdu_list['SCI'].data[:, 1, :, :], axis=0)
-        group4[2, :, :] = np.mean(hdu_list['SCI'].data[:, 2, :, :], axis=0)
-        group4[3, :, :] = np.mean(hdu_list['SCI'].data[:, 3, :, :], axis=0)
+        group4[0, :, :] = np.mean(hdu_list['SCI'].data[:, -4, :, :], axis=0)
+        group4[1, :, :] = np.mean(hdu_list['SCI'].data[:, -2, :, :], axis=0)
+        group4[2, :, :] = np.mean(hdu_list['SCI'].data[:, -2, :, :], axis=0)
+        group4[3, :, :] = np.mean(hdu_list['SCI'].data[:, -1, :, :], axis=0)
         ave_group = np.mean(group4, axis=0)
 
     elif len(dims) == 3:
         if dims[0] < 4:
             raise ValueError('Input file {} has fewer than 10 groups.'.format(filename))
-        group4[0, :, :] = hdu_list['SCI'].data[0, :, :]
-        group4[1, :, :] = hdu_list['SCI'].data[1, :, :]
-        group4[2, :, :] = hdu_list['SCI'].data[2, :, :]
-        group4[3, :, :] = hdu_list['SCI'].data[3, :, :]
+        group4[0, :, :] = hdu_list['SCI'].data[-4, :, :]
+        group4[1, :, :] = hdu_list['SCI'].data[-3, :, :]
+        group4[2, :, :] = hdu_list['SCI'].data[-2, :, :]
+        group4[3, :, :] = hdu_list['SCI'].data[-1, :, :]
         ave_group = np.mean(group4, axis=0)
 
     # change format so it is 3 dim
@@ -1123,12 +1121,14 @@ def read_files(filenames, dead_search_type):
     data : numpy.ndarray
         3D stack of data
     """
+    integrations = None
     for i, filename in enumerate(filenames):
         with fits.open(filename) as hdu_list:
             # Get some basic metadata
             instrument = hdu_list[0].header['INSTRUME'].upper()
             detector = hdu_list[0].header['DETECTOR'].upper()
             aperture = hdu_list[0].header['SUBARRAY'].upper()
+            ngroups = hdu_list[0].header['NGROUPS']
             try:
                 rampfit = hdu_list[0].header['S_RAMP']
             except KeyError:
@@ -1156,7 +1156,13 @@ def read_files(filenames, dead_search_type):
                                       'The inputs for the saturation check '
                                       'cannot be slope images.').format(os.path.basename(filename)))
                 else:
-                    exposure = average_last4groups(hdu_list)
+                    # Only create a mean image if there are more than 3 groups
+                    if ngroups >= 4:
+                        exposure = average_last4groups(hdu_list)
+                        if integrations is None:
+                            integrations = copy.deepcopy(exposure)
+                    else:
+                        continue
             else:
                 raise ValueError('Unknown dead sarch type option: {}.'.format(dead_search_type))
 
@@ -1166,7 +1172,8 @@ def read_files(filenames, dead_search_type):
             comparison_instrument = copy.deepcopy(instrument)
             comparison_detector = copy.deepcopy(detector)
             comparison_aperture = copy.deepcopy(aperture)
-            integrations = copy.deepcopy(exposure)
+            if integrations is None:
+                integrations = copy.deepcopy(exposure)
 
         # Consistency checks
         if instrument != comparison_instrument:
@@ -1177,7 +1184,11 @@ def read_files(filenames, dead_search_type):
             raise ValueError('Inconsistent apertures in input data!')
 
         # Stack the new integrations onto the outuput
-        integrations = np.concatenate((integrations, exposure), axis=0)
+        try:
+            integrations = np.concatenate((integrations, exposure), axis=0)
+        except ValueError:
+            print(i, filename)
+            raise ValueError("Cannot concatenate. Integrations shape: {}, exposure shape: {}".format(integrations.shape, exposure.shape))
     return integrations, comparison_instrument, comparison_detector
 
 
