@@ -1,48 +1,24 @@
-# We set the language to c because python isn't supported on the MacOS X nodes
-# on Travis. However, the language ends up being irrelevant anyway, since we
-# install Python ourselves using conda.
-language: c
+os: linux
+dist: xenial
+language: python
+python: 3.8.5
 
-compiler: gcc
+jobs:
+  include:
+    - name: Linux tests
 
-os:
-    - linux
-
-# Setting sudo to false opts in to Travis-CI container-based builds.
-sudo: false
-
-env:
-    global:
-        - PYTHON_VERSION=3.6
-        - EVENT_TYPE='push pull_request'
-
-matrix:
-    include:
-        # Run pytest suite
-        - name: test linux
-          os: linux
-
-        # Run pytest suite
-        - name: test osx
-          os: osx
-          osx_image: xcode10.2
-
-before_install:
-    - git clone git://github.com/astropy/ci-helpers.git
-    - source ci-helpers/travis/setup_conda_$TRAVIS_OS_NAME.sh
+    - name: Documentation build
+      install:
+        - pip install .[docs]
+      script:
+        - sphinx-build docs docs/_build
+      addons:
+        apt:
+          packages:
+            - pandoc
 
 install:
-    # Remove WebbPSF conda install
-    #- sed '/webbpsf/d' environment.yml
-    # Install jwst_reffile dependencies
-    - conda env update -f=environment.yml
-    # Install development versions of webbpsf and poppy
-    #- git clone git://github.com/spacetelescope/poppy.git
-    #- git clone git://github.com/spacetelescope/webbpsf.git
-    #- pip install -e poppy/
-    #- pip install -e webbpsf/
-    # Install jwst_reffiles package
-    - pip install -e .
+  - pip install .[test]
 
 script:
-    - pytest ./tests/
+  - pytest tests
