@@ -23,7 +23,8 @@ setup(
     ],
     packages=find_packages(),
     include_package_data=True,
-    package_data={'jwst_reffiles': ['bad_pixel_masks/*.txt']
+    package_data={'jwst_reffiles': ['bad_pixel_masks/*.txt',
+                                    'tests/test_data/file_for_completed_steps_test.fits']
                   },
     scripts=["jwst_reffiles/mkrefs.py"],
     install_requires=[
