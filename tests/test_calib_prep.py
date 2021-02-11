@@ -215,9 +215,3 @@ def test_calib_prep_steps():
     create_output_test(obj)
     steps_to_run_test(obj)
     strun_command_test(obj)
-
-
-def test_pipeline_step_list():
-    """Basic test that the number of steps in CALWEBB_DETECTOR1 is what we expect"""
-    pipeline = Detector1Pipeline()
-    assert len(pipeline.step_defs) == 15
