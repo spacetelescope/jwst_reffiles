@@ -23,6 +23,8 @@ setup(
     ],
     packages=find_packages(),
     include_package_data=True,
+    package_data={'jwst_reffiles': ['bad_pixel_masks/*.txt']
+                  },
     scripts=["jwst_reffiles/mkrefs.py"],
     install_requires=[
         'astropy>=4.0',
