@@ -19,13 +19,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Unit tests
+          - name: Unit tests Python 3.8
             os: ubuntu-latest
             python-version: 3.8
             extras: test
             test-command: pytest
 
-          - name: Unit tests
+          - name: Unit tests Python 3.9
             os: ubuntu-latest
             python-version: 3.9
             extras: test
