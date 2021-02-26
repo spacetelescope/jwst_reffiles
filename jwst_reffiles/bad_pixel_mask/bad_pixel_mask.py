@@ -426,7 +426,7 @@ def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=T
         hdu.header[bad_from_dark_kw] = False
 
     # Combine the two masks
-    final_mask = flatmask + darkmask
+    final_mask = np.bitwise_or(flatmask, darkmask)
 
     # Save mask in reference file
     hdu_list = fits.HDUList([hdu])
