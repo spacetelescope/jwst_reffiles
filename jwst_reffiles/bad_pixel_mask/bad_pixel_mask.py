@@ -426,7 +426,15 @@ def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=T
         hdu.header[bad_from_dark_kw] = False
 
     # Combine the two masks
-    final_mask = flatmask + darkmask
+    final_mask = np.bitwise_or(flatmask, darkmask)
+
+    # Some pixels that are saturated in all groups may be flagged as hot and dead,
+    # because the slope in the flat ramp appears to be zero, while the more in-depth
+    # checking of the darks shows that the pixel is saturated the entire time. For any
+    # pixels flagged as both, keep only the hot flag and throw out the dead flag.
+    hot_and_or_dead = (final_mask & dqflags.pixel['HOT']) + (final_mask & dqflags.pixel['DEAD'])
+    hot_and_dead = hot_and_or_dead == (dqflags.pixel['HOT'] + dqflags.pixel['DEAD'])
+    final_mask[hot_and_dead] = np.bitwise_xor(final_mask[hot_and_dead], dqflags.pixel['DEAD'])
 
     # Save mask in reference file
     hdu_list = fits.HDUList([hdu])

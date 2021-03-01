@@ -365,11 +365,6 @@ def combine_individual_maps(bad_maps, do_not_use_flags):
     # The official bit definitions for bad pixel flavors
     dq_defs = dqflags.pixel
 
-    # Temporary fix to get around pipeline bug (which will be fixed in
-    # the next release)
-    dq_defs['REFERENCE_PIXEL'] = 128
-    dq_defs['RESERVED_4'] = 2147483648
-
     # Convert each type of bad pixel input to have the proper value,
     # and add to the final map
     do_not_use_map = np.zeros((bad_maps['DEAD'].shape)).astype(np.int)
