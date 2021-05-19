@@ -61,8 +61,9 @@ from astropy.convolution import convolve, Box2DKernel
 from astropy.io import fits, ascii
 from astropy.stats import sigma_clip
 from scipy.ndimage import median_filter
-from jwst.datamodels import dqflags, util, MaskModel, Level1bModel
+from jwst.datamodels import dqflags, MaskModel, Level1bModel
 from jwst.dq_init import DQInitStep
+from stdatamodels import util
 
 
 def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dead_search_type='sigma_rate',
