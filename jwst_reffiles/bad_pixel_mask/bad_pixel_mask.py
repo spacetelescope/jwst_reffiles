@@ -8,7 +8,8 @@ import datetime
 import os
 
 from astropy.io import fits
-from jwst.datamodels import MaskModel, util
+from jwst.datamodels import MaskModel
+from stdatamodels import util
 import numpy as np
 
 from jwst_reffiles.bad_pixel_mask import badpix_from_flats
