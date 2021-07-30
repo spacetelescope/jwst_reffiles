@@ -242,6 +242,7 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     for i, filename in enumerate(filenames):
 
         # Read in the ramp and get the data and dq arrays
+        jump_file = None
         if jump_filenames is not None:
             jump_file = jump_filenames[i]
         else:
@@ -400,7 +401,7 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     # more than N% of the time
     fully_saturated = np.sum(saturated, axis=0) / total_ints
     fully_saturated[fully_saturated < max_saturated_fraction] = 0
-    fully_saturated = np.ceil(fully_saturated).astype(np.int)
+    fully_saturated = np.ceil(fully_saturated).astype(int)
 
     fully_saturated = apply_flags(fully_saturated, flag_values['hot'])
     num_saturated = len(np.where(fully_saturated != 0)[0])
@@ -410,15 +411,15 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     rc_pedestal = np.sum(rc_from_pedestal, axis=0) / total_ints
     rc_flags = np.sum(rc_from_flags, axis=0) / total_ints
 
-    rc_from_pedestal_only = (rc_pedestal > rc_fraction_threshold).astype(np.int)
-    rc_from_jumps_only = (rc_flags > rc_fraction_threshold).astype(np.int)
+    rc_from_pedestal_only = (rc_pedestal > rc_fraction_threshold).astype(int)
+    rc_from_jumps_only = (rc_flags > rc_fraction_threshold).astype(int)
     num_rc_ped = len(np.where(rc_from_pedestal_only != 0)[0])
     num_rc_jump = len(np.where(rc_from_jumps_only != 0)[0])
     print("Found {} RC pixels from pedestal search".format(num_rc_ped))
     print("Found {} RC pixels from Jump search".format(num_rc_jump))
 
     rc = ((rc_pedestal > rc_fraction_threshold) | (rc_flags > rc_fraction_threshold))
-    rc = apply_flags(rc.astype(np.int), flag_values['rc'])
+    rc = apply_flags(rc.astype(int), flag_values['rc'])
     num_rc = len(np.where(rc != 0)[0])
     print('Found {} RC pixels.'.format(num_rc))
 
@@ -428,7 +429,7 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
 
     # Pixels that are saturated on the first group will have a PEDESTAL value
     # of 0. Pull these out of this set (these are hot pixels)
-    low_ped = apply_flags(low_ped.astype(np.int), flag_values['low_pedestal'])
+    low_ped = apply_flags(low_ped.astype(int), flag_values['low_pedestal'])
     num_low_ped = len(np.where(low_ped != 0)[0])
     print('Found {} low pedestal pixels.'.format(num_low_ped))
 
@@ -436,7 +437,7 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     high_cr = np.sum(high_cr_rate, axis=0) / total_ints
     noisy_second_pass = high_cr > high_cr_fraction
     combined_noisy = np.bitwise_or(noisy, noisy_second_pass)
-    combined_noisy = apply_flags(combined_noisy.astype(np.int), flag_values['high_cr'])
+    combined_noisy = apply_flags(combined_noisy.astype(int), flag_values['high_cr'])
 
     num_high_cr = len(np.where(noisy_second_pass != 0)[0])
     print('Found {} pixels with a high number of jumps.'.format(num_high_cr))
@@ -468,9 +469,9 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     h1.header['EXTNAME'] = 'RC'
     h2 = fits.ImageHDU(low_ped)
     h2.header['EXTNAME'] = 'LOW_PEDESTAL'
-    h3 = fits.ImageHDU(noisy.astype(np.int))
+    h3 = fits.ImageHDU(noisy.astype(int))
     h3.header['EXTNAME'] = 'NOISY'
-    h4 = fits.ImageHDU(noisy_second_pass.astype(np.int))
+    h4 = fits.ImageHDU(noisy_second_pass.astype(int))
     h4.header['EXTNAME'] = 'MANY_CRS'
     h5 = fits.ImageHDU(combined_noisy)
     h5.header['EXTNAME'] = 'NOISY_AND_CRS'
@@ -649,7 +650,7 @@ def find_pix_with_many_jumps(jump_map, max_jump_limit=10, jump_ratio_threshold=5
 
     # First look across the entire ramp for pixels that have a large number
     # of jumps. Those with more than max_jump_limit will be flagged
-    jump_map = jump_map.astype(np.int)
+    jump_map = jump_map.astype(np.int32)
     number_of_jumps = np.sum(jump_map, axis=0)
     high_jumps = number_of_jumps >= max_jump_limit
 
@@ -657,11 +658,11 @@ def find_pix_with_many_jumps(jump_map, max_jump_limit=10, jump_ratio_threshold=5
     # later in the ramp. This is a way of finding pixels with many early
     # jumps, which is a sign of an RC or IRC pixel
     number_of_groups = jump_map.shape[0]
-    early_cutoff = np.int(early_cutoff_fraction * number_of_groups)
+    early_cutoff = int(early_cutoff_fraction * number_of_groups)
     early_jump_rate = np.sum(jump_map[0:early_cutoff, :, :], axis=0) / early_cutoff
 
     # When looking later in the ramp, use the same number of groups
-    late_cutoff = np.int(number_of_groups - early_cutoff_fraction * number_of_groups)
+    late_cutoff = int(number_of_groups - early_cutoff_fraction * number_of_groups)
     late_jump_rate = np.sum(jump_map[late_cutoff:, :, :], axis=0) / (number_of_groups - late_cutoff)
 
     # Pixels with no CRs in the late groups have their rate set to a small
@@ -703,7 +704,7 @@ def slopes_not_cr(slope, number_of_jumps):
     bad = number_of_jumps != 0
 
     clean_slope = np.zeros(slope.shape, dtype=np.float)
-    iclean_slope = np.zeros(slope.shape, dtype=np.int)
+    iclean_slope = np.zeros(slope.shape, dtype=int)
     clean_slope[good] = slope[good]
     clean_slope[bad] = np.nan
     iclean_slope[good] = 1

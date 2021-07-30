@@ -8,7 +8,7 @@ import datetime
 import os
 
 from astropy.io import fits
-from jwst.datamodels import MaskModel
+from jwst.datamodels import MaskModel, dqflags
 from stdatamodels import util
 import numpy as np
 
@@ -345,7 +345,7 @@ def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=T
         hdu.header[max_open_adj_kw] = max_open_adj_norm_signal
 
     else:
-        flatmask = 0
+        flatmask = None
         hdu.header[dead_search_kw] = False
         hdu.header[low_qe_search_kw] = False
 
@@ -423,11 +423,20 @@ def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=T
         hdu.header[high_cr_frac_kw] = high_cr_fraction
 
     else:
-        darkmask = 0.
+        darkmask = None
         hdu.header[bad_from_dark_kw] = False
 
     # Combine the two masks
-    final_mask = np.bitwise_or(flatmask, darkmask)
+    if flatmask is not None:
+        if darkmask is not None:
+            final_mask = np.bitwise_or(flatmask, darkmask)
+        else:
+            final_mask = flatmask.astype(np.int32)
+    else:
+        if darkmask is not None:
+            final_mask = darkmask.astype(np.int32)
+        else:
+            raise ValueError("Neither bad pixel mask from flats nor darks exist. Unable to continue.")
 
     # Some pixels that are saturated in all groups may be flagged as hot and dead,
     # because the slope in the flat ramp appears to be zero, while the more in-depth
