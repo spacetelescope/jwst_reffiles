@@ -4,4 +4,4 @@
 jwst_reffiles modules
 """
 
-RATE_FILE_SUFFIXES = ['_0_ramp_fit', '_1_ramp_fit', '_ramp_fit_0', '_ramp_fit_1']
+RATE_FILE_SUFFIXES = ['_rate', '_0_ramp_fit', '_1_ramp_fit', '_ramp_fit_0', '_ramp_fit_1']

@@ -187,6 +187,11 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
     quality_check : bool
         If True, the pipeline is run using the output reference file to be
         sure the pipeline doens't crash
+
+    Returns
+    -------
+    final_map : numpy.ndarray
+        2D array containing the combined bad pixel map
     """
     # Inputs listed as None in the config file are read in as strings.
     # Change these to NoneType objects.
