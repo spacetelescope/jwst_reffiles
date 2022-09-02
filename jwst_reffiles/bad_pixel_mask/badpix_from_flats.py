@@ -261,7 +261,7 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
             dead_map = dead_pixels_flux_check(dead_map, science_pixels(input_ramps, instrument),
                                               flux_check)
 
-        dead_map = pad_with_refpix(dead_map, instrument)
+        dead_map = pad_with_refpix(dead_map, instrument).astype(int)
 
         # Save dead map for testing
         deadfile = os.path.join(os.path.split(output_file)[0], 'dead_map_{}.fits'.format(dead_search_type))
@@ -270,7 +270,7 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
         hlist.writeto(deadfile, overwrite=True)
 
     else:
-        dead_map = np.zeros((ydim, xdim))
+        dead_map = np.zeros((ydim, xdim), dtype=int)
 
     # Find low qe and open pixels
     if low_qe_and_open_search:
@@ -282,13 +282,13 @@ def find_bad_pix(input_files, dead_search=True, low_qe_and_open_search=True, dea
                                                                                 max_dead_signal=max_dead_norm_signal,
                                                                                 max_low_qe=max_low_qe_norm_signal,
                                                                                 max_adj_open=max_open_adj_norm_signal)
-        lowqe_map = pad_with_refpix(lowqe_map, instrument)
-        open_map = pad_with_refpix(open_map, instrument)
-        adjacent_to_open_map = pad_with_refpix(adjacent_to_open_map, instrument)
+        lowqe_map = pad_with_refpix(lowqe_map, instrument).astype(int)
+        open_map = pad_with_refpix(open_map, instrument).astype(int)
+        adjacent_to_open_map = pad_with_refpix(adjacent_to_open_map, instrument).astype(int)
     else:
-        lowqe_map = np.zeros((ydim, xdim))
-        open_map = np.zeros((ydim, xdim))
-        adjacent_to_open_map = np.zeros((ydim, xdim))
+        lowqe_map = np.zeros((ydim, xdim), dtype=int)
+        open_map = np.zeros((ydim, xdim), dtype=int)
+        adjacent_to_open_map = np.zeros((ydim, xdim), dtype=int)
 
     # Save low QE map for testing
     qefile = os.path.join(os.path.split(output_file)[0], 'low_qe_open_adjopen_maps.fits')

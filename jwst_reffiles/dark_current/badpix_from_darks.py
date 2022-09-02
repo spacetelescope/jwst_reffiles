@@ -506,7 +506,7 @@ def add_refpix(array, to_add):
     y_array, x_array = array.shape
     xdim = x_array + left_cols + right_cols
     ydim = y_array + bottom_rows + top_rows
-    full_array = np.zeros((ydim, xdim))
+    full_array = np.zeros((ydim, xdim), dtype=np.uint32)
 
     full_array[bottom_rows: bottom_rows+y_array, left_cols: left_cols+x_array] = array
     return full_array
