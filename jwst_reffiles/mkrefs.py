@@ -1542,8 +1542,7 @@ class mkrefsclass(astrotableclass):
         sys.exit(0)
 
 
-if __name__ == '__main__':
-
+def main():
     mkrefs = mkrefsclass(counter=1)
 
     # Set up a list to hold early logging info. Each element in the
@@ -1626,3 +1625,7 @@ if __name__ == '__main__':
     mkrefs.combinerefs()
 
     mkrefs.overview()
+
+
+if __name__ == '__main__':
+    main()
