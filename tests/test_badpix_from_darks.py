@@ -35,7 +35,7 @@ def test_apply_flags():
 
     print(true_value)
 
-    badmap = np.zeros((10, 10), dtype=np.int)
+    badmap = np.zeros((10, 10), dtype=int)
     true_map = np.zeros((10, 10), dtype=np.uint32)
     for i in range(10):
         badmap[i, i] = 1
@@ -171,7 +171,7 @@ def test_find_pix_with_many_jumps():
 def test_slopes_not_cr():
     slope_values = np.zeros((5, 5))
 
-    num_jumps = np.zeros((5, 5), dtype=np.int)
+    num_jumps = np.zeros((5, 5), dtype=int)
     num_jumps[0, 0] = 1
     num_jumps[1, 1] = 5
 
@@ -179,7 +179,7 @@ def test_slopes_not_cr():
     truth_clean_slopes[0, 0] = np.nan
     truth_clean_slopes[1, 1] = np.nan
 
-    truth_counter = np.ones((5, 5), dtype=np.int)
+    truth_counter = np.ones((5, 5), dtype=int)
     truth_counter[0, 0] = 0
     truth_counter[1, 1] = 0
 
@@ -211,13 +211,13 @@ def test_combine_clean_slopes():
              slope_img11, slope_img * 1.5, slope_img * 2, slope_img * 2.5]
 
     # Create an image of CR hit indicators
-    crs = np.ones((5, 5), dtype=np.int)
+    crs = np.ones((5, 5), dtype=int)
 
     # (0, 0) has a CR in every integration
     crs[0, 0] = 0
 
     # Make a CR image with a CR hit at (1, 1) as well as (0, 0)
-    crs11 = np.ones((5, 5), dtype=np.int)
+    crs11 = np.ones((5, 5), dtype=int)
     crs11[0, 0] = 0
     crs11[1, 1] = 0
 
@@ -232,7 +232,7 @@ def test_combine_clean_slopes():
     truth_stdev_slope = np.zeros((5, 5)) + 0.5590169943749475
     truth_stdev_slope[0, 0] = np.nan
     truth_stdev_slope[1, 1] = 0.408248290463863
-    truth_num_good = np.zeros((5, 5), dtype=np.int) + 8
+    truth_num_good = np.zeros((5, 5), dtype=int) + 8
     truth_num_good[0, 0] = 0
     truth_num_good[1, 1] = 6
 
@@ -275,7 +275,7 @@ def test_saturated_in_all_groups():
 
     satpix = bpd.saturated_in_all_groups(pedestal, group_sat)
 
-    truth_sat = np.zeros((5, 5), dtype=np.int)
+    truth_sat = np.zeros((5, 5), dtype=int)
     truth_sat[2, 2] = 1
 
     assert np.all(satpix == truth_sat)
