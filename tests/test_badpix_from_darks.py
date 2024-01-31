@@ -175,7 +175,7 @@ def test_slopes_not_cr():
     num_jumps[0, 0] = 1
     num_jumps[1, 1] = 5
 
-    truth_clean_slopes = np.zeros((5, 5), dtype=np.float)
+    truth_clean_slopes = np.zeros((5, 5), dtype=float)
     truth_clean_slopes[0, 0] = np.nan
     truth_clean_slopes[1, 1] = np.nan
 

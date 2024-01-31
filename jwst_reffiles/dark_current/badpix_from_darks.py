@@ -703,7 +703,7 @@ def slopes_not_cr(slope, number_of_jumps):
     good = number_of_jumps == 0
     bad = number_of_jumps != 0
 
-    clean_slope = np.zeros(slope.shape, dtype=np.float)
+    clean_slope = np.zeros(slope.shape, dtype=float)
     iclean_slope = np.zeros(slope.shape, dtype=int)
     clean_slope[good] = slope[good]
     clean_slope[bad] = np.nan
