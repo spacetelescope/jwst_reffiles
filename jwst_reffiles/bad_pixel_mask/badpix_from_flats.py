@@ -373,8 +373,8 @@ def combine_individual_maps(bad_maps, do_not_use_flags):
 
     # Convert each type of bad pixel input to have the proper value,
     # and add to the final map
-    do_not_use_map = np.zeros((bad_maps['DEAD'].shape)).astype(np.int)
-    use_map = np.zeros((bad_maps['DEAD'].shape)).astype(np.int)
+    do_not_use_map = np.zeros((bad_maps['DEAD'].shape)).astype(int)
+    use_map = np.zeros((bad_maps['DEAD'].shape)).astype(int)
     for pix_type in do_not_use_flags:
         if pix_type in dq_defs.keys():
             if pix_type in bad_maps.keys():
@@ -564,8 +564,8 @@ def dead_pixels_sigma_rate(rate_image, mean_rate, stdev_rate, sigma=5.):
     dead_pix_map : numpy.ndarray
         2D map showing DEAD pixels. Good pixels have a value of 0.
     """
-    dead_pix_map = (rate_image < (mean_rate - sigma * stdev_rate)).astype(np.int)
-    return dead_pix_map.astype(np.int)
+    dead_pix_map = (rate_image < (mean_rate - sigma * stdev_rate)).astype(int)
+    return dead_pix_map.astype(int)
 
 
 def dead_pixels_absolute_rate(rate_image, max_dead_signal=0.05):
@@ -586,8 +586,8 @@ def dead_pixels_absolute_rate(rate_image, max_dead_signal=0.05):
     dead_pix_map : numpy.ndarray
         2D map showing DEAD pixels. Good pixels have a value of 0.
     """
-    dead_pix_map = (rate_image < max_dead_signal).astype(np.int)
-    return dead_pix_map.astype(np.int)
+    dead_pix_map = (rate_image < max_dead_signal).astype(int)
+    return dead_pix_map.astype(int)
 
 
 def dead_pixels_flux_check(dead_pix_map, ave_group, flux_check):
@@ -620,12 +620,12 @@ def dead_pixels_flux_check(dead_pix_map, ave_group, flux_check):
 
     ibad = len(index[0])
 
-    updated_pix_map = np.logical_and(dead_pix_map == 1, final_ave_group < flux_check).astype(np.int)
+    updated_pix_map = np.logical_and(dead_pix_map == 1, final_ave_group < flux_check).astype(int)
     index = np.where(updated_pix_map == 1)
 
     iupdated = len(index[0])
     print('Number of pixels removed from dead pixel mask after flux check', ibad - iupdated)
-    return updated_pix_map.astype(np.int)
+    return updated_pix_map.astype(int)
 
 
 def extract_10th_group(hdu_list):
@@ -738,9 +738,9 @@ def find_open_and_low_qe_pixels(rate_image, max_dead_signal=0.05, max_low_qe=0.5
     """
     ydim, xdim = rate_image.shape
 
-    low_qe_map = np.zeros((ydim, xdim)).astype(np.int)
-    open_pix_map = np.zeros((ydim, xdim)).astype(np.int)
-    adj_pix_map = np.zeros((ydim, xdim)).astype(np.int)
+    low_qe_map = np.zeros((ydim, xdim)).astype(int)
+    open_pix_map = np.zeros((ydim, xdim)).astype(int)
+    adj_pix_map = np.zeros((ydim, xdim)).astype(int)
     low_sig_y, low_sig_x = np.where((rate_image >= max_dead_signal) & (rate_image < max_low_qe))
 
     for x, y in zip(low_sig_x, low_sig_y):
@@ -931,7 +931,7 @@ def manual_flags(filename, map_shape, no_use):
     tab = ascii.read(filename)
 
     # Create empty mask
-    mask = np.zeros(map_shape).astype(np.int)
+    mask = np.zeros(map_shape).astype(int)
 
     # Pixel index columns can have string or integer data.
     # If we have strings, convert to integer, watching for
@@ -1001,7 +1001,7 @@ def miri_bad_columns(dimensions):
 
     print('*************',dimensions)
 
-    shorted_map = np.zeros(dimensions).astype(np.int)
+    shorted_map = np.zeros(dimensions).astype(int)
     shorted_map[:, 384:386] = 1
     return shorted_map
 
@@ -1217,7 +1217,7 @@ def reference_pixel_map(dimensions, instrument_name):
 
     """
     yd, xd = dimensions
-    ref_map = np.zeros(dimensions).astype(np.int)
+    ref_map = np.zeros(dimensions).astype(int)
 
     ref_map[:, 0:4] = 1
     ref_map[:, xd-4:xd] = 1
@@ -1249,7 +1249,7 @@ def range_format(table_cell, total_dimension):
         The maximum index number to be returned
     """
     try:
-        value = np.int(table_cell)
+        value = int(table_cell)
         vals = [value, value+1]
     except ValueError:
         vals = table_cell.split(':')
@@ -1257,7 +1257,7 @@ def range_format(table_cell, total_dimension):
             vals[0] = 0
         if vals[1] == '':
             vals[1] = total_dimension - 1
-        vals = [np.int(val) for val in vals]
+        vals = [int(val) for val in vals]
         vals[1] += 1
     return vals
 
@@ -1468,8 +1468,8 @@ def split_row(line, colname):
         a range is given (e.g. 200:210), then values will be [200, 210].
     """
     try:
-        val = np.int(line[colname])
+        val = int(line[colname])
         values = [val]
     except ValueError:
-        values = [np.int(e) for e in line[colname].split(':')]
+        values = [int(e) for e in line[colname].split(':')]
     return values

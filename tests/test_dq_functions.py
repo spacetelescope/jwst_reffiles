@@ -12,7 +12,7 @@ from jwst_reffiles.utils import dq_flags
 def test_flag_map():
     """Test the extraction of a single bit into a map
     """
-    dq = np.zeros((5, 5)).astype(np.int)
+    dq = np.zeros((5, 5)).astype(int)
 
     # Insert bits
 
@@ -35,19 +35,19 @@ def test_flag_map():
     hot_map = dq_flags.flag_map(dq, 'HOT')
     sat_map = dq_flags.flag_map(dq, 'SATURATED')
 
-    jump_map_true = np.zeros((5, 5)).astype(np.int)
+    jump_map_true = np.zeros((5, 5)).astype(int)
     jump_map_true[0, 0] = 1
     jump_map_true[2, 2] = 1
     jump_map_true[3, 3] = 1
 
-    assert np.all(jump_map.astype(np.int) == jump_map_true)
+    assert np.all(jump_map.astype(int) == jump_map_true)
 
-    hot_map_true = np.zeros((5, 5)).astype(np.int)
+    hot_map_true = np.zeros((5, 5)).astype(int)
     hot_map_true[3, 3] = 1
     hot_map_true[4, 4] = 1
-    assert np.all(hot_map.astype(np.int) == hot_map_true)
+    assert np.all(hot_map.astype(int) == hot_map_true)
 
-    sat_map_true = np.zeros((5, 5)).astype(np.int)
+    sat_map_true = np.zeros((5, 5)).astype(int)
     sat_map_true[1, 1] = 1
     sat_map_true[2, 2] = 1
-    assert np.all(sat_map.astype(np.int) == sat_map_true)
+    assert np.all(sat_map.astype(int) == sat_map_true)

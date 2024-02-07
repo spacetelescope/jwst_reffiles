@@ -38,7 +38,7 @@ def collapse_cr_map(dq_map):
     nints, ngroups, ny, nx = dq_map.shape
 
     # Create an array containing all group indexes
-    all_groups = np.zeros((1, ngroups, 1, 1), dtype=np.int)
+    all_groups = np.zeros((1, ngroups, 1, 1), dtype=int)
     all_groups[0, :, 0, 0] = np.arange(ngroups)
     intermediate1 = np.repeat(all_groups, nints, axis=0)
     intermediate2 = np.repeat(intermediate1, ny, axis=2)
@@ -165,8 +165,8 @@ def signals_per_group(number_of_good, ngroup):
         within each group
     """
     nint, ny, nx = number_of_good.shape
-    good_per_group = np.zeros((ngroup, ny, nx)).astype(np.int)
-    bad_per_group = np.zeros((ngroup, ny, nx)).astype(np.int)
+    good_per_group = np.zeros((ngroup, ny, nx)).astype(int)
+    bad_per_group = np.zeros((ngroup, ny, nx)).astype(int)
 
     for group in range(ngroup):
         grp_map = np.sum(group < number_of_good, axis=0)

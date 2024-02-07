@@ -109,7 +109,7 @@ def test_dead_pixels_sigma_rate():
 
     dead = bpm.dead_pixels_sigma_rate(test, mean_val, dev_val, sigma=sigma_val)
 
-    manual = (test < (mean_val - dev_val * sigma_val)).astype(np.int)
+    manual = (test < (mean_val - dev_val * sigma_val)).astype(int)
     assert np.all(dead == manual)
 
 
