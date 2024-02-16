@@ -986,7 +986,7 @@ def read_slope_files(filenames):
     print('METADATA check turned off for testing with old NIRCAM data that is missing keywords')
     for i, filename in enumerate(filenames):
         # Read all of the slope data into an array
-        slope_file = filename.replace('jump.fits', 'rateint.fits')
+        slope_file = filename.replace('jump.fits', 'rateints.fits')
         with fits.open(slope_file) as hdulist:
             slope_img = hdulist['SCI'].data
             dq_img = hdulist['DQ'].data
