@@ -52,7 +52,7 @@ flag_mapping_kw = 'BPDMAPS'
 
 def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=True,
                dead_search_type='sigma_rate', flat_mean_sigma_threshold=3, flat_mean_normalization_method='smoothed',
-               smoothing_box_width=15, smoothing_type='Box2D', dead_sigma_threshold=5.,  max_dead_norm_signal=0.,
+               smoothing_box_width=15, smoothing_type='Box2D', dead_sigma_threshold=5.,  max_dead_norm_signal=None,
                run_dead_flux_check=False, dead_flux_check_files=None, flux_check=45000, max_low_qe_norm_signal=0.5,
                max_open_adj_norm_signal=1.05, manual_flag_file='default', flat_do_not_use=[],
                dark_slope_files=None, dark_uncal_files=None, dark_jump_files=None, dark_fitopt_files=None,
@@ -339,7 +339,7 @@ def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=T
         #hdu.header[dead_zero_sig_frac_kw] = dead_zero_signal_fraction
         hdu.header[dead_flux_check_kw] = run_dead_flux_check
         #hdu.header[dead_flux_file_kw] = dead_flux_check_files
-        if dead_search_type_kw == 'absolute_rate':
+        if ((dead_search_type_kw == 'absolute_rate') & (max_dead_norm_signal is not None)):
             hdu.header[max_dead_sig_kw] = max_dead_norm_signal
         hdu.header[manual_flag_kw] = manual_flag_file
         hdu.header[max_low_qe_kw] = max_low_qe_norm_signal
