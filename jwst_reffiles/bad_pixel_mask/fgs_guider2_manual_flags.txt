@@ -12,7 +12,7 @@
 #
 # This is a list of bad pixels for the NIRCam A1 detector
 #
-# x       y       flag
+  x       y       flag
 1023    1023      dead
 0:2047    0       dead
 0      0:2047     low_qe

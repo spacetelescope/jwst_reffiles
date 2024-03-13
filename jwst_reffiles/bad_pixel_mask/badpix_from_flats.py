@@ -913,7 +913,8 @@ def manual_flags(filename, map_shape, no_use):
     Parameters
     ----------
     filename : str
-        Name of ascii file containing flags
+        Name of ascii file containing flags. File must contain columns
+        'x', 'y', 'flags'
 
     map_shape : tup
         Shape of the bad pixel mask to create (y, x)
