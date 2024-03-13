@@ -339,7 +339,8 @@ def bad_pixels(flat_slope_files=None, dead_search=True, low_qe_and_open_search=T
         #hdu.header[dead_zero_sig_frac_kw] = dead_zero_signal_fraction
         hdu.header[dead_flux_check_kw] = run_dead_flux_check
         #hdu.header[dead_flux_file_kw] = dead_flux_check_files
-        hdu.header[max_dead_sig_kw] = max_dead_norm_signal
+        if ((dead_search_type_kw == 'absolute_rate') & (max_dead_norm_signal is not None)):
+            hdu.header[max_dead_sig_kw] = max_dead_norm_signal
         hdu.header[manual_flag_kw] = manual_flag_file
         hdu.header[max_low_qe_kw] = max_low_qe_norm_signal
         hdu.header[max_open_adj_kw] = max_open_adj_norm_signal
@@ -707,7 +708,7 @@ def save_final_map(bad_pix_map, instrument, detector, hdulist, files, author, de
     model.history.append(util.create_history_entry(dark_do_not_use_descrip))
 
     # Add the list of input files used to create the map
-    model.history.append('DATA USED:')
+    model.history.append(util.create_history_entry('DATA USED:'))
     for file in files:
         totlen = len(file)
         div = np.arange(0, totlen, 60)
@@ -724,4 +725,4 @@ def save_final_map(bad_pix_map, instrument, detector, hdulist, files, author, de
             model.history.append(util.create_history_entry(history_entry))
 
     model.save(outfile, overwrite=True)
-    print('Final bad pixel mask reference file save to: {}'.format(outfile))
+    print('Final bad pixel mask reference file saved to: {}'.format(outfile))
