@@ -302,10 +302,13 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
             mean_pedestal = np.mean(clipped_pedestal)
             std_pedestal = np.std(clipped_pedestal)
 
-            rc_from_pedestal[counter, :, :] += pedestal_int > (mean_pedestal + std_pedestal * pedestal_sigma_threshold)
+            max_good_pedestal = mean_pedestal + std_pedestal * pedestal_sigma_threshold
+            print(f'Looking for RC pixels, the max good pedestal value is {max_good_pedestal}')
+            rc_from_pedestal[counter, :, :] += pedestal_int > max_good_pedestal
 
             # Pixels with abnormally low pedestal values
-            pedestal_low = pedestal_int < (mean_pedestal - std_pedestal * pedestal_sigma_threshold)
+            min_good_pedestal = mean_pedestal - std_pedestal * pedestal_sigma_threshold
+            pedestal_low = pedestal_int < min_good_pedestal
             first_group_sat = np.bitwise_and(first_group, dqflags.pixel['SATURATED'])
 
             # do not allow pixels saturated on group 1 to be marked as low pedestal
