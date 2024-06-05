@@ -24,9 +24,6 @@ classifiers = [
 ]
 dynamic = ['version']
 
-[project.urls]
-repository = "https://github.com/spacetelescope/jwst_reffiles.git"
-
 [project.scripts]
 mkrefs = "jwst_reffiles.mkrefs:main"
 
