@@ -1,0 +1,49 @@
+[project]
+name = "jwst_reffiles"
+description = 'A tool to create CRDS-formatted reference files for JWST from a set of input dark current files and a set of flat field files.'
+readme = 'README.md'
+requires-python = '>=3.8'
+authors = [
+  { name = "STScI (Rest, Hilbert, Canipe, et al.)", email = "arest@stsci.edu" },
+]
+license = { text = "BSD-3-Clause" }
+dependencies = [
+  'astropy>=4.0',
+  'jwst',
+  'numpy>=1.16',
+  'matplotlib>=1.4.3',
+  'scipy>=1.1',
+]
+classifiers = [
+  'Intended Audience :: Science/Research',
+  'License :: OSI Approved :: BSD License',
+  'Operating System :: OS Independent',
+  'Programming Language :: Python',
+  'Topic :: Scientific/Engineering :: Astronomy',
+  'Topic :: Software Development :: Libraries :: Python Modules',
+]
+dynamic = ['version']
+
+[project.urls]
+repository = "https://github.com/spacetelescope/jwst_reffiles.git"
+
+[project.scripts]
+mkrefs = "jwst_reffiles.mkrefs:main"
+
+[project.optional-dependencies]
+docs = ["nbsphinx", "ipykernel", "sphinx", "sphinx_rtd_theme"]
+test = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=61.2", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+
+[tool.setuptools.packages.find]
+namespaces = false
+
+[tool.setuptools.package-data]
+jwst_reffiles = ["bad_pixel_mask/*.txt"]
+
+[tool.setuptools_scm]
