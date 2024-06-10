@@ -1,5 +1,0 @@
-numpy
-sphinx
-ipykernel
-nbsphinx
-jwst
