@@ -49,7 +49,7 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
                  max_saturated_fraction=0.5,
                  max_jump_limit=10, jump_ratio_threshold=5, early_cutoff_fraction=0.25,
                  pedestal_sigma_threshold=5, rc_fraction_threshold=0.8, low_pedestal_fraction=0.8,
-                 high_cr_fraction=0.8,
+                 high_cr_fraction=0.8, hot_pix_frac_threshold=0.75,
                  flag_values={'hot': ['HOT'], 'rc': ['RC'], 'low_pedestal': ['OTHER_BAD_PIXEL'], 'high_cr': ["TELEGRAPH"]},
                  do_not_use=['hot', 'rc', 'low_pedestal', 'high_cr'], outfile=None, plot=False):
     """MAIN FUNCTION
@@ -160,9 +160,9 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     # needed in each pixel in order to determine a good stdev value. So
     # let's check the number of input files here and quit if there are
     # fewer than 5.
-    if len(filenames) < 5:
-        print(filenames)
-        raise ValueError("ERROR: >5 input files are required to find bad pixels from darks.")
+    #if len(filenames) < 5:
+    #    print(filenames)
+    #    raise ValueError("ERROR: >5 input files are required to find bad pixels from darks.")
 
     # Add DO_NOT_USE to all requested types of bad pixels
     do_not_use = [element.lower() for element in do_not_use]
@@ -225,12 +225,41 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
                              outdir, titleplot,
                              "histo_std_withjumps.png", xaxis_log=True)
 
+
+
+    #should we add a hot pixel check here?
+    #essentially the same check on delta signal as rc_from_pedestal, but without the high pedestal requirement?
+
+    #rc_from_pedestal catches RC pix with high pedestal level. rc_from_flags catches the RC pixels that have
+    #the traditional shape with large signal increase initially followed by flattened section
+
+    #but what about pixels with large delta signal, but not shaped in quite the right way to be caught as RC?
+
+
+    # nominal dark rate = 0.04 e/s in LW = 0.033 DN/s
+    #                     0.003 e/s in SW = 0.0015 DN/sec
+    channel = fits.getheader(filenames[0])['CHANNEL']
+    if channel == 'SW':
+        min_hot_slope = 0.04  # DN/sec
+    else:
+        min_hot_slope = 0.05  # DN/sec
+
+    hot_slopes =  (slopes >= min_hot_slope).astype(int)
+    hot_slopes_frac = np.sum(hot_slopes, axis=0) / shape_slope[0]
+    hot_pix = np.zeros(slopes.shape[1:])
+    hot_pix[np.where(hot_slopes_frac >= hot_pix_frac_threshold)] = 1
+
+    hot_pix = apply_flags(hot_pix, flag_values['hot'])
+    num_hot = len(np.where(hot_pix != 0)[0])
+    print('\n\nFound {} hot pixels.'.format(num_hot))
+
     # Read in the optional outputs from the ramp-fitting step, so that
     # we can look at the y-intercepts and the jump flags
 
     saturated = np.zeros(slopes.shape)
     rc_from_pedestal = np.zeros(slopes.shape)
     low_pedestal = np.zeros(slopes.shape)
+    high_pedestal = np.zeros(slopes.shape)
     high_cr_rate = np.zeros(slopes.shape)
     rc_from_flags = np.zeros(slopes.shape)
     slope_stack = []
@@ -259,6 +288,7 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
         print('Opening Jump File {}'.format(jump_file))
         groupdq = dq_flags.get_groupdq(jump_file, refpix_additions)
         cr_map = dq_flags.flag_map(groupdq, 'JUMP_DET')
+        jump_ramp = fits.getdata(jump_file)
 
         # Get slope data corresponding to this file by extracting the
         # appropriate frames from the ``slopes`` stack
@@ -302,9 +332,32 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
             mean_pedestal = np.mean(clipped_pedestal)
             std_pedestal = np.std(clipped_pedestal)
 
-            max_good_pedestal = mean_pedestal + std_pedestal * pedestal_sigma_threshold
+            #max_good_pedestal = mean_pedestal + std_pedestal * pedestal_sigma_threshold
+            # sigma clipped mean pedestal is 3.85DN, and the sigma-clipped stdev is 22.7DN.
+            # So the 5-sigma limit that we use is a pedestal value of ~117DN, which is too low.
+            # Nominal pixels are being flagged. Can either use a much higher sigma value, or
+            # just set it to a constant.
+            max_good_pedestal = 1000.  # The sigma-based version above is too low.
+
             print(f'Looking for RC pixels, the max good pedestal value is {max_good_pedestal}')
-            rc_from_pedestal[counter, :, :] += pedestal_int > max_good_pedestal
+
+            # Let's also impose a requirement that the abs(signal difference) between the first
+            # and last group must be above some threshold.
+            max_delta_signal = 200  # DN
+            min_delta_signal = -100  # DN
+            print('pedestal_int shape: ', pedestal_int.shape)
+            delta_signal = np.abs(jump_ramp[int_num, -1, 4:2044, 4:2044] - jump_ramp[int_num, 0, 4:2044, 4:2044])
+            #rc_from_pedestal[counter, :, :] += ((pedestal_int > max_good_pedestal) & (delta_signal > max_delta_signal))
+            rc_from_pedestal[counter, :, :] += ((jump_ramp[int_num, 0, 4:2044, 4:2044] > max_good_pedestal) & (delta_signal > max_delta_signal))
+
+            # Here's another option
+            #delta_signal = jump_ramp[int_num, -1, :, :] - jump_ramp[int_num, 0, :, :]
+            #rc_from_pedestal[counter, :, :] += ((jump_ramp[int_num, 0, :, :] > max_good_pedestal) & \
+            #    ((delta_signal > max_delta_signal) | (delta_signal < min_delta_signal)))
+
+            # Pixels with high pedestal values but no large signal variation will be flagged
+            # as hot(?) and do_not_use
+            high_pedestal[counter, :, :] += ((pedestal_int > max_good_pedestal) & (delta_signal <= max_delta_signal))
 
             # Pixels with abnormally low pedestal values
             min_good_pedestal = mean_pedestal - std_pedestal * pedestal_sigma_threshold
@@ -330,12 +383,15 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
             # well as those that have most of their jumps concentrated in the
             # early part of the integration. The latter are possibly RC or IRC
             # pixels
-            many_jumps, rc_candidates, number_of_jumps =\
+            many_jumps, rc_candidates, high_jumps_not_rc, number_of_jumps =\
                 find_pix_with_many_jumps(cr_map[int_num, :, :, :], max_jump_limit=10,
                                          jump_ratio_threshold=5,
                                          early_cutoff_fraction=0.25)
 
-            high_cr_rate[counter, :, :] += many_jumps
+            # Keep track of pixels that have a high number of jumps, but do not fall into
+            # the potential RC category separately from potential RC pixels. The former
+            # may be classified as telegraph pixels
+            high_cr_rate[counter, :, :] += high_jumps_not_rc  #many_jumps
             rc_from_flags[counter, :, :] += rc_candidates
 
             # using the number_of_jumps (a per integration value) create a clean set of
@@ -430,26 +486,41 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     low_pedestal_vals = np.sum(low_pedestal, axis=0) / total_ints
     low_ped = low_pedestal_vals > low_pedestal_fraction
 
+    # High pedestal pixels - use the same pixel fraction as the low pedestal pixels
+    high_pedestal_vals = np.sum(high_pedestal, axis=0) / total_ints
+    high_ped = high_pedestal_vals > low_pedestal_fraction
+
+    # Keep only high pedestal pixels that are not flagged as RC. These will be flagged
+    # as hot.
+    high_ped_not_rc = ((high_ped != 0) & (rc == 0))
+
     # Pixels that are saturated on the first group will have a PEDESTAL value
     # of 0. Pull these out of this set (these are hot pixels)
     low_ped = apply_flags(low_ped.astype(int), flag_values['low_pedestal'])
     num_low_ped = len(np.where(low_ped != 0)[0])
     print('Found {} low pedestal pixels.'.format(num_low_ped))
 
+    high_ped_not_rc = apply_flags(high_ped_not_rc.astype(int), flag_values['hot'])
+    num_high_ped = len(np.where(high_ped_not_rc != 0)[0])
+    print('Found {} high pedestal pixels without large signal changes.'.format(num_high_ped))
+
     # Pixels with lots of CR flags should be added to the list of noisy pixels?
     high_cr = np.sum(high_cr_rate, axis=0) / total_ints
-    noisy_second_pass = high_cr > high_cr_fraction
-    combined_noisy = np.bitwise_or(noisy, noisy_second_pass)
-    combined_noisy = apply_flags(combined_noisy.astype(int), flag_values['high_cr'])
+    high_cr_pix = high_cr > high_cr_fraction
+    high_cr_pix = apply_flags(high_cr_pix.astype(int), flag_values['high_cr'])
 
-    num_high_cr = len(np.where(noisy_second_pass != 0)[0])
+    noisy = apply_flags(noisy.astype(int), flag_values['unreliable_slope'])
+    #combined_noisy = np.bitwise_or(noisy, high_cr_pix)
+    #combined_noisy = apply_flags(combined_noisy.astype(int), flag_values['high_cr'])
+
+    num_high_cr = len(np.where(high_cr_pix != 0)[0])
     print('Found {} pixels with a high number of jumps.'.format(num_high_cr))
     print('Found {} pixels with noise above the threshold.'.format(num_noisy))
-    num_combined_noisy = len(np.where(combined_noisy != 0)[0])
-    print('Combining noisy and high jump pixels, found {} noisy pixels.'.format(num_combined_noisy))
+    #num_combined_noisy = len(np.where(combined_noisy != 0)[0])
+    #print('Combining noisy and high jump pixels, found {} noisy pixels.'.format(num_combined_noisy))
 
     # Combine the various flavors of bad pixels into a final DQ map
-    bad_pixels = combine_bad_pixel_types(fully_saturated, rc, low_ped, combined_noisy)
+    bad_pixels = combine_bad_pixel_types(fully_saturated, rc, low_ped, high_ped, noisy, high_cr_pix, hot_pix)
 
     # Add the reference pixels back into the bad pixel map
     bad_pixels = add_refpix(bad_pixels, refpix_additions)
@@ -470,15 +541,18 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     h1b.header['EXTNAME'] = 'RC_FROM_JUMPS'
     h1 = fits.ImageHDU(rc)
     h1.header['EXTNAME'] = 'RC'
-    h2 = fits.ImageHDU(low_ped)
-    h2.header['EXTNAME'] = 'LOW_PEDESTAL'
-    h3 = fits.ImageHDU(noisy.astype(int))
-    h3.header['EXTNAME'] = 'NOISY'
-    h4 = fits.ImageHDU(noisy_second_pass.astype(int))
-    h4.header['EXTNAME'] = 'MANY_CRS'
-    h5 = fits.ImageHDU(combined_noisy)
-    h5.header['EXTNAME'] = 'NOISY_AND_CRS'
-    hlist = fits.HDUList([h0, h1a, h1b, h1, h2, h3, h4, h5])
+    h2 = fits.ImageHDU(high_ped_not_rc)
+    h2.header['EXTNAME'] = 'HIGH_PEDESTAL'
+    h3 = fits.ImageHDU(low_ped)
+    h3.header['EXTNAME'] = 'LOW_PEDESTAL'
+    h4 = fits.ImageHDU(noisy.astype(int))
+    h4.header['EXTNAME'] = 'NOISY_SLOPES'
+    h5 = fits.ImageHDU(high_cr.astype(int))
+    h5.header['EXTNAME'] = 'MANY_CRS_NOT_RC'
+    h6 = fits.ImageHDU(hot_pix.astype(int))
+    h6.header['EXTNAME'] = 'HOT'
+
+    hlist = fits.HDUList([h0, h1a, h1b, h1, h2, h3, h4, h5, h6])
     hlist.writeto(outfile, overwrite=True)
     print('Multi-extension file with individual types of bad pixels saved to:')
     print(outfile)
@@ -578,7 +652,7 @@ def check_metadata(hdr, comp):
                                  .format(key, file_name, compare_name))
 
 
-def combine_bad_pixel_types(sat_map, rc_map, low_pedestal_map, high_cr_map):
+def combine_bad_pixel_types(sat_map, rc_map, low_pedestal_map, high_pedestal_map, noisy_map, high_cr_map, hot_map):
     """Copmbine individual maps of bad pixel types into a final bad pixel
     map, using flag values defined in ``dq_flags``.
 
@@ -607,7 +681,10 @@ def combine_bad_pixel_types(sat_map, rc_map, low_pedestal_map, high_cr_map):
 
     sat_and_rc = np.bitwise_or(sat_map, rc_map)
     add_pedestal = np.bitwise_or(sat_and_rc, low_pedestal_map)
-    final_map = np.bitwise_or(add_pedestal, high_cr_map)
+    add_high_pedestal = np.bitwise_or(add_pedestal, high_pedestal_map)
+    add_telegraph = np.bitwise_or(add_pedestal, high_cr_map)
+    add_noisy = np.bitwise_or(add_telegraph, noisy_map)
+    final_map = np.bitwise_or(add_noisy, hot_map)
     return final_map
 
 
@@ -677,9 +754,12 @@ def find_pix_with_many_jumps(jump_map, max_jump_limit=10, jump_ratio_threshold=5
     # of jumps.
     jump_ratio = early_jump_rate / late_jump_rate
     potential_rc = ((jump_ratio >= jump_ratio_threshold) & (high_jumps == 1))
+
+    #high_jumps_not_rc = ((jump_ratio < jump_ratio_threshold) & (high_jumps == 1))
+    high_jumps_not_rc = ((high_jumps == True) & (potential_rc == False))
 #    print('Number of potential_rc pixels based on Jumps: ', len(np.where(potential_rc == 1)[0]))
 
-    return high_jumps, potential_rc, number_of_jumps
+    return high_jumps, potential_rc, high_jumps_not_rc, number_of_jumps
 
 
 def slopes_not_cr(slope, number_of_jumps):
@@ -728,6 +808,14 @@ def combine_clean_slopes(slope_stack, islope_stack):
     """
     slopes = np.array(slope_stack)
     islopes = np.array(islope_stack)
+
+    # Throw out the highest N slope values in each pixel, to try to minimize effects
+    # from unflagged snowball edges and persistence? We have very limited data, so let's
+    # set N=2 for the moment
+    print('Throwing out the 2 highest slope values from each pixel to protect against persistence')
+    sorted_slopes = np.sort(slope_stack, axis=0)
+    sorted_slopes = sorted_slopes[0:-2, :, :]
+    slopes = sorted_slopes
 
     mean_slope = np.nanmean(slopes, axis=0)
     std_slope = np.nanstd(slopes, axis=0)
