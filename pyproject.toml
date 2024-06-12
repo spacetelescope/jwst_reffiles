@@ -1,8 +1,13 @@
+[build-system]
+requires = ["setuptools>=61.2", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "jwst_reffiles"
 description = 'A tool to create CRDS-formatted reference files for JWST from a set of input dark current files and a set of flat field files.'
 readme = 'README.md'
 requires-python = '>=3.8'
+version = "1.0.1"  # Static version
 authors = [
   { name = "STScI (Rest, Hilbert, Canipe, et al.)", email = "arest@stsci.edu" },
 ]
@@ -22,7 +27,6 @@ classifiers = [
   'Topic :: Scientific/Engineering :: Astronomy',
   'Topic :: Software Development :: Libraries :: Python Modules',
 ]
-dynamic = ['version']
 
 [project.scripts]
 mkrefs = "jwst_reffiles.mkrefs:main"
@@ -31,10 +35,6 @@ mkrefs = "jwst_reffiles.mkrefs:main"
 docs = ["nbsphinx", "ipykernel", "sphinx", "sphinx_rtd_theme"]
 test = ["pytest"]
 
-[build-system]
-requires = ["setuptools>=61.2", "setuptools_scm"]
-build-backend = "setuptools.build_meta"
-
 [tool.setuptools]
 
 [tool.setuptools.packages.find]
@@ -42,5 +42,3 @@ namespaces = false
 
 [tool.setuptools.package-data]
 jwst_reffiles = ["bad_pixel_mask/*.txt"]
-
-[tool.setuptools_scm]
