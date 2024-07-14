@@ -35,7 +35,6 @@ import copy
 import os
 from jwst.datamodels import dqflags
 import numpy as np
-from os import path
 import matplotlib.pyplot as plt
 from scipy.stats import sigmaclip
 import matplotlib.cm as cm

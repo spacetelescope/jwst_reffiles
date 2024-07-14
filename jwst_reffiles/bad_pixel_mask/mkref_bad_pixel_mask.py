@@ -6,18 +6,13 @@ decided upon by the JWST reference file generation working group.
 This class is based on that in the
 template file: jwst_reffiles/templates/plugin_template.py
 """
-import argparse
 import copy
 import os
-import re
-import sys
-import types
 
 from jwst_reffiles.plugin_wrapper import mkrefclass_template
 
 from jwst_reffiles.bad_pixel_mask import bad_pixel_mask as bpm
 from jwst_reffiles.utils.constants import RATE_FILE_SUFFIXES
-from jwst_reffiles.utils.definitions import PIPE_STEPS
 
 
 class mkrefclass(mkrefclass_template):

@@ -18,8 +18,7 @@ reference files here.
 Version 0.0 - 20 Jan 2017 - BNH
 '''
 
-import os,sys
-import argparse
+import os
 from collections import OrderedDict
 import fnmatch
 from glob import glob
