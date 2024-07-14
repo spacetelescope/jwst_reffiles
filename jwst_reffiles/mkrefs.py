@@ -5,23 +5,16 @@ A. Rest
 '''
 import argparse
 import glob
-import os,re,sys,types,copy,random
+import os,re,sys,copy,random
 import logging
-from logging import StreamHandler
-from logging.handlers import RotatingFileHandler
-
-import astropy.io.fits as fits
-from astropy.io import ascii
-import astropy
 import numpy as np
-import scipy
 
 from jwst_reffiles.plugin_wrapper import mkrefclass_template
 from jwst_reffiles.pipeline.calib_prep import CalibPrep
 from jwst_reffiles.pipeline import pipeline_steps
-from jwst_reffiles.utils.logging_functions import configure_logging, log_info, log_fail, make_log_file
+from jwst_reffiles.utils.logging_functions import configure_logging, log_info, log_fail
 from jwst_reffiles.utils.tools import astrotableclass, yamlcfgclass
-from jwst_reffiles.utils.tools import makepath, executecommand, append2file, rmfile
+from jwst_reffiles.utils.tools import makepath, executecommand, rmfile
 
 # get the root dir of the code. This is needed only if the scripts are not installed as a module!
 #if 'JWST_MKREFS_SRCDIR' in os.environ:

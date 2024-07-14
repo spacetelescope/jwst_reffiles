@@ -52,7 +52,6 @@ Dependencies
     - astropy
     - numpy
 """
-import argparse
 import copy
 import numpy as np
 import os
@@ -61,7 +60,7 @@ from astropy.convolution import convolve, Box2DKernel
 from astropy.io import fits, ascii
 from astropy.stats import sigma_clip
 from scipy.ndimage import median_filter
-from jwst.datamodels import dqflags, MaskModel, Level1bModel
+from jwst.datamodels import dqflags, MaskModel
 from jwst.dq_init import DQInitStep
 from stdatamodels import util
 

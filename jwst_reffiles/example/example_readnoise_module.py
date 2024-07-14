@@ -13,7 +13,6 @@ boxes across the detector.
 We'll also add some unique options in order to explore how to propagate
 those into the jwst_reffiles world.
 """
-import os
 import copy
 
 from astropy.io import fits
