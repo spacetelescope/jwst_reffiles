@@ -132,7 +132,7 @@ class Dark():
         pix_per_fullframe_group = x_fullframe_dim * y_fullframe_dim
 
         pix_per_group = self.metadata['SUBSIZE1'] * self.metadata['SUBSIZE2']
-        pix_ratio = np.int(pix_per_fullframe_group / pix_per_group)
+        pix_ratio = int(pix_per_fullframe_group / pix_per_group)
 
         # The number of groups that can be read in from each file is the
         # user-entered max number of groups, divided by the ratio of the
@@ -140,7 +140,7 @@ class Dark():
         # in the input aperture, divided by the number of files, and
         # finally divided by 2, since we will also need to read in the
         # cosmic ray flags associated with each file
-        delta_groups = np.int(max_equivalent_groups / pix_ratio / len(self.file_list)) # / 2.)
+        delta_groups = int(max_equivalent_groups / pix_ratio / len(self.file_list)) # / 2.)
         if delta_groups == 0:
             raise ValueError(('ERROR: max_equivalent_groups incompatible with the number/size '
                               'of input files. Even reading just a single group at a time from '
@@ -373,7 +373,7 @@ class Dark():
             first_hits = dq_flags.collapse_cr_map(file_cr_map)
 
             print('Temporarily save CR maps for development, into CR_maps.fits')
-            hh0 = fits.PrimaryHDU(file_cr_map.astype(np.int))
+            hh0 = fits.PrimaryHDU(file_cr_map.astype(int))
             hh1 = fits.ImageHDU(first_hits)
             hlist = fits.HDUList([hh0, hh1])
             hlist.writeto('CR_maps.fits', overwrite=True)
