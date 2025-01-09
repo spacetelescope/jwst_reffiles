@@ -24,8 +24,8 @@ def validate_pedigree(value):
     # strip off the dates and just check the  text
     if len(value) > 8:
         value, start_date, end_date = value.split(' ')
-        if start_date[2] != '-' or start_date[5] != '-' or end_date[2] != '-' or end_date[5] != '-':
-            raise ValueError(("ERROR, starting and ending dates in pedigree keyword must have format: mm/dd/yyyy"))
+        if start_date[4] != '-' or start_date[7] != '-' or end_date[4] != '-' or end_date[7] != '-':
+            raise ValueError(("ERROR, starting and ending dates in pedigree keyword must have format: yyyy-mm-dd"))
 
     if value not in allowed_values:
         raise ValueError(("ERROR: pedigree value {} is not valid. Must be one of: {}"
