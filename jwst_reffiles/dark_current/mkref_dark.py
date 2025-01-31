@@ -7,14 +7,6 @@ decided upon by the JWST reference file generation working group.
 This class is based on that in the
 template file: jwst_reffiles/templates/plugin_template.py
 """
-
-import argparse
-import copy
-import os
-import re
-import sys
-import types
-
 from jwst_reffiles.plugin_wrapper import mkrefclass_template
 
 # import the dark current reference file script

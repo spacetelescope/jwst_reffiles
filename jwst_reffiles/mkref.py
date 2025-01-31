@@ -5,17 +5,11 @@ A. Rest
 '''
 
 import argparse
-import glob
 import os
 import re
 import sys
-import types
 
-import astropy.io.fits as fits
-import numpy as np
-import scipy
-
-from jwst_reffiles.utils.tools import astrotableclass,yamlcfgclass
+from jwst_reffiles.utils.tools import yamlcfgclass
 
 #from jwst_lib.models import RampModel
 

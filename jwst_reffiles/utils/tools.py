@@ -7,8 +7,6 @@ A. Rest
 
 import os,io
 import re
-import sys
-import types
 import subprocess
 #import pytz
 
@@ -17,9 +15,6 @@ from astropy.io import ascii
 from astropy.time import Time
 from datetime import datetime
 import astropy.io.fits as fits
-import numpy as np
-from numpy import recarray
-import numpy.lib.recfunctions as nprecf
 import yaml
 
 

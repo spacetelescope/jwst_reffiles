@@ -9,17 +9,11 @@ plugin_template.py.
 '''
 
 import argparse
-import glob
 import os
-import re
-import sys
-import types
 
 from astropy.io import ascii
-import astropy.io.fits as fits
-import numpy as np
 
-from jwst_reffiles.utils.tools import astrotableclass, yamlcfgclass
+from jwst_reffiles.utils.tools import yamlcfgclass
 
 
 class mkrefclass_template:

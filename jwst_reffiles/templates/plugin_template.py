@@ -73,12 +73,6 @@ name of the reference file to be created will be in self.args.outputreffilename.
 Any additional parameters (as defined in the config file and/or on the command
 line) will be available in the self.parameters dictionary.
 """
-import argparse
-import os
-import re
-import sys
-import types
-
 from jwst_reffiles.plugin_wrapper import mkrefclass_template
 
 # import your script!
