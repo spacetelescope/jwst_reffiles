@@ -30,7 +30,7 @@ https://jwst-pipeline.readthedocs.io/en/stable/jwst/ramp_fitting/main.html?highl
 
 """
 from astropy.io import fits
-from astropy.stats import sigma_clip
+from astropy.stats import sigma_clip, sigma_clipped_stats
 import copy
 import os
 from jwst.datamodels import dqflags
@@ -38,11 +38,14 @@ import numpy as np
 from os import path
 import matplotlib.pyplot as plt
 from scipy.stats import sigmaclip
+from scipy.optimize import curve_fit
 import matplotlib.cm as cm
 from jwst_reffiles.bad_pixel_mask.badpix_from_flats import create_dqdef
 from jwst_reffiles.utils import dq_flags
 from jwst_reffiles.utils.constants import RATE_FILE_SUFFIXES
 
+def f(x, A, B): # this is your 'straight line' y=f(x)
+    return A*x + B
 
 def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_filenames=None,
                  clipping_sigma=5., max_clipping_iters=5, noisy_threshold=5,
@@ -238,14 +241,20 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
 
     # nominal dark rate = 0.04 e/s in LW = 0.033 DN/s
     #                     0.003 e/s in SW = 0.0015 DN/sec
-    channel = fits.getheader(filenames[0])['CHANNEL']
-    if channel == 'SW':
-        min_hot_slope = 0.04  # DN/sec
-    else:
-        min_hot_slope = 0.05  # DN/sec
+    #channel = fits.getheader(filenames[0])['CHANNEL']
+    #if channel == 'SW':
+    #    min_hot_slope = 0.04  # DN/sec
+    #else:
+    #    min_hot_slope = 0.05  # DN/sec
+
+    # Set the hot threshold as 5-sigma above the median
+    mean_slope_val, median_slope_val, stddev_slope_val = sigma_clipped_stats(slopes)
+    min_hot_slope = 5. * stddev_slope_val + median_slope_val
+    print(f'Hot pixel threshold value: {min_hot_slope}')
 
     hot_slopes =  (slopes >= min_hot_slope).astype(int)
-    hot_slopes_frac = np.sum(hot_slopes, axis=0) / shape_slope[0]
+    num_good_slopes = np.sum(np.isfinite(slopes), axis=0)
+    hot_slopes_frac = np.sum(hot_slopes, axis=0) / num_good_slopes  #shape_slope[0]
     hot_pix = np.zeros(slopes.shape[1:])
     hot_pix[np.where(hot_slopes_frac >= hot_pix_frac_threshold)] = 1
 
@@ -346,14 +355,127 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
             max_delta_signal = 200  # DN
             min_delta_signal = -100  # DN
             print('pedestal_int shape: ', pedestal_int.shape)
-            delta_signal = np.abs(jump_ramp[int_num, -1, 4:2044, 4:2044] - jump_ramp[int_num, 0, 4:2044, 4:2044])
+            delta_signal = jump_ramp[int_num, -1, 4:2044, 4:2044] - jump_ramp[int_num, 0, 4:2044, 4:2044]
+            delta_signal_abs = np.abs(jump_ramp[int_num, -1, 4:2044, 4:2044] - jump_ramp[int_num, 0, 4:2044, 4:2044])
             #rc_from_pedestal[counter, :, :] += ((pedestal_int > max_good_pedestal) & (delta_signal > max_delta_signal))
-            rc_from_pedestal[counter, :, :] += ((jump_ramp[int_num, 0, 4:2044, 4:2044] > max_good_pedestal) & (delta_signal > max_delta_signal))
+            rc_from_pedestal[counter, :, :] += ((jump_ramp[int_num, 0, 4:2044, 4:2044] > max_good_pedestal) & (delta_signal_abs > max_delta_signal))
+
+            print(f'Int {counter}, RC from pedestal, looking only at large signal increases and pedestal values over threshold (old case): {np.sum(rc_from_pedestal[counter, :, :])}')
+
+            rc_from_pedestal[counter, :, :] += (delta_signal < min_delta_signal)
+
+            print(f'Int {counter}, Look at negative values for IRC: {np.sum(delta_signal < min_delta_signal)}')
+
+            print(rc_from_pedestal.shape)
+            print(f'did we flag the pixel we should? This should be a 1: {rc_from_pedestal[counter, 1867-4, 677-4]}')
+            print(jump_ramp[int_num, [0, 1, 75, 149], 1867, 677])
+            print(jump_ramp[int_num, -1, 1867, 677] - jump_ramp[int_num, 0, 1867, 677])
+            print(delta_signal_abs[1867-4, 677-4], delta_signal[1867-4, 677-4], min_delta_signal)
+            print(jump_ramp[int_num, 0, 1867, 677], max_good_pedestal)
 
             # Here's another option
             #delta_signal = jump_ramp[int_num, -1, :, :] - jump_ramp[int_num, 0, :, :]
             #rc_from_pedestal[counter, :, :] += ((jump_ramp[int_num, 0, :, :] > max_good_pedestal) & \
             #    ((delta_signal > max_delta_signal) | (delta_signal < min_delta_signal)))
+
+            # What about inverse RC??
+            #rc_from_pedestal[counter, :, :] += delta_signal < (0. - max_delta_signal)
+
+
+            #print(f'Int {counter}, inverse RC check pix: {np.sum(delta_signal < (0. - max_delta_signal))}')
+
+
+
+            # Closer to what NIRISS does: calculate CDS up the ramp. Then if the mean CDS in the first few
+            # frames is much higher or much lower than the median CDS value, then declare the pixel
+            # RC or IRC. But what about RC pixels with very short time constants? Those that have
+            # signal decay in only a frame or two? Maybe we keep the pedestal search version above, and
+            # add this one to it?
+            ngrp = jump_ramp.shape[1]
+
+            #cds = np.zeros((3, 2040, 2040))
+            #for ii, grp in enumerate(range(1, 6, 2)):
+            #    cds[ii, :, :] = jump_ramp[int_num, grp, 4:2044, 4:2044] - jump_ramp[int_num, grp-1, 4:2044, 4:2044]
+            cds_init = jump_ramp[int_num, [1,3,5,7,9,11,13], 4:2044, 4:2044] - jump_ramp[int_num, [0,2,4,6,8,10,12], 4:2044, 4:2044]
+            #initial_cds = np.median(cds_init[0:3, :, :], axis=0)
+
+            #cds = np.zeros((10, 2040, 2040))
+            #for ii, grp in enumerate(range(130, 149, 2)):
+            #cds[ii, :, :] = jump_ramp[int_num, grp, 4:2044, 4:2044] - jump_ramp[int_num, grp-1, 4:2044, 4:2044]
+            cds = jump_ramp[int_num, np.arange(130,149,2), 4:2044, 4:2044] - jump_ramp[int_num, np.arange(129,148,2), 4:2044, 4:2044]
+            #cdsmedian = np.median(cds)
+
+            #cds_measured_noise = np.std(cds)
+            cds_mean, cdsmedian, cds_measured_noise = sigma_clipped_stats(cds)
+
+
+            cds_init_sum = np.sum(cds_init, axis=0)
+            cds_later_median = np.median(cds, axis=0)
+            diff = cds_init_sum - (cds_later_median*cds_init.shape[0])
+            cds_threshold = 7. * cds_measured_noise
+            joe_check = (((diff > cds_threshold) | (diff < (0. - cds_threshold))) & (delta_signal_abs > 100.))
+            rc_from_pedestal[counter, :, :] += joe_check
+
+            #cds_threshold = cdsmedian + 5. * cds_measured_noise
+
+            #print('    Late group cds median, dev, and threshold: ', cdsmedian, cds_measured_noise, cds_threshold)
+
+            # This takes FOREVER. Also, with the 7*median(cds) threshold, it flags literally half the detector.
+            ##cds = np.zeros((ngrp//2, 2040, 2040))
+            ##for ii, grp in enumerate(range(1, ngrp, 2)):
+            ##    cds[ii, :, :] = jump_ramp[int_num, grp, 4:2044, 4:2044] - jump_ramp[int_num, grp-1, 4:2044, 4:2044]
+            ##cdsmedian = np.median(cds, axis=0)
+            #cds_threshold = 7. * cdsmedian
+            ##initial_cds = np.median(cds[0:3, :, :], axis=0)
+            #rc_from_pedestal[counter, :, :] += ((initial_cds > cds_threshold) | (initial_cds < (-1.*cds_threshold)))
+
+            print(f'Int {counter}, Joes check using CDS: {np.sum(joe_check)}')
+
+
+            print(f'did we flag the pixel we should? (677, 1867) This should be a 1: {rc_from_pedestal[counter, 1867-4, 677-4]}')
+            print(f'did we flag the pixel we should? (1307, 467) This should be a 1: {rc_from_pedestal[counter, 467-4, 1307-4]}')
+            print(f'did we flag the pixel we should? (1307, 467) This should be a 1: {rc_from_pedestal[counter, 467-4, 1307-4]}')
+
+            x_check, y_check = 1314, 475
+            print(f'did we flag the pixel we should? ({x_check}, {y_check}) This should be a 1: {rc_from_pedestal[counter, y_check-4, x_check-4]}')
+            print(jump_ramp[int_num, [0, 1, 75, 149], y_check, x_check])
+            print(jump_ramp[int_num, -1, y_check, x_check] - jump_ramp[int_num, 0, y_check, x_check])
+            print(delta_signal_abs[y_check-4, x_check-4], delta_signal[y_check-4, x_check-4], min_delta_signal)
+            print(jump_ramp[int_num, 0, y_check, x_check], max_good_pedestal)
+
+            #####
+            #measure mean signal level in 1) first few groups, 2) groups in the middle, 3) groups towards end
+            #flag as rc if delta(mid-first) is much larger than delta(end-mid) (and if end signal is less than towards full well?)
+            #Or maybe same strategy, but look at cds rather than absoute signal level? You dont want to miss the lower signal rc
+            #pixels because the delta signal isnt large enough.
+
+            # Rather than median CDS here, which can still be thrown off by noise, what if we fit a line to the first
+            # ~10 groups or so? What we are really looking for is a large change in signal rate over the noise.
+            #init_slopes = np.zeros((2040, 2040))
+            #end_slopes = np.zeros((2040, 2040))
+            #init_x = np.arange(10)
+            #end_x = np.arange(15)
+            #for y in range(4, 2045):
+            #    for x in range(4, 2045):
+            #        popt, pcov = curve_fit(f, init_x, jump_ramp[int_num, 0:10, y, x])
+            #        init_slopes, init_intercept = popt[0], popt[1]
+            #        popt2, pcov2 = curve_fit(f, end_x, jump_ramp[int_num, 130:145, y, x])
+            #        end_slopes, end_intercept = popt2[0], popt2[1]
+
+            #rc_from_pedestal[counter, :, :] += ((init_slopes > 7.*end_slopes) | (init_slopes < -7.*end_slopes))
+
+            #print(f'Int {counter}, partial line fits: {np.sum(((init_slopes > 7.*end_slopes) | (init_slopes < -7.*end_slopes)))}')
+
+
+            # Make sure you don't double count pixels
+            rc_frame = rc_from_pedestal[counter, :, :]
+            rc_frame[rc_frame > 0] = 1
+            rc_from_pedestal[counter, :, :] = rc_frame
+
+
+            print(f'Int {counter}, combine and set all flagged pixels to 1: {np.sum(rc_from_pedestal[counter, :, :])}')
+
+
 
             # Pixels with high pedestal values but no large signal variation will be flagged
             # as hot(?) and do_not_use
@@ -401,7 +523,7 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
             islope_stack.append(iclean_slopes)
 
             total_ints += 1
-        counter += 1
+            counter += 1
 
     # now find the mean and standard deviation of the "clean" pixel slopes
     clean_mean_slope, clean_std_slope, num_good = combine_clean_slopes(slope_stack, islope_stack)
@@ -462,7 +584,7 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     fully_saturated[fully_saturated < max_saturated_fraction] = 0
     fully_saturated = np.ceil(fully_saturated).astype(int)
 
-    fully_saturated = apply_flags(fully_saturated, flag_values['hot'])
+    fully_saturated = apply_flags(fully_saturated, flag_values['saturated'])
     num_saturated = len(np.where(fully_saturated != 0)[0])
     print('\n\nFound {} fully saturated pixels.'.format(num_saturated))
 
@@ -498,7 +620,7 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     # of 0. Pull these out of this set (these are hot pixels)
     low_ped = apply_flags(low_ped.astype(int), flag_values['low_pedestal'])
     num_low_ped = len(np.where(low_ped != 0)[0])
-    print('Found {} low pedestal pixels.'.format(num_low_ped))
+    print('Found {} low pedestal pixels. THESE ARE NOT FLAGGED IN THE FINAL MASK FILE, UNLESS ANOTHER FLAG HAPPENS TO BE APPLIED'.format(num_low_ped))
 
     high_ped_not_rc = apply_flags(high_ped_not_rc.astype(int), flag_values['hot'])
     num_high_ped = len(np.where(high_ped_not_rc != 0)[0])
@@ -519,8 +641,10 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     #num_combined_noisy = len(np.where(combined_noisy != 0)[0])
     #print('Combining noisy and high jump pixels, found {} noisy pixels.'.format(num_combined_noisy))
 
-    # Combine the various flavors of bad pixels into a final DQ map
-    bad_pixels = combine_bad_pixel_types(fully_saturated, rc, low_ped, high_ped, noisy, high_cr_pix, hot_pix)
+    # Combine the various flavors of bad pixels into a final DQ map - we exclude low pedestal pixels
+    # Checks have shown that a low pedestal value alone is not enough to make a pixel bad
+    #bad_pixels = combine_bad_pixel_types(fully_saturated, rc, low_ped, high_ped, noisy, high_cr_pix, hot_pix)
+    bad_pixels = combine_bad_pixel_types(fully_saturated, rc, high_ped, noisy, high_cr_pix, hot_pix)
 
     # Add the reference pixels back into the bad pixel map
     bad_pixels = add_refpix(bad_pixels, refpix_additions)
@@ -544,7 +668,7 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     h2 = fits.ImageHDU(high_ped_not_rc)
     h2.header['EXTNAME'] = 'HIGH_PEDESTAL'
     h3 = fits.ImageHDU(low_ped)
-    h3.header['EXTNAME'] = 'LOW_PEDESTAL'
+    h3.header['EXTNAME'] = 'LOW_PEDESTAL_NOT_FLAGGED'
     h4 = fits.ImageHDU(noisy.astype(int))
     h4.header['EXTNAME'] = 'NOISY_SLOPES'
     h5 = fits.ImageHDU(high_cr.astype(int))
@@ -652,7 +776,7 @@ def check_metadata(hdr, comp):
                                  .format(key, file_name, compare_name))
 
 
-def combine_bad_pixel_types(sat_map, rc_map, low_pedestal_map, high_pedestal_map, noisy_map, high_cr_map, hot_map):
+def combine_bad_pixel_types(sat_map, rc_map, high_pedestal_map, noisy_map, high_cr_map, hot_map):
     """Copmbine individual maps of bad pixel types into a final bad pixel
     map, using flag values defined in ``dq_flags``.
 
@@ -680,9 +804,10 @@ def combine_bad_pixel_types(sat_map, rc_map, low_pedestal_map, high_pedestal_map
     """
 
     sat_and_rc = np.bitwise_or(sat_map, rc_map)
-    add_pedestal = np.bitwise_or(sat_and_rc, low_pedestal_map)
-    add_high_pedestal = np.bitwise_or(add_pedestal, high_pedestal_map)
-    add_telegraph = np.bitwise_or(add_pedestal, high_cr_map)
+    #add_pedestal = np.bitwise_or(sat_and_rc, low_pedestal_map)
+    #add_high_pedestal = np.bitwise_or(add_pedestal, high_pedestal_map)
+    add_high_pedestal = np.bitwise_or(sat_and_rc, high_pedestal_map)
+    add_telegraph = np.bitwise_or(add_high_pedestal, high_cr_map)
     add_noisy = np.bitwise_or(add_telegraph, noisy_map)
     final_map = np.bitwise_or(add_noisy, hot_map)
     return final_map
