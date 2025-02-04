@@ -42,3 +42,4 @@ namespaces = false
 
 [tool.setuptools.package-data]
 jwst_reffiles = ["bad_pixel_mask/*.txt"]
+
