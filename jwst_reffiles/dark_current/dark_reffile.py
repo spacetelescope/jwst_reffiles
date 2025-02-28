@@ -86,12 +86,19 @@ from jwst_reffiles.utils.file_utils import read_ramp, get_file_header
 inst_abbreviations = {'nircam': 'NRC', 'niriss': 'NIS', 'fgs': 'FGS', 'miri': 'MIR', 'nirspec': 'NRS'}
 
 
+SOFTWARE_DICT = [{'name': 'jwst_reffiles', 'author': 'Hilbert', \
+                'homepage': 'https://github.com/spacetelescope/jwst_reffiles/dark_current/dark_reffile.py', 'version': "0.0"}
+                ]
+
+
 class Dark():
-    def __init__(self, file_list=[], max_equivalent_groups=60, sigma_threshold=3, pedigree=None,
-                 descrip=None, author=None, use_after=None, history=None, output_file=None,
+    def __init__(self, file_list=[], max_equivalent_groups=60, sigma_threshold=3, stat_to_use='median', sigma_clip_inputs=True,
+                 pedigree=None, descrip=None, author=None, use_after=None, history=None, output_file=None,
                  contribution_file='good_signals_per_group.pdf'):
         self.file_list = file_list
         self.sigma_threshold = sigma_threshold
+        self.stat_to_use = stat_to_use.lower()
+        self.sigma_clip_inputs = sigma_clip_inputs
         self.pedigree = pedigree
         self.descrip = descrip
         self.author = author
@@ -138,9 +145,7 @@ class Dark():
         # user-entered max number of groups, divided by the ratio of the
         # number of pixels in a full frame exposure to the number of pixels
         # in the input aperture, divided by the number of files, and
-        # finally divided by 2, since we will also need to read in the
-        # cosmic ray flags associated with each file
-        delta_groups = int(max_equivalent_groups / pix_ratio / len(self.file_list)) # / 2.)
+        delta_groups = int(max_equivalent_groups / pix_ratio / len(self.file_list))
         if delta_groups == 0:
             raise ValueError(('ERROR: max_equivalent_groups incompatible with the number/size '
                               'of input files. Even reading just a single group at a time from '
@@ -320,8 +325,17 @@ class Dark():
 
             # Now calculate the sigma_clipped mean for each pixel through
             # all the files
-            clipped_data = sigma_clip(all_data, sigma=self.sigma_threshold, axis=0, masked=False)
-            mean_dark = np.nanmean(clipped_data, axis=0)
+            if self.sigma_clip_inputs:
+                clipped_data = sigma_clip(all_data, sigma=self.sigma_threshold, axis=0, masked=False)
+            else:
+                clipped_data = all_data
+
+            if self.stat_to_use == 'mean':
+                mean_dark = np.nanmean(clipped_data, axis=0)
+            elif self.stat_to_use == 'median':
+                mean_dark = np.nanmedian(clipped_data, axis=0)
+            else:
+                raise ValueError('Unrecognized stat_to_use value. Must be "mean" or "median".')
             dev_dark = np.nanstd(clipped_data, axis=0)
 
             # Pixels with no good signals will have values of NaN in mean_dark
@@ -443,13 +457,16 @@ class Dark():
         model.meta.useafter = self.use_after
 
         # Add HISTORY entries
-        if self.history is not None:
-            model.history.append(self.history)
-        model.history.append(("{} {} {} dark current file, created from data in files: "
-                              .format(self.metadata['INSTRUME'].upper(), self.metadata['DETECTOR'].upper(),
-                                      self.metadata['SUBARRAY'])))
+        entry = util.create_history_entry(self.history[0], software=SOFTWARE_DICT)
+        model.history = [entry]
+        for ele in self.history[1:]:
+            model.history.append(util.create_history_entry(ele))
+
+        inst = self.metadata['INSTRUME'].upper()
+        det = self.metadata['DETECTOR'].upper()
+        model.history.append(util.create_history_entry(f"{inst} {det} {self.metadata['SUBARRAY']} dark current file, created from data in files: "))
         for filename in self.file_list:
-            model.history.append(filename)
+            model.history.append(util.create_history_entry(os.path.basename(filename)))
 
         # Create output name if necessary
         if self.output_file is None:
