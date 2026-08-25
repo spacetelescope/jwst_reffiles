@@ -409,11 +409,24 @@ def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3,
         CRDS-required read pattern for which to use this reference file for.
     """
 
-    # Make a stack of all 0th frames
-    n_ints, n_groups, n_y, n_x = fits.getdata(filenames[0], 'SCI').shape
-    stack = np.zeros((len(filenames), n_y, n_x))
-    for i,filename in enumerate(filenames):
-        stack[i] = fits.getdata(filename, 'SCI')[0, 0, :, :].astype(float)
+    # Make a stack of **all** 0th frames
+    # Get nints from each file to avoid assuming they all have the same number
+    n_intlist = [fits.getval(fn, 'NINTS') for fn in filenames] 
+    totalints = np.sum(n_intlist)
+    hdr0 = fits.getheader(filenames[0]) # get x and y dimensions from first file header
+    n_x = hdr0['SUBSIZE1']
+    n_y = hdr0['SUBSIZE2']
+    stack = np.zeros((totalints, n_y, n_x))
+    print('stack shape',stack.shape)
+    startidx = 0
+    for i,n_int in enumerate(n_intlist):
+        print(f'Reading in {n_int} 0th groups from file {i}')
+        filedata = fits.getdata(filenames[i], 'SCI')
+        zerogroups = filedata[:,0,:,:]
+        endidx = startidx + n_int
+        stack[startidx:endidx,...] = zerogroups
+        startidx = endidx
+    print(f'Collected {stack.shape[0]} 0th groups to compute the superbias')
 
     # Calculate the superbias as the sigma-clipped mean through the stack
     superbias = calculate_mean(stack, clipping_sigma=clipping_sigma,
