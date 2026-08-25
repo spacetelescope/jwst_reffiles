@@ -77,6 +77,7 @@ import numpy as np
 import os
 
 from jwst.datamodels import DarkModel, DarkMIRIModel
+from stdatamodels import util
 
 from jwst_reffiles.utils import dq_flags
 from jwst_reffiles.utils import crds_checks
