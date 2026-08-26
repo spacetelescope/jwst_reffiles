@@ -26,18 +26,80 @@ Notes
 """
 
 import os
+from copy import deepcopy
 
 from astropy.io import fits
 from astropy.stats import sigma_clip
+import datetime as dt
+import json
 from jwst.datamodels import dqflags, SuperBiasModel
+from sklearn.mixture import GaussianMixture
 from stdatamodels import util
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import numpy as np
 from scipy.ndimage import median_filter
 
-def calculate_mean(stack, clipping_sigma=3.0, max_clipping_iters=3):
+
+def bias_trend_plot(array, filename_integ_list, mjd_list, aperture, output_file):
+    """Calculate the median bias for each integration in the stack, and plot
+
+    Parameters
+    ----------
+    array : numpy.ndarray
+        3D array of bias frames
+
+    filename_integ_list : list
+        List of strings such as "jw01068001001_02101_00001_nrcalong/3" that provide the filename and
+        integration number associated with each value in ''array''
+
+    mjd_list : list
+        List of MJD associated with each value in ''array''
+
+    aperture : str
+        Aperture name, for the plot title
+
+    output_file : str
+        Name of the superbias output file. The trending plot will be saved under a similar filename
+
+    Returns
+    -------
+    trending_file : str
+        Name of file to which the trending plot has been saved
+    """
+    nframe, ny, nx = array.shape
+
+    hw = 10  # pixels
+    ystart = ny // 2 - hw
+    yend = ystart + (2 * hw)
+    xstart = nx // 2 - hw
+    xend = xstart + (2 * hw)
+    bias = []
+    for frame in range(nframe):
+        bias.append(np.nanmedian(array[frame, ystart:yend, xstart:xend]))
+
+    # Convert MJD values to datetime values that will be more intuitive on the plot
+    dates = [dt.datetime(1970, 1, 1) + dt.timedelta(days=m - 40587)
+         for m in mjd_list]
+
+    detector = filename_integ_list[0].split('_')[-1].upper().split('/')[0]
+    trending_file = f"{output_file.split('.')[0]}_trending.png"
+
+    f, a = plt.subplots(figsize=(10, 8))
+    a.scatter(dates, bias, marker='o')
+    a.set_xlabel('Date')
+    a.set_ylabel('Median bias level (DN)')
+    a.set_title(f'{aperture} Bias Trending')
+    a.xaxis.set_major_formatter(mdates.DateFormatter('%d %b %Y'))
+    f.autofmt_xdate()  # rotates labels nicely
+    f.savefig(trending_file)
+    print(f'Save superbias trending plot to {trending_file}')
+    print('To do: maybe turn this into a bokeh figure where we can hover over points and get filename/int info')
+
+
+def calculate_mean(stack, clipping_sigma=3.0, max_clipping_iters=3, mean_stat='mean'):
     """Calculates the sigma-clipped mean through a stack of images.
 
     Parameters
@@ -52,6 +114,9 @@ def calculate_mean(stack, clipping_sigma=3.0, max_clipping_iters=3):
         Maximum number of iterations to use when sigma-clipping the input
         stack.
 
+    mean_stat : string
+        Can be 'mean' or 'median'. Controls which statistic is used on the clipped data
+
     Returns
     -------
     mean_image : numpy.ndarray
@@ -60,9 +125,13 @@ def calculate_mean(stack, clipping_sigma=3.0, max_clipping_iters=3):
 
     clipped = sigma_clip(stack, sigma=clipping_sigma,
                          maxiters=max_clipping_iters, axis=0)
-    mean_image = np.mean(clipped, axis=0)
+    if mean_stat == 'mean':
+        mean_image = np.nanmean(clipped, axis=0)
+    elif mean_stat == 'median':
+        mean_image = np.nanmedian(clipped, axis=0)
 
     return mean_image
+
 
 def calculate_stddev(stack, clipping_sigma=3.0, max_clipping_iters=3):
     """Calculates the sigma-clipped standard deviation through a stack
@@ -89,9 +158,38 @@ def calculate_stddev(stack, clipping_sigma=3.0, max_clipping_iters=3):
 
     clipped = sigma_clip(stack, sigma=clipping_sigma,
                          maxiters=max_clipping_iters, axis=0)
-    stddev_image = np.std(clipped, axis=0)
+    stddev_image = np.nanstd(clipped, axis=0)
 
     return stddev_image
+
+
+def find_low_bias(array):
+    """Use a Gaussian Mixture Model to locate the integrations within the exposure that exhibit low
+    bias signal
+    """
+    array = array.reshape(-1, 1)
+    gmm = GaussianMixture(n_components=2, random_state=0)
+    gmm.fit(array)
+
+    labels = gmm.predict(array)
+    means = gmm.means_.flatten()
+
+    bad_cluster = np.argmin(means)
+    bad_indices = np.where(labels == bad_cluster)[0]
+
+    #probs = gmm.predict_proba(array)
+    #bad_prob = probs[:, bad_cluster]
+
+    # Sanity check: the number of low bias entries shouldn't be more than 1 of every 4
+    # integrations. If more were found, then we consider this test a failure and include
+    # all integrations
+    if len(bad_indices) > 0.25 * len(array):
+        print('Too many low bias integrations found. Keeping them all.')
+        bad_indices = np.array([], dtype=np.int64)
+
+    print(bad_indices)
+    return bad_indices
+
 
 def find_unreliable_bias_pixels(error, bad_clipping_sigma=3.0,
                                 bad_max_clipping_iters=3,
@@ -129,7 +227,7 @@ def find_unreliable_bias_pixels(error, bad_clipping_sigma=3.0,
 
     # Make initial DQ array and flag pixels with nan/inf superbias error values
     dq = np.zeros(error.shape, dtype=int)
-    dq[~np.isfinite(error)] = 3
+    dq[~np.isfinite(error)] = dqflags.pixel['UNRELIABLE_BIAS']
 
     # Flag pixels X sigma greater than the mean in the error image
     clipped = sigma_clip(error, sigma=bad_clipping_sigma,
@@ -154,6 +252,7 @@ def find_unreliable_bias_pixels(error, bad_clipping_sigma=3.0,
         plt.clf()
 
     return dq
+
 
 def get_crds_info(filename, subarray, readpatt):
     """Get CRDS-required header information to put into the final superbias
@@ -209,9 +308,222 @@ def get_crds_info(filename, subarray, readpatt):
     if subarray is None:
         subarray = header['SUBARRAY']
     if readpatt is None:
-        readpatt = 'ANY'
+        readpatt = 'N/A'
 
     return instrument, detector, subarray, readpatt, fastaxis, slowaxis, substrt1, substrt2
+
+
+def strip_filename_suffixes(filename):
+    """Strip away arbitrary suffixes after the detector in a filename
+    """
+    detectors = ['nrcalong', 'nrcblong', 'nrca1', 'nrca2', 'nrca3', 'nrca4', 'nrcb1', 'nrcb2', 'nrcb3', 'nrcb4']
+    pattern = re.compile(rf'^(.*?_({"|".join(detectors)}))')
+
+    match = pattern.match(filename)
+    if not match:
+        raise ValueError(f"No detector found in filename: {filename}")
+    return match.group(1)
+
+
+def get_dark_data(files):
+    """Read 0th groups from dark current data into an array
+    """
+    # Create dictionary to hold the list of good integrations for each file
+    good_idx = {}
+
+    try:
+        stack = fits.getdata(files[0], 'ZEROFRAME').astype(float)
+    except:
+        stack = fits.getdata(files[0], 'SCI')[:, 0, :, :].astype(float)
+
+    # Create a list of filename/integ_number for all integrations in the file
+    hdr = fits.getheader(files[0])
+    nints = hdr['NINTS']
+    filenames = [get_file_base(hdr['FILENAME'])] * nints
+    intnums = np.arange(nints)
+    fileint = [f'{filename}/{intnum}' for filename, intnum in zip(filenames, intnums)]
+
+    # Get the observation date time
+    obsdate = hdr['EXPSTART']
+    tint = hdr['EFFINTTM'] / 3600. / 24.
+    obstimes = [obsdate + tint * inum for inum in range(nints)]
+
+    # Strip away the integrations with the low bias due to cycling
+    stack, good = remove_bias_cycling(stack)
+    fileint = fileint[good]
+    obstimes = obstimes[good]
+
+    # Use the filename base as a key. Remove extra suffixes in order to make it easier
+    # for other reffile generation scripts to use
+    file_base = get_file_base(files[0])
+    good_idx[file_base] = good
+
+    for filename in files[1:]:
+        try:
+            data = fits.getdata(filename, 'ZEROFRAME')[:, 0, :, :].astype(float)
+        except:
+            data = fits.getdata(filename, 'SCI')[:, 0, :, :].astype(float)
+
+        # Create a list of filename/integ_number for all integrations in the file
+        hdr = fits.getheader(filename)
+        nints = hdr['NINTS']
+        filenames = [get_file_base(hdr['FILENAME'])] * nints
+        intnums = np.arange(nints)
+        fileintstr = [f'{filename}/{intnum}' for filename, intnum in zip(filenames, intnums)]
+
+        # Get the observation date time
+        obsdate = hdr['EXPSTART']
+        tint = hdr['EFFINTTM'] / 3600. / 24.
+        exp_obstimes = [obsdate + tint * inum for inum in range(nints)]
+
+        # Strip away the integrations with the low bias due to cycling
+        data, good = remove_bias_cycling(data)
+        fileintstr = np.array(fileintstr)[good]
+        fileint.extend(fileintstr)
+        exp_obstimes = np.array(exp_obstimes)[good]
+        obstimes.extend(exp_obstimes)
+
+        file_base = get_file_base(filename)
+        good_idx[file_base] = good
+        stack = np.concatenate([stack, data])
+    return stack, good_idx, fileint, obstimes
+
+
+def get_and_filter_dark_data(files, good_ints):
+    """Read in 0th frames of all integrations for the given file list. Then using good_ints,
+    which lists the integration numbers that we want to keep, filter out the "bad" integrations.
+    The motivation here is to filter out all of the integrations where the bias level is different
+    because the fast reset intersected the subarray
+
+    Paramters
+    ---------
+    files : list
+        List of filenames
+
+    good_ints : dict
+        Dictionary with keys that are file bases (i.e. no suffix), and the values are lists of
+        good integration numbers
+
+    Returns
+    -------
+    stack : numpy.ndarray
+        3D stack of 0th frames
+    """
+    for i, filename in enumerate(files):
+        try:
+            data = fits.getdata(filename, 'ZEROFRAME').astype(float)
+        except:
+            data = fits.getdata(filename, 'SCI')[:, 0, :, :].astype(float)
+
+        file_base = get_file_base(filename)
+
+        if file_base in good_ints:
+            idx = np.array(good_ints[file_base])
+            data = data[idx, :, :]
+
+        if i == 0:
+            stack = deepcopy(data)
+        else:
+            stack = np.concatenate([stack, data])
+    return stack
+
+
+def get_file_base(filename):
+    """Get the filename base. i.e. remove suffixes
+    """
+    filename = os.path.basename(filename)
+    nrc_index = filename.find('nrc')
+    if nrc_index != -1:
+        underscore_idx = filename.find('_', nrc_index)
+        if underscore_idx != -1:
+            file_base = filename[0:underscore_idx]
+            return file_base
+        else:
+            return filename
+    else:
+        return filename
+
+
+def get_pedestal_data(files):
+    """Read pedestal data from fitops file into an array
+    """
+    good_idx = {}
+    fileint = []
+    obstimes = []
+    for i, filename in enumerate(files):
+        print(f'{filename}:')
+        array = fits.getdata(filename, 'PEDESTAL')
+
+        # Create a list of filename/integ_number for all integrations in the file
+        hdr = fits.getheader(filename)
+        nints = hdr['NINTS']
+        filenames = [get_file_base(hdr['FILENAME'])] * nints
+        intnums = np.arange(nints)
+        exp_fileint = [f'{filename}/{intnum}' for filename, intnum in zip(filenames, intnums)]
+
+        # Get the observation date time
+        obsdate = hdr['EXPSTART']
+        tint = hdr['EFFINTTM'] / 3600. / 24.
+        exp_obstimes = [obsdate + tint * inum for inum in range(nints)]
+
+        if i == 0:
+            # Identify and remove integrations where the bias cycling has resulted in a low bias.
+            # See https://jira.stsci.edu/browse/JP-2601 for details
+            stack, good = remove_bias_cycling(array)
+        else:
+            arr, good = remove_bias_cycling(array)
+            stack = np.concatenate([stack, arr])
+
+        # Append to the list of filenames/ints and obstimes
+        exp_fileint = np.array(exp_fileint)[good]
+        exp_obstimes = np.array(exp_obstimes)[good]
+        fileint.extend(exp_fileint)
+        obstimes.extend(exp_obstimes)
+
+        file_base = get_file_base(filename)
+        good_idx[file_base] = good
+    return stack, good_idx, fileint, obstimes
+
+def get_all_good_pedestal_info(files):
+    """Create the outputs from get_pedestal_data, excepting the actual pixel data
+    """
+    good_idx = {}
+    fileint = []
+    obstimes = []
+    for i, filename in enumerate(files):
+        print(f'{filename}:')
+        #array = fits.getdata(filename, 'PEDESTAL')
+
+        # Create a list of filename/integ_number for all integrations in the file
+        hdr = fits.getheader(filename)
+        nints = hdr['NINTS']
+        filenames = [get_file_base(hdr['FILENAME'])] * nints
+        intnums = np.arange(nints)
+        exp_fileint = [f'{filename}/{intnum}' for filename, intnum in zip(filenames, intnums)]
+
+        # Get the observation date time
+        obsdate = hdr['EXPSTART']
+        tint = hdr['EFFINTTM'] / 3600. / 24.
+        exp_obstimes = [obsdate + tint * inum for inum in range(nints)]
+
+        #if i == 0:
+        #    # Identify and remove integrations where the bias cycling has resulted in a low bias.
+        #    # See https://jira.stsci.edu/browse/JP-2601 for details
+        #    stack, good = remove_bias_cycling(array)
+        #else:
+        #    arr, good = remove_bias_cycling(array)
+        #    stack = np.concatenate([stack, arr])
+
+        # Append to the list of filenames/ints and obstimes
+        exp_fileint = np.array(exp_fileint)
+        exp_obstimes = np.array(exp_obstimes)
+        fileint.extend(exp_fileint)
+        obstimes.extend(exp_obstimes)
+
+        file_base = get_file_base(filename)
+        good_idx[file_base] = np.arange(nints)
+    return good_idx, fileint, obstimes
+
 
 def make_filled_superbias(superbias, refpix_map, bad_clipping_sigma=3.0,
                           bad_max_clipping_iters=3, bad_sigma_threshold=5.0,
@@ -292,6 +604,7 @@ def make_filled_superbias(superbias, refpix_map, bad_clipping_sigma=3.0,
     superbias_filled[ymin:ymax, xmin:xmax] = superbias_filled_no_refpix
     fits.writeto(outname, superbias_filled, overwrite=True)
 
+
 def make_refpix_map(filename):
     """Creates a map of the reference pixels based on the input fits file.
 
@@ -327,10 +640,11 @@ def make_refpix_map(filename):
 
     return refpix_map
 
-def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3,
+
+def make_superbias(ramp_filenames=None, fitopt_filenames=None, extname='SCI', clipping_sigma=3.0, max_clipping_iters=3,
                    bad_clipping_sigma=3.0, bad_max_clipping_iters=3,
                    bad_sigma_threshold=5.0, plot=False, save_filled=False,
-                   box_width=3, save_reffile=True,
+                   box_width=3, save_reffile=True, mean_stat='mean',
                    outfile='superbias_jwst_reffiles.fits',
                    author='jwst_reffiles', description='Super Bias Image',
                    pedigree='GROUND', useafter='2000-01-01T00:00:00',
@@ -343,6 +657,10 @@ def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3,
     filenames : list
         List of dark current ramp files. The data shape in these images is
         assumed to be a 4D array in DMS format (integration, group, y, x).
+
+    extname : str
+        Extension name from which the input data are retrieved. When working with
+        dark current images, use 'SCI'. With fitopt files, use 'PEDESTAL'
 
     clipping_sigma : float
         Number of sigma to use when sigma-clipping through the 0th frame
@@ -380,6 +698,10 @@ def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3,
         Option to save the generated superbias map into a CRDS-formatted
         reference file.
 
+    mean_stat : str
+        Can be 'mean' or 'median'. Controls which statistic is used through the
+        stack of input data.
+
     outfile : str
         Name of the CRDS-formatted superbias reference file to save the final
         superbias map to.
@@ -409,33 +731,63 @@ def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3,
         CRDS-required read pattern for which to use this reference file for.
     """
 
-    # Make a stack of **all** 0th frames
-    # Get nints from each file to avoid assuming they all have the same number
-    n_intlist = [fits.getval(fn, 'NINTS') for fn in filenames] 
-    totalints = np.sum(n_intlist)
-    hdr0 = fits.getheader(filenames[0]) # get x and y dimensions from first file header
-    n_x = hdr0['SUBSIZE1']
-    n_y = hdr0['SUBSIZE2']
-    stack = np.zeros((totalints, n_y, n_x))
-    print('stack shape',stack.shape)
-    startidx = 0
-    for i,n_int in enumerate(n_intlist):
-        print(f'Reading in {n_int} 0th groups from file {i}')
-        filedata = fits.getdata(filenames[i], 'SCI')
-        zerogroups = filedata[:,0,:,:]
-        endidx = startidx + n_int
-        stack[startidx:endidx,...] = zerogroups
-        startidx = endidx
-    print(f'Collected {stack.shape[0]} 0th groups to compute the superbias')
+    # Make a stack of all 0th frames
+    #if extname == 'SCI':
+    #    stack, good_ints, file_integ_list, integ_mjd_list = get_dark_data(filenames)
+    #elif extname == 'PEDESTAL':
+    #    stack, good_ints, file_integ_list, integ_mjd_list = get_pedestal_data(filenames)
+
+    # Turns out it's much easier to locate the high/low bias integrations in the pedestal
+    # data than it is when using 0th reads. So, when working with subarrays, let's try
+    # reading in the pedestal data, finding the high/low bias, and then, in cases where
+    # the 0th read is to be used, read in the 0th group data, and apply the masks from
+    # the pedestal data
+    if ramp_filenames is not None:
+        check_filename = ramp_filenames[0]
+        filenames = ramp_filenames
+    else:
+        check_filename = fitopt_filenames[0]
+        filenames = fitopt_filenames
+
+    subarray_name = fits.getheader(check_filename)['SUBARRAY']
+    aperture = fits.getheader(check_filename)['APERNAME']
+    if (extname == 'PEDESTAL' or 'FULL' not in subarray_name):
+        stack, good_ints, file_integ_list, integ_mjd_list = get_pedestal_data(fitopt_filenames)
+    elif 'FULL' in subarray_name:
+        # In this case, we just build up the lists of good integrations, etc to include all ints
+        good_ints, file_integ_list, integ_mjd_list = get_all_good_pedestal_info(ramp_filenames)
+    if extname == 'SCI':
+        # If we want to use 0th frames, we overwrite what's in stack with that data
+        stack = get_and_filter_dark_data(ramp_filenames, good_ints)
+
+    # Save the information about which integrations are good, so that it can be used
+    # in the construction of other reference files
+    outdir = os.path.dirname(outfile)
+    if 'FULL' not in aperture:
+        integ_filename = os.path.join(outdir, f'{aperture}_good_bias_integrations.json')
+
+        with open(integ_filename, 'w') as f:
+            json.dump(good_ints, f, indent=4)
+        print(f"Dictionary of filename and good integrations saved to {integ_filename}")
+    else:
+        print(f'Full frame data. No list of high/low bias integrations saved to file.')
+        integ_filename = None
+
+    # Create a plot of the bias level within each of the good input integrations
+    trending_plot = bias_trend_plot(stack, file_integ_list, integ_mjd_list, aperture, os.path.join(outdir, outfile))
+
+    num_ints = stack.shape[0]
 
     # Calculate the superbias as the sigma-clipped mean through the stack
     superbias = calculate_mean(stack, clipping_sigma=clipping_sigma,
-                               max_clipping_iters=max_clipping_iters)
+                               max_clipping_iters=max_clipping_iters,
+                               mean_stat=mean_stat)
 
     # Convert masked array to normal numpy array and check for any missing
     # data.
-    superbias = superbias.filled(fill_value=np.nan)
+    #superbias = superbias.fill(fill_value=np.nan)
     n_bad = len(superbias[~np.isfinite(superbias)])
+    print(f'Found {n_bad} NaN pixels')
     if n_bad > 0:
         print('Warning: Superbias file has {} nan/inf pixels.'.format(n_bad))
 
@@ -447,12 +799,12 @@ def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3,
         readpatt = none_check(readpatt)
 
         # CRDS doesnt allow descriptions over 65 characters
-        if len(description) > 65:
-            raise ValueError('Description cannot exceed 65 characters.')
+        #if len(description) > 65:
+        #    raise ValueError('Description cannot exceed 65 characters.')
 
         # Get info needed by CRDS to put into the final superbias reference file
         instrument, detector, subarray, readpatt, fastaxis, slowaxis, substrt1, substrt2 = \
-            get_crds_info(filenames[0], subarray, readpatt)
+            get_crds_info(check_filename, subarray, readpatt)
 
         # Calculate the superbias error as the sigma-clipped stddev through the stack
         error = calculate_stddev(stack, clipping_sigma=clipping_sigma,
@@ -475,7 +827,7 @@ def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3,
         # Save a version of the superbias where high superbias values are
         # replaced by their smoothed values.
         if save_filled:
-            refpix_map = make_refpix_map(filenames[0])
+            refpix_map = make_refpix_map(check_filename)
             make_filled_superbias(superbias, refpix_map,
                                   bad_clipping_sigma=bad_clipping_sigma,
                                   bad_max_clipping_iters=bad_max_clipping_iters,
@@ -488,9 +840,10 @@ def make_superbias(filenames, clipping_sigma=3.0, max_clipping_iters=3,
                        outfile=outfile, author=author, description=description,
                        pedigree=pedigree, useafter=useafter, history=history,
                        fastaxis=fastaxis, slowaxis=slowaxis, substrt1=substrt1,
-                       substrt2=substrt2, filenames=filenames)
+                       substrt2=substrt2, filenames=filenames, num_ints=num_ints)
 
-    return superbias
+    return superbias, integ_filename, file_integ_list, integ_mjd_list
+
 
 def none_check(value):
     """If value is a string containing 'none', then change it to a
@@ -515,13 +868,69 @@ def none_check(value):
 
     return new_value
 
+
+def remove_bias_cycling(array):
+    """Remove the integrations where the detector reset passes through the subarray. This leads to a bias
+    signal that is much lower than the case where the reset does not pass through the subarray. Details are
+    given in https://jira.stsci.edu/browse/JP-2601
+    """
+    nints, ny, nx = array.shape
+    if ((ny < 2048) & (nx < 2048)):
+        hw = 10
+        r1 = array[:, ny//2-hw:ny//2+hw, 5:5+2*hw]
+        r1stats = np.nanmedian(r1, axis=(1,2))
+        r1_low_idx = find_low_bias(r1stats)
+
+        r2 = array[:, ny-4-2*hw:ny-4, nx//2-hw:nx//2+hw]
+        r2stats = np.nanmedian(r2, axis=(1,2))
+        r2_low_idx = find_low_bias(r2stats)
+
+        r3 = array[:, ny//2-hw:ny//2+hw, nx-4-2*hw:nx-4]
+        r3stats = np.nanmedian(r3, axis=(1,2))
+        r3_low_idx = find_low_bias(r3stats)
+
+        r4 = array[:, 5:5+2*hw, nx//2-hw:nx//2+hw]
+        r4stats = np.nanmedian(r4, axis=(1,2))
+        r4_low_idx = find_low_bias(r4stats)
+
+        allidx = np.concatenate([r1_low_idx, r2_low_idx, r3_low_idx, r4_low_idx])
+        unique_values, counts = np.unique(allidx, return_counts=True)
+
+        # In order to be considered a bad bias value, at least 2 of the values
+        # must be low
+        bad_idx = []
+        for val, ct in zip(unique_values, counts):
+            if ct >= 2:
+                bad_idx.append(val)
+        bad_idx = np.array(bad_idx)
+
+        print('Integrations with low bias: ', bad_idx)
+        print(r1stats)
+        print(r2stats)
+
+        # Create a boolean mask initialized to True (all are good initially)
+        boolean_mask = np.ones(nints, dtype=bool)
+
+        # Set the "bad" indices to False
+        if len(bad_idx) > 0:
+            boolean_mask[bad_idx] = False
+    else:
+        boolean_mask = np.ones(nints, dtype=bool)
+
+    # Use the boolean mask to select only the "good" frames
+    array = array[boolean_mask]
+    good_idx = list(np.where(boolean_mask)[0])
+    good_idx = [int(e) for e in good_idx]
+    return array, good_idx
+
+
 def save_superbias(superbias, error, dq, instrument='', detector='',
                    subarray='GENERIC', readpatt='ANY',
                    outfile='superbias_jwst_reffiles.fits',
                    author='jwst_reffiles', description='Super Bias Image',
                    pedigree='GROUND', useafter='2000-01-01T00:00:00',
                    history='', fastaxis=-1, slowaxis=2, substrt1=1, substrt2=1,
-                   filenames=[]):
+                   filenames=[], num_ints=0):
     """Saves a CRDS-formatted superbias reference file.
 
     Parameters
@@ -584,6 +993,9 @@ def save_superbias(superbias, error, dq, instrument='', detector='',
     filenames : list
         List of dark current files that were used to generate the reference
         file.
+
+    num_ints : int
+        Number of integrations used to construct the superbias array
     """
 
     s = SuperBiasModel()
@@ -593,11 +1005,16 @@ def save_superbias(superbias, error, dq, instrument='', detector='',
     s.dq = dq
     s.dq_def = [(0, 0, 'GOOD', ''),
                 (0, 1, 'DO_NOT_USE', ''),
-                (1, 2, 'UNRELIABLE_BIAS', '')]
+                (1, dqflags.pixel['UNRELIABLE_BIAS'], 'UNRELIABLE_BIAS', '')]
 
     s.meta.instrument.name = instrument
     s.meta.instrument.detector = detector
     s.meta.subarray.name = subarray
+
+    if subarray == 'FULL':
+        s.meta.subarray.p_subarr = 'FULLP|'
+
+
     s.meta.exposure.readpatt = readpatt
     s.meta.author = author
     s.meta.description = description
@@ -617,12 +1034,23 @@ def save_superbias(superbias, error, dq, instrument='', detector='',
                     'within the jwst_reffiles package.')
     software_dict = {'name': 'jwst_reffiles.superbias.py', 'author': 'STScI',
                      'homepage': 'https://github.com/spacetelescope/jwst_reffiles',
-                     'version': '0.0.0'}
+                     'version': '1.0.2'}
     entry = util.create_history_entry(package_note, software=software_dict)
     s.history.append(entry)
 
+    #if isinstance(history, str):
+    #    history = [history]
+
+    print('history type is ', type(history))
+    print(history)
+    print('\n\n')
+
+    #for ele in history:
+    entry = util.create_history_entry(history)
+    s.history.append(entry)
+
     # Add the list of input files used to create the superbias reference file
-    s.history.append('DATA USED:')
+    s.history.append(f'DATA USED (total of {num_ints} integrations):')
     for f in filenames:
         f = os.path.basename(f)
         totlen = len(f)
@@ -633,8 +1061,8 @@ def save_superbias(superbias, error, dq, instrument='', detector='',
             else:
                 s.history.append(util.create_history_entry(f[val:]))
 
-    if history != '':
-        s.history.append(util.create_history_entry(history))
+    #if history != '':
+    #    s.history.append(util.create_history_entry(history))
 
     s.save(outfile, overwrite=True)
     print('Final CRDS-formatted superbias map saved to {}'.format(outfile))
