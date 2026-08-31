@@ -210,6 +210,17 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     std_of_std = np.std(clipped_stdevs)
     cut_limit = avg_of_std + std_of_std*noisy_threshold
 
+
+    # From the mean readnoise and dark rate, the uncertainty on a 150-group slope is 0.0151 DN/sec in SW and 0.0142 DN/sec in LW
+    # So perhaps a more reasonable check for noisy pixels would be to use threshold of N-sigma where sigma are these values.
+    # This seems better than the current method, which calculates the mean stdev and stdev of stdevs, and then uses a ridiculous
+    # value of N for the N-sigma threshold.
+    sigma = 0.015  # DN/sec                                                                                                                                                                               
+    cut_limit = sigma * noisy_threshold
+    print('USING THE THEORETICAL UNCERTAINTY ON THE SLOPE TO SET THE NOISY THRESHOLD')
+
+
+    
     # Identify noisy pixels as those with noise values more than
     # noisy_threshold*sigma above the average noise level
     # noisy = std_slope > cut_limit # not a good stat we need to remove slopes with cr hits
@@ -220,7 +231,8 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
         plot_image(std_slope, xhigh, outdir,
                    "Pixel Standard devations", "pixel_std_withjumps.png")
 
-        nbins = 5000
+        #nbins = 5000
+        nbins = 'fd'
         titleplot = 'Histogram of Pixel Slope STD with cosmic ray jumps: Clipped Ave ' + \
             '{:6.4f}'.format(avg_of_std) + '  Std ' + '{:6.4f}'.format(std_of_std)
 
@@ -551,8 +563,22 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
     # assigning nans from clean_std_slope to very large values that will be cut
     # because it causes warning messages to be print
     values_nan = np.isnan(clean_std_slope)
-    clean_std_slope[values_nan] = avg_of_std + std_of_std*50
+    clean_std_slope[values_nan] = 0.  #  ignore these pixels. they're already flagged if they are nan. avg_of_std + std_of_std*50
 
+
+    # From the mean readnoise and dark rate, the uncertainty on a 150-group slope is 0.0151 DN/sec in SW and 0.0142 DN/sec in LW
+    # So perhaps a more reasonable check for noisy pixels would be to use threshold of N-sigma where sigma are these values.
+    # This seems better than the current method, which calculates the mean stdev and stdev of stdevs, and then uses a ridiculous
+    # value of N for the N-sigma threshold.
+    sigma = 0.015  # DN/sec
+    cut_limit = sigma * noisy_threshold
+    print('USING THE THEORETICAL UNCERTAINTY ON THE SLOPE TO SET THE NOISY THRESHOLD')
+
+    
+
+    print(f'\n\n\nWhen finding noisy pixels, avg_of_std is {avg_of_std}, std_of_std is {std_of_std} and cut_limit is {cut_limit}\n\n\n')
+
+    
     noisy = clean_std_slope > cut_limit
     num_noisy = len(np.where(noisy)[0])
 
@@ -571,7 +597,8 @@ def find_bad_pix(filenames, uncal_filenames=None, jump_filenames=None, fitopt_fi
                    "clean_pixel_std.png")
 
         # plot the histogram before the clipping
-        nbins = 5000
+        #nbins = 5000
+        nbins = 'fd'
         titleplot = 'Histogram of Clean Pixel Slope STD  Average ' + \
             '{:6.4f}'.format(avg_of_std) + '  Std ' + '{:6.4f}'.format(std_of_std)
 
