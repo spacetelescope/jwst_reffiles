@@ -94,7 +94,7 @@ SOFTWARE_DICT = [{'name': 'jwst_reffiles', 'author': 'Hilbert', \
 
 class Dark():
     def __init__(self, file_list=[], max_equivalent_groups=60, sigma_threshold=3, stat_to_use='median', sigma_clip_inputs=True,
-                 pedigree=None, descrip=None, author=None, use_after=None, history=None, output_file=None,
+                 pedigree=None, descrip=None, author=None, use_after=None, history=None, output_file=None, ngroups=None,
                  contribution_file='good_signals_per_group.pdf'):
         self.file_list = file_list
         self.sigma_threshold = sigma_threshold
@@ -107,6 +107,7 @@ class Dark():
         self.history = history
         self.output_file = output_file
         self.contribution_file = contribution_file
+        self.ngroups = ngroups
 
         # If an output directory is specified, save that here, so that
         # ancillary outputs can be saved to the same location
@@ -153,8 +154,6 @@ class Dark():
                               'all input files would result in more than max_equivalent_groups '
                               'groups in memory at one time. Increase max_equivalent_groups or '
                               'decrease the number of input exposures.'))
-        self.group_index = np.arange(0, self.metadata['NGROUPS'], delta_groups)
-        self.group_index = np.append(self.group_index, self.metadata['NGROUPS'])
 
         # Create the reference file
         self.create_reffile()
@@ -164,7 +163,7 @@ class Dark():
         number of groups, etc
         """
         keywords_to_check = ['INSTRUME', 'DETECTOR', 'SUBARRAY', 'READPATT', 'SUBSIZE1',
-                             'SUBSIZE2', 'NGROUPS']
+                             'SUBSIZE2']
         for filename in self.file_list[1:]:
             metadata = get_file_header(filename, extension='PRIMARY')
             for kw in keywords_to_check:
@@ -233,16 +232,21 @@ class Dark():
         # group numbers associated with the first CR hit in the integration
         cr_indexes = self.prepare_cr_maps()
 
+        maxgroups = 0
         # Collect info on the number of remaining good pixels
         for filenum, filename in enumerate(self.file_list):
+            metadata = get_file_header(filename, extension='PRIMARY')
+            if metadata['NGOUPS'] > maxgroups:
+                maxgroups = metadata['NGROUPS']
+
             # Number of good groups per integration
             num_good = copy.deepcopy(cr_indexes[filename])
 
             # Set pixels with no hits as good in all groups
-            num_good[np.isnan(num_good)] = self.metadata['NGROUPS']
+            num_good[np.isnan(num_good)] = metadata['NGROUPS']
 
             # Number of bad groups per integration
-            num_bad = self.metadata['NGROUPS'] - num_good
+            num_bad = metadata['NGROUPS'] - num_good
 
             if filenum == 0:
                 all_good = copy.deepcopy(num_good)
@@ -279,8 +283,14 @@ class Dark():
         #refpix_map = dq_flags.create_refpix_map(self.file_list[0])
 
         # Create arrays to hold the final dark current data and uncertainty
-        final_dark = np.zeros((self.metadata['NGROUPS'], self.metadata['SUBSIZE2'], self.metadata['SUBSIZE1']))
-        final_dark_dev = np.zeros((self.metadata['NGROUPS'], self.metadata['SUBSIZE2'], self.metadata['SUBSIZE1']))
+        if self.ngroups is not None:
+            maxgroups = self.ngroups
+        final_dark = np.zeros((maxgroups, self.metadata['SUBSIZE2'], self.metadata['SUBSIZE1']))
+        final_dark_dev = np.zeros((maxgroups, self.metadata['SUBSIZE2'], self.metadata['SUBSIZE1']))
+
+        self.group_index = np.arange(0, maxgroups, delta_groups)
+        self.group_index = np.append(self.group_index, maxgroups)
+
         # Read in the data
         for i in range(len(self.group_index) - 1):
             groups = np.arange(self.group_index[i], self.group_index[i + 1])
@@ -299,6 +309,16 @@ class Dark():
                     # Read in the dark data
                     file_data = read_ramp(filename, integration, self.group_index[i],
                                           self.group_index[i + 1], extension='SCI')
+
+                    # If the file has fewer than self.group_index[i + 1] groups,
+                    # file_data will be a different shape than expected. If necessary,
+                    # add groups of NaNs to get to the expected shape
+                    expected_ngroups = self.group_index[i + 1] - self.group_index[i]
+                    read_ngroups, ny, nx = file_data.shape
+                    if read_ngroups < expected_ngroups:
+                        add_ngroups = expected_ngroups - read_ngroups
+                        nan_arr = np.full((add_ngroups, ny, nx), np.nan)
+                        file_data = np.concatenate([file_data, nan_arr], axis=0)
 
                     jump_map = cr_indexes[filename][integration, :, :]
 
